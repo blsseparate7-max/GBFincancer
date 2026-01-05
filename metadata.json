@@ -1,0 +1,7 @@
+{
+  "name": "GBFinancer - Assistente Financeiro",
+  "description": "Plataforma de gestão financeira inteligente com multi-acesso, metas de economia e consultoria via IA.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
