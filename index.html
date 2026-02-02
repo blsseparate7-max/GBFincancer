@@ -5,7 +5,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0, viewport-fit=cover">
     <title>GBFinancer - Assistente Financeiro</title>
-    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Tailwind CSS Production Build via CDN -->
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -53,6 +54,10 @@
 
         .pb-safe { padding-bottom: max(env(safe-area-inset-bottom), 12px); }
         .pt-safe { padding-top: env(safe-area-inset-top); }
+        
+        /* Animações utilitárias */
+        .animate-in { animation: fadeIn 0.3s ease-out; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
     </style>
 <script type="importmap">
 {

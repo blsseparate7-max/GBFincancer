@@ -46,7 +46,6 @@ const Auth: React.FC<AuthProps> = ({ onLogin }) => {
     }
 
     try {
-      // Para o BETA: Expiração em 2099
       const expiresAt = new Date(2099, 11, 31);
       const fullName = `${firstName.trim()} ${lastName.trim()}`;
       const userId = email.trim().toLowerCase();
@@ -54,7 +53,7 @@ const Auth: React.FC<AuthProps> = ({ onLogin }) => {
       const initialData: CustomerData = {
         userId: userId,
         userName: fullName,
-        plan: 'YEARLY', // Dá o Premium de graça no Beta
+        plan: 'YEARLY',
         subscriptionStatus: 'ACTIVE',
         transactions: [],
         goals: [],
@@ -176,66 +175,66 @@ const Auth: React.FC<AuthProps> = ({ onLogin }) => {
     <div className="flex flex-col items-center justify-center h-full bg-[#075e54] p-8 text-white relative overflow-hidden">
       <div className="absolute inset-0 opacity-10 pointer-events-none whatsapp-bg"></div>
       <div className="relative z-10 w-full flex flex-col items-center max-w-sm">
-        <div className="w-20 h-20 bg-white rounded-[2rem] shadow-2xl flex items-center justify-center mb-6 border-b-4 border-emerald-200">
+        <div className="w-20 h-20 bg-white rounded-3xl shadow-2xl flex items-center justify-center mb-6 border-b-4 border-emerald-200">
            <span className="text-3xl font-black text-[#075e54] italic">$</span>
         </div>
         <h1 className="text-4xl font-black mb-1 tracking-tighter italic text-center">GBFinancer</h1>
         <p className="text-[10px] font-bold opacity-60 uppercase tracking-[0.4em] mb-10 text-center">Seu Assistente Financeiro</p>
         
         <form onSubmit={view === 'login' ? handleLogin : handleSignup} className="w-full space-y-3">
-          {error && <div className="bg-rose-500/20 border border-rose-500/30 text-rose-100 text-[10px] p-4 rounded-xl font-bold text-center uppercase mb-4 animate-shake">{error}</div>}
+          {error && <div className="bg-red-500 bg-opacity-20 border border-red-500 border-opacity-30 text-red-100 text-[10px] p-4 rounded-xl font-bold text-center uppercase mb-4">{error}</div>}
 
           {view === 'signup' ? (
-            <div className="space-y-3 animate-in slide-in-from-right">
+            <div className="space-y-3">
               <div className="grid grid-cols-2 gap-2">
                 <input 
                   type="text" value={firstName} onChange={(e) => setFirstName(e.target.value)} required
-                  className="w-full bg-white/10 border border-white/20 rounded-2xl px-5 py-4 text-white placeholder:text-white/40 outline-none text-sm"
+                  className="w-full bg-white bg-opacity-10 border border-white border-opacity-20 rounded-2xl px-5 py-4 text-white placeholder-white placeholder-opacity-40 outline-none text-sm"
                   placeholder="Nome"
                 />
                 <input 
                   type="text" value={lastName} onChange={(e) => setLastName(e.target.value)} required
-                  className="w-full bg-white/10 border border-white/20 rounded-2xl px-5 py-4 text-white placeholder:text-white/40 outline-none text-sm"
+                  className="w-full bg-white bg-opacity-10 border border-white border-opacity-20 rounded-2xl px-5 py-4 text-white placeholder-white placeholder-opacity-40 outline-none text-sm"
                   placeholder="Sobrenome"
                 />
               </div>
               <input 
                 type="email" value={email} onChange={(e) => setEmail(e.target.value)} required
-                className="w-full bg-white/10 border border-white/20 rounded-2xl px-5 py-4 text-white placeholder:text-white/40 outline-none text-sm"
+                className="w-full bg-white bg-opacity-10 border border-white border-opacity-20 rounded-2xl px-5 py-4 text-white placeholder-white placeholder-opacity-40 outline-none text-sm"
                 placeholder="E-mail"
               />
               <input 
                 type="password" value={password} onChange={(e) => setPassword(e.target.value)} required
-                className="w-full bg-white/10 border border-white/20 rounded-2xl px-5 py-4 text-white placeholder:text-white/40 outline-none text-sm"
+                className="w-full bg-white bg-opacity-10 border border-white border-opacity-20 rounded-2xl px-5 py-4 text-white placeholder-white placeholder-opacity-40 outline-none text-sm"
                 placeholder="Senha"
               />
               <input 
                 type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} required
-                className="w-full bg-white/10 border border-white/20 rounded-2xl px-5 py-4 text-white placeholder:text-white/40 outline-none text-sm"
+                className="w-full bg-white bg-opacity-10 border border-white border-opacity-20 rounded-2xl px-5 py-4 text-white placeholder-white placeholder-opacity-40 outline-none text-sm"
                 placeholder="Confirme a Senha"
               />
             </div>
           ) : (
-            <div className="space-y-3 animate-in slide-in-from-left">
+            <div className="space-y-3">
               <input 
                 type="text" value={email} onChange={(e) => setEmail(e.target.value)} required
-                className="w-full bg-white/10 border border-white/20 rounded-2xl px-5 py-4 text-white placeholder:text-white/40 outline-none text-sm"
+                className="w-full bg-white bg-opacity-10 border border-white border-opacity-20 rounded-2xl px-5 py-4 text-white placeholder-white placeholder-opacity-40 outline-none text-sm"
                 placeholder="E-mail ou ID"
               />
               <input 
                 type="password" value={password} onChange={(e) => setPassword(e.target.value)} required
-                className="w-full bg-white/10 border border-white/20 rounded-2xl px-5 py-4 text-white placeholder:text-white/40 outline-none text-sm"
+                className="w-full bg-white bg-opacity-10 border border-white border-opacity-20 rounded-2xl px-5 py-4 text-white placeholder-white placeholder-opacity-40 outline-none text-sm"
                 placeholder="Senha"
               />
             </div>
           )}
           
-          <button type="submit" disabled={isLoading} className="w-full bg-white text-[#075e54] font-black py-5 rounded-2xl shadow-2xl active:scale-95 transition-all uppercase tracking-widest text-[11px]">
+          <button type="submit" disabled={isLoading} className="w-full bg-white text-[#075e54] font-black py-5 rounded-2xl shadow-2xl active:transform active:scale-95 transition-all uppercase tracking-widest text-[11px]">
             {isLoading ? 'CARREGANDO...' : (view === 'login' ? 'ENTRAR' : 'CRIAR MINHA CONTA')}
           </button>
         </form>
 
-        <button onClick={() => { setView(view === 'login' ? 'signup' : 'login'); setError(null); }} className="mt-8 text-[10px] font-black uppercase tracking-widest opacity-60 underline underline-offset-4 hover:opacity-100 transition-opacity">
+        <button onClick={() => { setView(view === 'login' ? 'signup' : 'login'); setError(null); }} className="mt-8 text-[10px] font-black uppercase tracking-widest opacity-60 underline hover:opacity-100 transition-opacity">
           {view === 'login' ? 'Quero participar do Beta' : 'Já tenho conta'}
         </button>
       </div>

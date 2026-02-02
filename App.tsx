@@ -55,7 +55,6 @@ const App: React.FC = () => {
     { name: 'Contas', type: 'EXPENSE' }
   ]);
 
-  // Inicialização do App: Recupera sessão persistida
   useEffect(() => {
     const initApp = async () => {
       const session = localStorage.getItem('gb_current_session');
@@ -67,14 +66,10 @@ const App: React.FC = () => {
         }
       }
       setIsLoading(false);
-      if ('Notification' in window && Notification.permission === 'default') {
-        Notification.requestPermission();
-      }
     };
     initApp();
   }, []);
 
-  // Persistência da sessão quando o usuário loga ou desloga
   useEffect(() => {
     if (user) {
       localStorage.setItem('gb_current_session', JSON.stringify(user));
@@ -114,9 +109,8 @@ const App: React.FC = () => {
   }, [transactions, categoryLimits, goals, messages, bills, notes, categories, budget, metaEconomia, userAssets]);
 
   const handleLogout = () => {
-    setUser(null);
     localStorage.removeItem('gb_current_session');
-    // Não usamos clear() para não apagar o cache de transações local (vault) que pode ser útil no próximo login
+    setUser(null);
     window.location.reload(); 
   };
 
@@ -199,7 +193,7 @@ const App: React.FC = () => {
   };
 
   const NavItem = ({ id, icon, label }: { id: ActiveTab, icon: React.ReactNode, label: string }) => (
-    <button onClick={() => { setActiveTab(id); setIsSidebarOpen(false); }} className={`flex flex-col items-center justify-center w-full py-4 shrink-0 transition-all ${activeTab === id ? 'text-emerald-400 bg-emerald-500/10 border-r-2 border-emerald-400' : 'text-slate-500 hover:text-slate-300'}`}>
+    <button onClick={() => { setActiveTab(id); setIsSidebarOpen(false); }} className={`flex flex-col items-center justify-center w-full py-4 shrink-0 transition-all ${activeTab === id ? 'text-emerald-400 bg-emerald-500 bg-opacity-10 border-r-2 border-emerald-400' : 'text-slate-500 hover:text-slate-300'}`}>
       {icon}
       <span className="text-[7px] font-black uppercase mt-1 text-center px-1 leading-tight">{label}</span>
     </button>
