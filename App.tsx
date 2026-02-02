@@ -55,10 +55,17 @@ const App: React.FC = () => {
     { name: 'Contas', type: 'EXPENSE' }
   ]);
 
+  // Inicialização do App: Recupera sessão persistida
   useEffect(() => {
     const initApp = async () => {
       const session = localStorage.getItem('gb_current_session');
-      if (session) setUser(JSON.parse(session));
+      if (session) {
+        try {
+          setUser(JSON.parse(session));
+        } catch (e) {
+          localStorage.removeItem('gb_current_session');
+        }
+      }
       setIsLoading(false);
       if ('Notification' in window && Notification.permission === 'default') {
         Notification.requestPermission();
@@ -66,6 +73,15 @@ const App: React.FC = () => {
     };
     initApp();
   }, []);
+
+  // Persistência da sessão quando o usuário loga ou desloga
+  useEffect(() => {
+    if (user) {
+      localStorage.setItem('gb_current_session', JSON.stringify(user));
+    } else {
+      localStorage.removeItem('gb_current_session');
+    }
+  }, [user]);
 
   useEffect(() => {
     if (user?.id) {
@@ -96,6 +112,13 @@ const App: React.FC = () => {
       categoryLimits, categories, budget, metaEconomiaMensal: metaEconomia, userAssets 
     });
   }, [transactions, categoryLimits, goals, messages, bills, notes, categories, budget, metaEconomia, userAssets]);
+
+  const handleLogout = () => {
+    setUser(null);
+    localStorage.removeItem('gb_current_session');
+    // Não usamos clear() para não apagar o cache de transações local (vault) que pode ser útil no próximo login
+    window.location.reload(); 
+  };
 
   const handlePayBill = (id: string, method: string = 'PIX') => {
     const bill = bills.find(b => b.id === id);
@@ -223,7 +246,7 @@ const App: React.FC = () => {
           {activeTab === 'reminders' && <Reminders bills={bills} onToggleBill={handlePayBill} onDeleteBill={id => setBills(p => p.filter(b => b.id !== id))} onPayBill={handlePayBill} onAddBill={b => setBills(p => [...p, { ...b, id: Math.random().toString(36), isPaid: false }])} onUpdateBill={(id, upd) => setBills(p => p.map(b => b.id === id ? {...b, ...upd} : b))} />}
         </main>
       </div>
-      {isProfileOpen && <ProfileModal user={user} onClose={() => setIsProfileOpen(false)} onUpdate={u => setUser({...user, ...u})} onLogout={() => { setUser(null); localStorage.clear(); window.location.reload(); }} />}
+      {isProfileOpen && <ProfileModal user={user} onClose={() => setIsProfileOpen(false)} onUpdate={u => setUser({...user, ...u})} onLogout={handleLogout} />}
     </div>
   );
 };
