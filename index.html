@@ -4,9 +4,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0, viewport-fit=cover">
+    <meta name="referrer" content="no-referrer">
     <title>GBFinancer - Assistente Financeiro</title>
-    <!-- Tailwind CSS Production Build via CDN -->
-    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    
+    <!-- Tailwind CSS Production Build via Unpkg with Crossorigin to avoid Tracking Prevention -->
+    <link rel="stylesheet" href="https://unpkg.com/tailwindcss@2.2.19/dist/tailwind.min.css" crossorigin="anonymous">
+    
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -69,9 +72,9 @@
     "recharts": "https://esm.sh/recharts@2.15.0?external=react,react-dom",
     "firebase/app": "https://esm.sh/firebase@11.1.0/app",
     "firebase/firestore": "https://esm.sh/firebase@11.1.0/firestore",
-    "react/": "https://esm.sh/react@^19.2.4/",
+    "firebase/": "https://esm.sh/firebase@^12.8.0/",
     "react-dom/": "https://esm.sh/react-dom@^19.2.4/",
-    "firebase/": "https://esm.sh/firebase@^12.8.0/"
+    "react/": "https://esm.sh/react@^19.2.4/"
   }
 }
 </script>
