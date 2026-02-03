@@ -19,16 +19,15 @@ const Onboarding: React.FC<OnboardingProps> = ({ user, onComplete }) => {
   const handleAddBill = () => {
     if (billDesc && billVal && billDay) {
       const today = new Date();
-      // Define o vencimento para o dia escolhido no mês atual
       const dueDate = new Date(today.getFullYear(), today.getMonth(), parseInt(billDay)).toISOString();
       
       setBills([...bills, {
         description: billDesc,
         amount: parseFloat(billVal),
         dueDate: dueDate,
-        isRecurring: true, // Força recorrência para ir para Lembretes
+        isRecurring: true,
         remindersEnabled: true,
-        frequency: 'MONTHLY' // Ciclo de 30 dias (mensal)
+        frequency: 'MONTHLY'
       }]);
       setBillDesc('');
       setBillVal('');
@@ -39,96 +38,100 @@ const Onboarding: React.FC<OnboardingProps> = ({ user, onComplete }) => {
   const currencyFormatter = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
 
   return (
-    <div className="fixed inset-0 z-[3000] bg-slate-950 flex items-center justify-center p-6 text-white animate-in fade-in duration-500 overflow-y-auto">
-      <div className="absolute inset-0 opacity-10 pointer-events-none whatsapp-bg"></div>
+    <div className="fixed inset-0 z-[3000] bg-[#f0f2f5] flex items-center justify-center p-6 text-slate-900 animate-in fade-in duration-500 overflow-hidden">
+      <div className="absolute inset-0 opacity-5 pointer-events-none whatsapp-pattern"></div>
       
-      <div className="relative z-10 w-full max-w-sm text-center">
+      <div className="relative z-10 w-full max-w-md">
         {step === 0 && (
-          <div className="space-y-8 animate-in slide-in-from-bottom">
-            <div className="w-24 h-24 bg-emerald-500 rounded-[2.5rem] flex items-center justify-center mx-auto shadow-2xl text-4xl">🛡️</div>
-            <h2 className="text-3xl font-black italic tracking-tighter uppercase leading-tight">
-              Olá, {user.name.split(' ')[0]}!
+          <div className="space-y-8 animate-in slide-in-from-bottom text-center bg-white p-10 rounded-[3rem] shadow-2xl">
+            <div className="w-20 h-20 bg-slate-900 rounded-[2rem] flex items-center justify-center mx-auto shadow-xl text-3xl font-black text-emerald-500 italic">GB</div>
+            <h2 className="text-3xl font-black italic tracking-tighter uppercase leading-tight text-slate-900">
+              Inicie sua Jornada
             </h2>
-            <p className="text-sm font-medium text-slate-400 leading-relaxed">
-              Sou o GB, seu assistente de elite. Vamos configurar sua estrutura base de gastos fixos para automação de 30 dias.
+            <p className="text-sm font-medium text-slate-500 leading-relaxed px-4">
+              Olá {user.name.split(' ')[0]}, sou o GB. Para auditar suas finanças com precisão, preciso de 3 informações básicas.
             </p>
             <button 
               onClick={() => setStep(1)}
-              className="w-full bg-white text-slate-950 font-black py-5 rounded-[2rem] shadow-2xl active:scale-95 transition-all uppercase tracking-widest text-[11px]"
+              className="w-full bg-[#00a884] text-white font-black py-5 rounded-[2rem] shadow-xl active:scale-95 transition-all uppercase tracking-widest text-xs"
             >
-              Iniciar Diagnóstico →
+              Começar Diagnóstico →
             </button>
           </div>
         )}
 
         {step === 1 && (
-          <div className="space-y-6 animate-in slide-in-from-right">
-            <p className="text-[10px] font-black text-emerald-400 uppercase tracking-widest">Passo 1: Receita</p>
-            <h3 className="text-2xl font-black italic tracking-tighter uppercase">Qual sua receita mensal livre?</h3>
+          <div className="space-y-6 animate-in slide-in-from-right bg-white p-10 rounded-[3rem] shadow-2xl">
+            <div className="flex items-center justify-center mb-2">
+               <span className="text-[10px] font-black text-emerald-600 uppercase tracking-widest bg-emerald-50 px-3 py-1 rounded-full">Receita Base</span>
+            </div>
+            <h3 className="text-2xl font-bold text-center text-slate-800 tracking-tight">Qual sua renda mensal livre hoje?</h3>
             <div className="relative">
-              <span className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-500 font-black">R$</span>
+              <span className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-300 font-black text-xl">R$</span>
               <input 
                 type="number" 
                 autoFocus
-                className="w-full bg-white/10 border-2 border-white/20 p-6 pl-14 rounded-[2rem] text-2xl font-black outline-none focus:border-emerald-500 transition-all text-white"
+                className="w-full bg-slate-50 border-2 border-slate-100 p-6 pl-14 rounded-[2rem] text-3xl font-black outline-none focus:border-emerald-500 transition-all text-slate-900"
                 placeholder="0,00"
                 onChange={(e) => setIncome(parseFloat(e.target.value))}
               />
             </div>
             <button 
-              onClick={() => income > 0 ? setStep(2) : alert("Insira um valor.")}
-              className="w-full bg-emerald-500 text-white font-black py-5 rounded-[2rem] shadow-2xl active:scale-95 transition-all uppercase tracking-widest text-[11px]"
+              onClick={() => income > 0 ? setStep(2) : alert("Por favor, informe um valor.")}
+              className="w-full bg-slate-900 text-white font-black py-5 rounded-[2rem] shadow-2xl active:scale-95 transition-all uppercase tracking-widest text-xs"
             >
-              Próximo: Gastos Fixos
+              Próximo: Contas Fixas
             </button>
           </div>
         )}
 
         {step === 2 && (
-          <div className="space-y-6 animate-in slide-in-from-right">
-            <p className="text-[10px] font-black text-emerald-400 uppercase tracking-widest">Passo 2: Custos Fixos</p>
-            <h3 className="text-xl font-black italic tracking-tighter uppercase text-left">Cadastre seus gastos fixos (Internet, Aluguel, etc)</h3>
+          <div className="space-y-6 animate-in slide-in-from-right bg-white p-10 rounded-[3rem] shadow-2xl">
+            <div className="flex items-center justify-center mb-2">
+               <span className="text-[10px] font-black text-rose-500 uppercase tracking-widest bg-rose-50 px-3 py-1 rounded-full">Compromissos</span>
+            </div>
+            <h3 className="text-xl font-bold text-center text-slate-800">Liste seus gastos fixos mensais</h3>
             
-            <div className="bg-white/5 p-5 rounded-[2.5rem] border border-white/10 space-y-3">
+            <div className="bg-slate-50 p-6 rounded-[2.5rem] space-y-3">
               <input 
-                placeholder="Descrição" 
-                className="w-full bg-transparent border-b border-white/20 p-2 text-sm outline-none focus:border-emerald-500 font-bold text-white"
+                placeholder="Ex: Aluguel, Luz, Internet" 
+                className="w-full bg-white border border-slate-100 p-3.5 rounded-xl text-sm outline-none focus:border-emerald-500 font-bold text-slate-900 shadow-sm"
                 value={billDesc} onChange={e => setBillDesc(e.target.value)}
               />
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-2 gap-2">
                 <input 
                   placeholder="Valor R$" type="number" 
-                  className="w-full bg-transparent border-b border-white/20 p-2 text-sm outline-none focus:border-emerald-500 font-bold text-white"
+                  className="w-full bg-white border border-slate-100 p-3.5 rounded-xl text-sm outline-none focus:border-emerald-500 font-bold text-slate-900 shadow-sm"
                   value={billVal} onChange={e => setBillVal(e.target.value)}
                 />
                 <input 
                   placeholder="Dia Venc." type="number" 
-                  className="w-full bg-transparent border-b border-white/20 p-2 text-sm outline-none focus:border-emerald-500 font-bold text-white"
+                  className="w-full bg-white border border-slate-100 p-3.5 rounded-xl text-sm outline-none focus:border-emerald-500 font-bold text-slate-900 shadow-sm"
                   value={billDay} onChange={e => setBillDay(e.target.value)}
                 />
               </div>
               <button 
                 onClick={handleAddBill}
-                className="w-full bg-white text-slate-900 py-3 rounded-xl text-[9px] font-black uppercase tracking-widest"
+                className="w-full bg-emerald-500 text-white py-4 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg active:scale-95 transition-transform"
               >
-                + Adicionar Gasto Fixo
+                + Adicionar Gasto
               </button>
             </div>
 
-            <div className="max-h-32 overflow-y-auto space-y-2 no-scrollbar">
+            <div className="max-h-32 overflow-y-auto space-y-2 no-scrollbar px-1">
               {bills.map((b, i) => (
-                <div key={i} className="flex justify-between items-center bg-white/5 p-3 rounded-xl border border-white/5 animate-in fade-in">
-                  <span className="text-[9px] font-black uppercase">{b.description} (Dia {new Date(b.dueDate).getDate()})</span>
-                  <span className="text-[9px] font-black text-emerald-400">{currencyFormatter.format(b.amount)}</span>
+                <div key={i} className="flex justify-between items-center bg-gray-50 p-3 rounded-2xl border border-gray-100 animate-in fade-in">
+                  <span className="text-[10px] font-bold text-slate-600">{b.description} (Dia {new Date(b.dueDate).getDate()})</span>
+                  <span className="text-[10px] font-black text-rose-500">{currencyFormatter.format(b.amount)}</span>
                 </div>
               ))}
             </div>
 
             <button 
               onClick={() => onComplete({ income, bills })}
-              className="w-full bg-emerald-500 text-white font-black py-5 rounded-[2.5rem] shadow-2xl active:scale-95 transition-all uppercase tracking-widest text-[11px]"
+              className="w-full bg-slate-900 text-white font-black py-5 rounded-[2rem] shadow-2xl active:scale-95 transition-all uppercase tracking-widest text-xs"
             >
-              Finalizar Diagnóstico
+              Concluir Configuração →
             </button>
           </div>
         )}

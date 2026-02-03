@@ -7,23 +7,34 @@ interface ProfileModalProps {
   onClose: () => void;
   onUpdate: (data: Partial<UserSession>) => void;
   onLogout: () => void;
+  onSyncForce?: () => void;
   onManageCategories?: () => void;
   onImportBackup?: (data: any) => void;
   onExportBackup?: () => void;
 }
 
 const ProfileModal: React.FC<ProfileModalProps> = ({ 
-  user, onClose, onUpdate, onLogout, onManageCategories, onExportBackup, onImportBackup 
+  user, onClose, onUpdate, onLogout, onSyncForce, onManageCategories, onExportBackup, onImportBackup 
 }) => {
   const [name, setName] = useState(user.name);
   const [password, setPassword] = useState(user.password || '');
   const [photoURL, setPhotoURL] = useState(user.photoURL || '');
   const [isEditing, setIsEditing] = useState(false);
   const [showBackup, setShowBackup] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
 
   const handleSave = () => {
     onUpdate({ name, password, photoURL });
     setIsEditing(false);
+  };
+
+  const handleSync = async () => {
+    if (onSyncForce) {
+      setIsSyncing(true);
+      await onSyncForce();
+      setIsSyncing(false);
+      alert("Dados restaurados da nuvem!");
+    }
   };
 
   const handleFileImport = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -61,7 +72,7 @@ const ProfileModal: React.FC<ProfileModalProps> = ({
             </div>
           </div>
           <h3 className="text-xl font-black tracking-tighter uppercase italic text-slate-900">{name}</h3>
-          <p className="text-[10px] text-emerald-600 font-black uppercase tracking-widest mt-1">Perfil Auditado</p>
+          <p className="text-[10px] text-emerald-600 font-black uppercase tracking-widest mt-1">ID: {user.id}</p>
         </div>
 
         <div className="space-y-3">
@@ -80,13 +91,20 @@ const ProfileModal: React.FC<ProfileModalProps> = ({
               </button>
               <label className="w-full bg-emerald-50 text-emerald-600 border border-emerald-100 font-black py-4 rounded-2xl text-[10px] uppercase flex items-center justify-center gap-2 cursor-pointer">
                 📤 Importar Backup
-                {/* Fixed: Use handleFileImport instead of handleFileFileImport to match the defined function name */}
                 <input type="file" accept=".json" onChange={handleFileImport} className="hidden" />
               </label>
               <button onClick={() => setShowBackup(false)} className="w-full text-slate-400 font-black text-[9px] uppercase">Voltar</button>
             </div>
           ) : (
             <>
+              <button 
+                onClick={handleSync} 
+                disabled={isSyncing}
+                className="w-full bg-emerald-50 text-emerald-600 border-2 border-emerald-100 font-black py-4 rounded-2xl text-[10px] uppercase flex items-center justify-center gap-2"
+              >
+                {isSyncing ? 'Recuperando...' : '🔄 Restaurar da Nuvem'}
+              </button>
+
               <button onClick={onManageCategories} className="w-full bg-white text-slate-900 border-2 border-slate-100 font-black py-4 rounded-2xl text-[10px] uppercase flex items-center justify-center gap-2">
                 🏷️ Categorias
               </button>

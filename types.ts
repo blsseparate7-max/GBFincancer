@@ -1,27 +1,5 @@
 
-export type TransactionType = 'INCOME' | 'EXPENSE' | 'SAVING' | 'INVESTMENT';
-export type RecurrenceType = 'NONE' | 'WEEKLY' | 'MONTHLY' | 'YEARLY';
-export type PaymentMethod = 'PIX' | 'CARTAO_CREDITO' | 'CARTAO_DEBITO' | 'DINHEIRO' | 'BOLETO' | 'TRANSFERENCIA';
-
-export interface Category {
-  name: string;
-  type: 'INCOME' | 'EXPENSE';
-}
-
-export interface UserAssets {
-  hasCar: boolean;
-  carValue: number;
-  hasHouse: boolean;
-  houseValue: number;
-  hasSavings: boolean;
-  savingsValue: number;
-  targets: {
-    car: number;
-    house: number;
-    savings: number;
-  };
-  surveyCompleted: boolean;
-}
+export type TransactionType = 'INCOME' | 'EXPENSE' | 'SAVING';
 
 export interface Transaction {
   id: string;
@@ -31,14 +9,73 @@ export interface Transaction {
   type: TransactionType;
   date: string;
   paymentMethod: string;
-  isFixed?: boolean;
 }
 
-export interface Note {
+export type GoalType = 'carro' | 'casa_entrada' | 'reserva' | 'outros';
+
+export interface SavingGoal {
   id: string;
-  content: string;
-  timestamp: string;
-  category?: string;
+  name: string;
+  targetAmount: number;
+  currentAmount: number;
+  deadline?: string;
+  ativa?: boolean;
+  tipo?: GoalType;
+  nivelEscada?: number;
+  prazoMeses?: number;
+  monthlySaving?: number;
+  createdAt?: string;
+}
+
+export interface Message {
+  id: string;
+  text: string;
+  sender: 'user' | 'ai';
+  timestamp: Date | string;
+}
+
+export interface UserProfile {
+  name: string;
+  monthlyBudget: number;
+  photoURL?: string;
+  onboardingCompleted?: boolean;
+  financialProfile?: 'CONSERVATIVE' | 'MODERATE' | 'AGGRESSIVE';
+}
+
+export interface AppData {
+  transactions: Transaction[];
+  goals: SavingGoal[];
+  messages: Message[];
+  profile: UserProfile;
+}
+
+export interface UserAssets {
+  hasCar: boolean;
+  carValue: number;
+  hasHouse: boolean;
+  houseValue: number;
+  savingsValue: number;
+  surveyCompleted: boolean;
+  targets: {
+    car: number;
+    house: number;
+  };
+}
+
+export type SubscriptionPlan = 'MONTHLY' | 'YEARLY';
+export type SubscriptionStatus = 'ACTIVE' | 'EXPIRED' | 'PENDING';
+export type UserRole = 'USER' | 'ADMIN';
+
+export interface UserSession {
+  id: string;
+  name: string;
+  isLoggedIn: boolean;
+  plan: SubscriptionPlan;
+  subscriptionStatus: SubscriptionStatus;
+  role: UserRole;
+  password?: string;
+  photoURL?: string;
+  onboardingCompleted?: boolean;
 }
 
 export interface Bill {
@@ -47,85 +84,37 @@ export interface Bill {
   amount: number;
   dueDate: string;
   isPaid: boolean;
-  category?: string;
   isRecurring: boolean;
-  frequency?: RecurrenceType;
   remindersEnabled: boolean;
-  lastReminderSent?: string;
+  frequency: 'MONTHLY' | 'WEEKLY' | 'YEARLY';
 }
 
-export interface Message {
-  id: string;
-  text: string;
-  sender: 'user' | 'ai';
-  timestamp: Date | string;
-  transactionRef?: Transaction;
-  isWarning?: boolean;
-  isSystem?: boolean;
-  billRefId?: string; 
-  categorySuggestion?: string; 
-  tempTransactionId?: string; 
-}
-
-export interface CategoryLimit {
-  category: string;
-  amount: number;
-}
-
-export type GoalType = 'carro' | 'casa_entrada' | 'reserva' | 'manual';
-
-export interface SavingGoal {
-  id: string;
+export interface Category {
   name: string;
-  tipo: GoalType;
-  targetAmount: number;
-  currentAmount: number;
-  monthlySaving: number; 
-  prazoMeses: number;
-  nivelEscada: number;
-  ativa: boolean;
-  createdAt: string;
-  concluidaEm?: string;
+  type: 'INCOME' | 'EXPENSE';
 }
 
-export interface FinancialAlert {
+export interface Note {
   id: string;
-  type: 'info' | 'warning' | 'danger' | 'success';
-  message: string;
-  timestamp: string;
-}
-
-export type SubscriptionPlan = 'FREE_TRIAL' | 'MONTHLY' | 'YEARLY';
-
-export interface UserSession {
-  id: string;
-  name: string;
-  isLoggedIn: boolean;
-  plan: SubscriptionPlan;
-  subscriptionStatus: 'ACTIVE' | 'EXPIRED' | 'PENDING';
-  role: 'USER' | 'ADMIN';
-  expiresAt?: string;
-  photoURL?: string;
-  password?: string;
+  content: string;
+  category?: string;
+  timestamp: string | Date;
 }
 
 export interface CustomerData {
   userId: string;
   userName: string;
+  password?: string;
   plan: SubscriptionPlan;
-  subscriptionStatus: 'ACTIVE' | 'EXPIRED' | 'PENDING';
+  subscriptionStatus: SubscriptionStatus;
   transactions: Transaction[];
   goals: SavingGoal[];
   messages: Message[];
   bills: Bill[];
   notes: Note[];
-  alerts?: FinancialAlert[];
   lastActive: string;
-  categories?: Category[];
-  expiresAt?: string;
-  budget?: number;
-  metaEconomiaMensal?: number;
-  categoryLimits?: CategoryLimit[];
-  userAssets?: UserAssets;
+  onboardingCompleted?: boolean;
+  monthlyBudget?: number;
   localUpdatedAt?: string;
+  serverUpdatedAt?: any;
 }

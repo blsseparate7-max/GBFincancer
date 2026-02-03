@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { UserSession, SubscriptionPlan, CustomerData } from '../types';
+import { UserSession, CustomerData } from '../types';
 import { fetchUserData, syncUserData } from '../services/databaseService';
 
 interface AuthProps {
@@ -8,237 +8,106 @@ interface AuthProps {
 }
 
 const Auth: React.FC<AuthProps> = ({ onLogin }) => {
-  const [view, setView] = useState<'login' | 'signup' | 'processing'>('login');
+  const [view, setView] = useState<'login' | 'signup'>('login');
   const [email, setEmail] = useState('');
-  const [firstName, setFirstName] = useState('');
-  const [lastName, setLastName] = useState('');
+  const [name, setName] = useState('');
   const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [setupStep, setSetupStep] = useState(0);
 
-  const setupMessages = [
-    "Validando credenciais...",
-    "Criptografando cofre de dados...",
-    "Sincronizando com a nuvem GB...",
-    "Iniciando consultoria IA...",
-    "Seja bem-vindo ao Beta!"
-  ];
-
-  const handleSignup = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (password !== confirmPassword) {
-      setError("As senhas não coincidem.");
-      return;
-    }
-    setView('processing');
-    autoCreateAccount();
-  };
-
-  const autoCreateAccount = async () => {
     setIsLoading(true);
     setError(null);
 
-    for (let i = 0; i < setupMessages.length; i++) {
-      setSetupStep(i);
-      await new Promise(resolve => setTimeout(resolve, 600));
-    }
+    const loginId = email.trim().toLowerCase();
 
     try {
-      const expiresAt = new Date(2099, 11, 31);
-      const fullName = `${firstName.trim()} ${lastName.trim()}`;
-      const userId = email.trim().toLowerCase();
+      if (view === 'login') {
+        // Admin Bypass
+        if (loginId === 'vicente' && password === 'gbfinancer') {
+           onLogin({ id: 'admin', name: 'Vicente', isLoggedIn: true, plan: 'YEARLY', subscriptionStatus: 'ACTIVE', role: 'ADMIN' });
+           return;
+        }
 
-      const initialData: CustomerData = {
-        userId: userId,
-        userName: fullName,
-        plan: 'YEARLY',
-        subscriptionStatus: 'ACTIVE',
-        transactions: [],
-        goals: [],
-        messages: [{
-          id: 'welcome',
-          text: `Olá ${firstName}! Que bom ter você no nosso Beta. Sou o GB, seu assistente pessoal.`,
-          sender: 'ai',
-          timestamp: new Date().toISOString()
-        }],
-        bills: [],
-        notes: [],
-        lastActive: new Date().toISOString(),
-        expiresAt: expiresAt.toISOString(),
-        budget: 0,
-        categoryLimits: [],
-        categories: [
-          { name: 'Cartão de Crédito', type: 'EXPENSE' },
-          { name: 'Alimentação', type: 'EXPENSE' },
-          { name: 'Moradia', type: 'EXPENSE' },
-          { name: 'Transporte', type: 'EXPENSE' },
-          { name: 'Saúde', type: 'EXPENSE' },
-          { name: 'Outros', type: 'EXPENSE' }
-        ]
-      };
-
-      const success = await syncUserData(userId, { ...initialData, password: password });
-      
-      if (success) {
-        const session: UserSession = { 
-          id: userId, 
-          name: fullName, 
-          isLoggedIn: true, 
-          plan: 'YEARLY', 
-          subscriptionStatus: 'ACTIVE', 
-          role: 'USER',
-          expiresAt: expiresAt.toISOString()
-        };
-        onLogin(session);
-      } else {
-        setError("Erro ao salvar dados. Tente novamente.");
-        setView('signup');
-      }
-    } catch (err) {
-      setError("Falha ao criar sua conta.");
-      setView('signup');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const loginIdentifier = email.trim().toLowerCase();
-    
-    if (!loginIdentifier || !password) {
-        setError("Preencha todos os campos.");
-        return;
-    }
-    setIsLoading(true);
-
-    try {
-      if ((loginIdentifier === 'gbfinancer@gmail.com' || loginIdentifier === 'vicente') && password === 'gbfinancer') {
-        onLogin({
-          id: 'gbfinancer@gmail.com',
-          name: 'Vicente',
-          isLoggedIn: true,
-          plan: 'YEARLY',
-          subscriptionStatus: 'ACTIVE',
-          role: 'ADMIN',
-          expiresAt: new Date(2099, 0, 1).toISOString()
-        });
-        return;
-      }
-
-      const userData = await fetchUserData(loginIdentifier);
-      if (userData && userData.userName) {
-        if (userData.password && userData.password !== password) {
-          setError("Senha incorreta.");
+        const data = await fetchUserData(loginId);
+        if (data && data.password === password) {
+          onLogin({ id: loginId, name: data.userName, isLoggedIn: true, plan: data.plan, subscriptionStatus: data.subscriptionStatus, role: 'USER' });
         } else {
-          onLogin({
-            id: loginIdentifier,
-            name: userData.userName,
-            isLoggedIn: true,
-            plan: userData.plan || 'YEARLY',
-            subscriptionStatus: userData.subscriptionStatus || 'ACTIVE',
-            role: userData.role || 'USER',
-            expiresAt: userData.expiresAt
-          });
+          setError("Credenciais inválidas.");
         }
       } else {
-        setError("Usuário não encontrado.");
+        const initialData: CustomerData = {
+          userId: loginId,
+          userName: name,
+          password: password,
+          plan: 'YEARLY',
+          subscriptionStatus: 'ACTIVE',
+          transactions: [],
+          goals: [],
+          messages: [],
+          bills: [],
+          notes: [],
+          lastActive: new Date().toISOString()
+        };
+        await syncUserData(loginId, initialData);
+        onLogin({ id: loginId, name: name, isLoggedIn: true, plan: 'YEARLY', subscriptionStatus: 'ACTIVE', role: 'USER' });
       }
     } catch (err) {
-      setError("Erro de conexão.");
+      setError("Erro ao processar. Tente novamente.");
     } finally {
       setIsLoading(false);
     }
   };
 
-  if (view === 'processing') {
-    return (
-      <div className="flex flex-col items-center justify-center h-full bg-slate-950 p-8 text-center animate-in fade-in">
-        <div className="relative w-32 h-32 mb-8">
-          <div className="absolute inset-0 border-4 border-emerald-500/20 rounded-full"></div>
-          <div className="absolute inset-0 border-4 border-emerald-500 rounded-full border-t-transparent animate-spin"></div>
-          <div className="absolute inset-0 flex items-center justify-center">
-            <span className="text-3xl font-black text-emerald-500 italic">$</span>
-          </div>
-        </div>
-        <h2 className="text-2xl font-black text-white tracking-tighter italic mb-2">Preparando seu Cofre</h2>
-        <p className="text-[10px] text-emerald-400 font-black uppercase tracking-[0.3em] animate-pulse">
-          {setupMessages[setupStep]}
-        </p>
-      </div>
-    );
-  }
-
   return (
-    <div className="flex flex-col items-center justify-center h-full bg-[#075e54] p-8 text-white relative overflow-hidden">
-      <div className="absolute inset-0 opacity-10 pointer-events-none whatsapp-bg"></div>
-      <div className="relative z-10 w-full flex flex-col items-center max-w-sm">
-        <div className="w-20 h-20 bg-white rounded-3xl shadow-2xl flex items-center justify-center mb-6 border-b-4 border-emerald-200">
-           <span className="text-3xl font-black text-[#075e54] italic">$</span>
+    <div className="h-viewport w-full flex flex-col items-center justify-center bg-[#075e54] p-6 relative overflow-hidden">
+      <div className="whatsapp-pattern"></div>
+      
+      <div className="relative z-10 w-full max-w-sm flex flex-col items-center">
+        <div className="w-24 h-24 bg-white rounded-[2.5rem] shadow-2xl flex items-center justify-center mb-8 border-b-8 border-black/20">
+          <span className="text-5xl font-black text-[#075e54] italic tracking-tighter">$</span>
         </div>
-        <h1 className="text-4xl font-black mb-1 tracking-tighter italic text-center">GBFinancer</h1>
-        <p className="text-[10px] font-bold opacity-60 uppercase tracking-[0.4em] mb-10 text-center">Seu Assistente Financeiro</p>
         
-        <form onSubmit={view === 'login' ? handleLogin : handleSignup} className="w-full space-y-3">
-          {error && <div className="bg-red-500 bg-opacity-20 border border-red-500 border-opacity-30 text-red-100 text-[10px] p-4 rounded-xl font-bold text-center uppercase mb-4">{error}</div>}
+        <div className="bg-white w-full rounded-[3rem] p-8 shadow-2xl border-b-8 border-black/10">
+          <h2 className="text-3xl font-black italic tracking-tighter text-slate-900 mb-2 text-center">GBFinancer</h2>
+          <p className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400 mb-8 text-center">Gestão Inteligente</p>
 
-          {view === 'signup' ? (
-            <div className="space-y-3">
-              <div className="grid grid-cols-2 gap-2">
-                <input 
-                  type="text" value={firstName} onChange={(e) => setFirstName(e.target.value)} required
-                  className="w-full bg-white bg-opacity-10 border border-white border-opacity-20 rounded-2xl px-5 py-4 text-white placeholder-white placeholder-opacity-40 outline-none text-sm"
-                  placeholder="Nome"
-                />
-                <input 
-                  type="text" value={lastName} onChange={(e) => setLastName(e.target.value)} required
-                  className="w-full bg-white bg-opacity-10 border border-white border-opacity-20 rounded-2xl px-5 py-4 text-white placeholder-white placeholder-opacity-40 outline-none text-sm"
-                  placeholder="Sobrenome"
-                />
-              </div>
+          <form onSubmit={handleSubmit} className="space-y-4">
+            {error && <div className="bg-rose-600 text-white text-[10px] p-3 rounded-xl font-black text-center uppercase animate-pulse">{error}</div>}
+            
+            {view === 'signup' && (
               <input 
-                type="email" value={email} onChange={(e) => setEmail(e.target.value)} required
-                className="w-full bg-white bg-opacity-10 border border-white border-opacity-20 rounded-2xl px-5 py-4 text-white placeholder-white placeholder-opacity-40 outline-none text-sm"
-                placeholder="E-mail"
+                type="text" value={name} onChange={e => setName(e.target.value)} required
+                className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-5 py-4 text-sm font-bold outline-none" placeholder="Seu Nome"
               />
-              <input 
-                type="password" value={password} onChange={(e) => setPassword(e.target.value)} required
-                className="w-full bg-white bg-opacity-10 border border-white border-opacity-20 rounded-2xl px-5 py-4 text-white placeholder-white placeholder-opacity-40 outline-none text-sm"
-                placeholder="Senha"
-              />
-              <input 
-                type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} required
-                className="w-full bg-white bg-opacity-10 border border-white border-opacity-20 rounded-2xl px-5 py-4 text-white placeholder-white placeholder-opacity-40 outline-none text-sm"
-                placeholder="Confirme a Senha"
-              />
-            </div>
-          ) : (
-            <div className="space-y-3">
-              <input 
-                type="text" value={email} onChange={(e) => setEmail(e.target.value)} required
-                className="w-full bg-white bg-opacity-10 border border-white border-opacity-20 rounded-2xl px-5 py-4 text-white placeholder-white placeholder-opacity-40 outline-none text-sm"
-                placeholder="E-mail ou ID"
-              />
-              <input 
-                type="password" value={password} onChange={(e) => setPassword(e.target.value)} required
-                className="w-full bg-white bg-opacity-10 border border-white border-opacity-20 rounded-2xl px-5 py-4 text-white placeholder-white placeholder-opacity-40 outline-none text-sm"
-                placeholder="Senha"
-              />
-            </div>
-          )}
-          
-          <button type="submit" disabled={isLoading} className="w-full bg-white text-[#075e54] font-black py-5 rounded-2xl shadow-2xl active:transform active:scale-95 transition-all uppercase tracking-widest text-[11px]">
-            {isLoading ? 'CARREGANDO...' : (view === 'login' ? 'ENTRAR' : 'CRIAR MINHA CONTA')}
+            )}
+            
+            <input 
+              type="text" value={email} onChange={e => setEmail(e.target.value)} required
+              className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-5 py-4 text-sm font-bold outline-none" placeholder="Usuário ou E-mail"
+            />
+            
+            <input 
+              type="password" value={password} onChange={e => setPassword(e.target.value)} required
+              className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-5 py-4 text-sm font-bold outline-none" placeholder="Sua Senha"
+            />
+            
+            <button type="submit" disabled={isLoading} className="w-full btn-primary py-5 rounded-2xl mt-4 text-sm">
+              {isLoading ? 'Aguarde...' : (view === 'login' ? 'Entrar Agora' : 'Criar minha Conta')}
+            </button>
+          </form>
+
+          <button 
+            onClick={() => setView(view === 'login' ? 'signup' : 'login')}
+            className="w-full mt-8 text-[11px] font-black uppercase tracking-widest text-slate-400 hover:text-[#075e54] transition-colors"
+          >
+            {view === 'login' ? 'Não tem conta? Cadastre-se' : 'Já tem conta? Faça Login'}
           </button>
-        </form>
-
-        <button onClick={() => { setView(view === 'login' ? 'signup' : 'login'); setError(null); }} className="mt-8 text-[10px] font-black uppercase tracking-widest opacity-60 underline hover:opacity-100 transition-opacity">
-          {view === 'login' ? 'Quero participar do Beta' : 'Já tenho conta'}
-        </button>
+        </div>
       </div>
-      <div className="absolute bottom-6 text-[8px] font-black uppercase tracking-[0.3em] opacity-30">Versão Beta 1.0</div>
+      
+      <div className="absolute bottom-8 text-[8px] font-black uppercase tracking-[0.4em] text-white/30 italic">Build v2.0.1 • Estabilidade Total</div>
     </div>
   );
 };
