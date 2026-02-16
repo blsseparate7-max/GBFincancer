@@ -2,6 +2,16 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { CustomerData } from "../types";
 
+// Função auxiliar para inicializar a IA apenas quando necessário
+const getAI = () => {
+  const apiKey = process.env.API_KEY;
+  if (!apiKey) {
+    console.error("ERRO CRÍTICO: Variável de ambiente API_KEY não configurada.");
+    return null;
+  }
+  return new GoogleGenAI({ apiKey });
+};
+
 const FINANCE_PARSER_SCHEMA = {
   type: Type.OBJECT,
   properties: {
@@ -39,8 +49,11 @@ const FINANCE_PARSER_SCHEMA = {
 
 export const parseMessage = async (text: string, userName: string) => {
   try {
-    // Inicialização dentro da função para garantir que process.env.API_KEY esteja disponível no browser
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const ai = getAI();
+    if (!ai) {
+      return { reply: "O sistema de IA está temporariamente indisponível por falta de configuração de chave (API_KEY)." };
+    }
+
     const today = new Date().toISOString().split('T')[0];
     
     const response = await ai.models.generateContent({
@@ -71,10 +84,12 @@ export const parseMessage = async (text: string, userName: string) => {
 
 export const getCEOSummary = async (customers: CustomerData[]): Promise<string> => {
   try {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const ai = getAI();
+    if (!ai) return "Sistema de IA não configurado.";
+
     const summaryData = customers.map(c => ({
       userName: c.userName,
-      status: c.subscriptionStatus,
+      status: c.status,
       plan: c.plan
     }));
 
@@ -83,8 +98,9 @@ export const getCEOSummary = async (customers: CustomerData[]): Promise<string> 
       contents: `Analise estrategicamente a base de clientes do GBFinancer para o CEO: ${JSON.stringify(summaryData)}.`,
     });
 
-    return response.text || "Sem análise.";
+    return response.text || "Sem análise disponível.";
   } catch (err) {
-    return "Erro no relatório.";
+    console.error("CEO Summary Error:", err);
+    return "Erro ao gerar o relatório analítico.";
   }
 };
