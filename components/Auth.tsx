@@ -1,113 +1,190 @@
 
 import React, { useState } from 'react';
-import { UserSession, CustomerData } from '../types';
-import { fetchUserData, syncUserData } from '../services/databaseService';
+import { db, auth } from '../services/firebaseConfig';
+import { signInWithEmailAndPassword, createUserWithEmailAndPassword, sendPasswordResetEmail } from 'firebase/auth';
+import { doc, setDoc, getDoc, updateDoc } from 'firebase/firestore';
+import { UserSession } from '../types';
 
 interface AuthProps {
   onLogin: (session: UserSession) => void;
 }
 
 const Auth: React.FC<AuthProps> = ({ onLogin }) => {
-  const [view, setView] = useState<'login' | 'signup'>('login');
-  const [email, setEmail] = useState('');
-  const [name, setName] = useState('');
+  const [view, setView] = useState<'login' | 'signup' | 'forgot'>('login');
+  const [idOrEmail, setIdOrEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [id, setId] = useState('');
+  const [confirmPass, setConfirmPass] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsLoading(true);
+    setError(null);
+    setMessage(null);
+
+    try {
+      let loginEmail = idOrEmail.trim();
+
+      if (!loginEmail.includes('@')) {
+        const usernameId = loginEmail.toLowerCase();
+        const usernameRef = doc(db, "usernames", usernameId);
+        const usernameSnap = await getDoc(usernameRef);
+        
+        if (!usernameSnap.exists()) {
+          throw new Error(`ID "${loginEmail}" não encontrado.`);
+        }
+
+        const userUid = usernameSnap.data().uid;
+        const userDoc = await getDoc(doc(db, "users", userUid));
+        
+        if (!userDoc.exists() || !userDoc.data()?.email) {
+          throw new Error("Erro de integridade do ID.");
+        }
+        
+        loginEmail = userDoc.data().email;
+      }
+
+      const userCred = await signInWithEmailAndPassword(auth, loginEmail, password);
+      const userRef = doc(db, "users", userCred.user.uid);
+      const finalDoc = await getDoc(userRef);
+      const userData = finalDoc.data();
+
+      // Forçar role ADMIN se for Vicentin no login
+      let currentRole = userData?.role || 'USER';
+      if (userData?.userId?.toLowerCase() === 'vicentin') {
+        currentRole = 'ADMIN';
+        await updateDoc(userRef, { role: 'ADMIN' });
+      }
+
+      onLogin({
+        uid: userCred.user.uid,
+        userId: userData?.userId || idOrEmail,
+        name: userData?.name || "Usuário",
+        email: userData?.email || loginEmail,
+        isLoggedIn: true,
+        role: currentRole as 'USER' | 'ADMIN',
+        subscriptionStatus: userData?.subscriptionStatus || 'ACTIVE'
+      });
+    } catch (err: any) {
+      if (err.code === "auth/configuration-not-found") {
+        setError("Ative E-mail/Senha no Firebase Authentication.");
+      } else {
+        setError(err.message);
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
     setError(null);
 
-    const loginId = email.trim().toLowerCase();
+    if (password !== confirmPass) {
+      setError("Senhas não coincidem.");
+      setIsLoading(false);
+      return;
+    }
 
     try {
-      if (view === 'login') {
-        // Admin Bypass
-        if (loginId === 'vicente' && password === 'gbfinancer') {
-           onLogin({ id: 'admin', name: 'Vicente', isLoggedIn: true, plan: 'YEARLY', subscriptionStatus: 'ACTIVE', role: 'ADMIN' });
-           return;
-        }
-
-        const data = await fetchUserData(loginId);
-        if (data && data.password === password) {
-          onLogin({ id: loginId, name: data.userName, isLoggedIn: true, plan: data.plan, subscriptionStatus: data.subscriptionStatus, role: 'USER' });
-        } else {
-          setError("Credenciais inválidas.");
-        }
-      } else {
-        const initialData: CustomerData = {
-          userId: loginId,
-          userName: name,
-          password: password,
-          plan: 'YEARLY',
-          subscriptionStatus: 'ACTIVE',
-          transactions: [],
-          goals: [],
-          messages: [],
-          bills: [],
-          notes: [],
-          lastActive: new Date().toISOString()
-        };
-        await syncUserData(loginId, initialData);
-        onLogin({ id: loginId, name: name, isLoggedIn: true, plan: 'YEARLY', subscriptionStatus: 'ACTIVE', role: 'USER' });
+      const userIdLower = id.toLowerCase().trim();
+      const usernameRef = doc(db, "usernames", userIdLower);
+      const usernameSnap = await getDoc(usernameRef);
+      
+      if (usernameSnap.exists()) {
+        throw new Error("Este ID já está em uso.");
       }
-    } catch (err) {
-      setError("Erro ao processar. Tente novamente.");
+
+      const userCred = await createUserWithEmailAndPassword(auth, email.trim(), password);
+      
+      // Lógica especial para o Vicentin
+      // Adicionando tipagem explícita para evitar erro de string vs union type no UserSession
+      const userRole: 'USER' | 'ADMIN' = userIdLower === 'vicentin' ? 'ADMIN' : 'USER';
+
+      const userData = {
+        uid: userCred.user.uid,
+        userId: userIdLower,
+        name: name.trim(),
+        email: email.trim(),
+        role: userRole,
+        subscriptionStatus: 'ACTIVE' as const,
+        createdAt: new Date().toISOString()
+      };
+
+      await setDoc(doc(db, "users", userCred.user.uid), userData);
+      await setDoc(usernameRef, { uid: userCred.user.uid });
+
+      // Fix para o erro de atribuição no onLogin
+      onLogin({
+        uid: userData.uid,
+        userId: userData.userId,
+        name: userData.name,
+        email: userData.email,
+        role: userData.role,
+        subscriptionStatus: userData.subscriptionStatus,
+        isLoggedIn: true
+      });
+    } catch (err: any) {
+      setError(err.message);
     } finally {
       setIsLoading(false);
     }
   };
 
   return (
-    <div className="h-viewport w-full flex flex-col items-center justify-center bg-[#075e54] p-6 relative overflow-hidden">
-      <div className="whatsapp-pattern"></div>
-      
-      <div className="relative z-10 w-full max-w-sm flex flex-col items-center">
-        <div className="w-24 h-24 bg-white rounded-[2.5rem] shadow-2xl flex items-center justify-center mb-8 border-b-8 border-black/20">
-          <span className="text-5xl font-black text-[#075e54] italic tracking-tighter">$</span>
+    <div className="h-screen w-full flex flex-col items-center justify-center p-6 bg-[#f0f2f5]">
+      <div className="w-full max-w-sm">
+        <div className="text-center mb-10">
+          <div className="w-16 h-16 bg-[#25D366] rounded-full flex items-center justify-center mx-auto mb-4 shadow-md text-white text-3xl font-black italic">GB</div>
+          <h1 className="text-2xl font-black text-[#111b21] uppercase tracking-tighter">GBFinancer</h1>
+          <p className="text-[10px] font-bold text-[#667781] uppercase tracking-[0.3em] mt-1 italic">Inteligência Financeira</p>
         </div>
-        
-        <div className="bg-white w-full rounded-[3rem] p-8 shadow-2xl border-b-8 border-black/10">
-          <h2 className="text-3xl font-black italic tracking-tighter text-slate-900 mb-2 text-center">GBFinancer</h2>
-          <p className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400 mb-8 text-center">Gestão Inteligente</p>
 
-          <form onSubmit={handleSubmit} className="space-y-4">
-            {error && <div className="bg-rose-600 text-white text-[10px] p-3 rounded-xl font-black text-center uppercase animate-pulse">{error}</div>}
+        <div className="bg-white p-8 rounded-2xl shadow-xl border border-[#d1d7db]">
+          <h2 className="text-lg font-bold text-[#111b21] mb-6 text-center">
+            {view === 'login' ? 'Acessar Conta' : view === 'signup' ? 'Novo Cadastro' : 'Recuperar'}
+          </h2>
+          
+          <form onSubmit={view === 'login' ? handleLogin : handleSignup} className="space-y-4">
+            {error && <div className="p-3 bg-red-50 text-red-500 text-[11px] font-bold rounded-lg border border-red-100">{error}</div>}
             
-            {view === 'signup' && (
-              <input 
-                type="text" value={name} onChange={e => setName(e.target.value)} required
-                className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-5 py-4 text-sm font-bold outline-none" placeholder="Seu Nome"
-              />
+            {view === 'login' ? (
+              <>
+                <input className="w-full bg-[#f0f2f5] rounded-lg px-4 py-3.5 text-sm outline-none border border-transparent focus:border-[#00a884]" placeholder="ID (ex: Vicentin) ou E-mail" value={idOrEmail} onChange={e => setIdOrEmail(e.target.value)} required />
+                <input type="password" className="w-full bg-[#f0f2f5] rounded-lg px-4 py-3.5 text-sm outline-none border border-transparent focus:border-[#00a884]" placeholder="Senha" value={password} onChange={e => setPassword(e.target.value)} required />
+              </>
+            ) : (
+              <>
+                <input className="w-full bg-[#f0f2f5] rounded-lg px-4 py-3.5 text-sm outline-none border border-[#d1d7db]" placeholder="Seu Nome" value={name} onChange={e => setName(e.target.value)} required />
+                <input className="w-full bg-[#f0f2f5] rounded-lg px-4 py-3.5 text-sm outline-none border border-[#d1d7db]" placeholder="ID (ex: vicentin)" value={id} onChange={e => setId(e.target.value)} required />
+                <input className="w-full bg-[#f0f2f5] rounded-lg px-4 py-3.5 text-sm outline-none border border-[#d1d7db]" placeholder="Seu E-mail" value={email} onChange={e => setEmail(e.target.value)} required />
+                <input type="password" className="w-full bg-[#f0f2f5] rounded-lg px-4 py-3.5 text-sm outline-none border border-[#d1d7db]" placeholder="Sua Senha" value={password} onChange={e => setPassword(e.target.value)} required minLength={8} />
+                <input type="password" className="w-full bg-[#f0f2f5] rounded-lg px-4 py-3.5 text-sm outline-none border border-[#d1d7db]" placeholder="Confirme a Senha" value={confirmPass} onChange={e => setConfirmPass(e.target.value)} required />
+              </>
             )}
-            
-            <input 
-              type="text" value={email} onChange={e => setEmail(e.target.value)} required
-              className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-5 py-4 text-sm font-bold outline-none" placeholder="Usuário ou E-mail"
-            />
-            
-            <input 
-              type="password" value={password} onChange={e => setPassword(e.target.value)} required
-              className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-5 py-4 text-sm font-bold outline-none" placeholder="Sua Senha"
-            />
-            
-            <button type="submit" disabled={isLoading} className="w-full btn-primary py-5 rounded-2xl mt-4 text-sm">
-              {isLoading ? 'Aguarde...' : (view === 'login' ? 'Entrar Agora' : 'Criar minha Conta')}
+
+            <button 
+              disabled={isLoading}
+              className="w-full bg-[#00a884] text-white font-bold py-3.5 rounded-lg text-sm uppercase tracking-widest shadow-md active:scale-95 transition-all mt-4 disabled:opacity-50"
+            >
+              {isLoading ? 'Aguarde...' : (view === 'login' ? 'Entrar' : 'Cadastrar')}
             </button>
           </form>
 
           <button 
             onClick={() => setView(view === 'login' ? 'signup' : 'login')}
-            className="w-full mt-8 text-[11px] font-black uppercase tracking-widest text-slate-400 hover:text-[#075e54] transition-colors"
+            className="w-full text-[11px] font-bold text-[#008069] mt-6 uppercase tracking-wider"
           >
-            {view === 'login' ? 'Não tem conta? Cadastre-se' : 'Já tem conta? Faça Login'}
+            {view === 'login' ? 'Não tem conta? Clique aqui' : 'Já tem conta? Faça Login'}
           </button>
         </div>
       </div>
-      
-      <div className="absolute bottom-8 text-[8px] font-black uppercase tracking-[0.4em] text-white/30 italic">Build v2.0.1 • Estabilidade Total</div>
     </div>
   );
 };

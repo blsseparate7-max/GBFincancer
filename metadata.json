@@ -1,5 +1,7 @@
 {
-  "name": "GBFinancer - Assistente Financeiro",
-  "description": "Plataforma de gestão financeira inteligente com multi-acesso, metas de economia e consultoria via IA.",
-  "requestFramePermissions": []
+  "name": "GBFinancer - AI Finance",
+  "description": "Gestão financeira reativa com IA determinística e WhatsApp UI.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
 }

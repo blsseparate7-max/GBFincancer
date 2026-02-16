@@ -1,254 +1,221 @@
 
-import React, { useMemo, useState } from 'react';
-import { Bill } from '../types';
+import React, { useState, useMemo } from 'react';
+import { Bill, PaymentMethod } from '../types';
+import { dispatchEvent } from '../services/eventDispatcher';
 
 interface RemindersProps {
   bills: Bill[];
-  onToggleBill: (id: string) => void;
-  onDeleteBill: (id: string) => void;
-  onPayBill: (id: string, method: string) => void;
-  onAddBill: (bill: Omit<Bill, 'id' | 'isPaid'>) => void;
-  onUpdateBill: (id: string, updates: Partial<Bill>) => void;
+  uid: string;
 }
 
-const Reminders: React.FC<RemindersProps> = ({ 
-  bills, 
-  onDeleteBill, 
-  onPayBill, 
-  onAddBill, 
-  onUpdateBill 
-}) => {
+const Reminders: React.FC<RemindersProps> = ({ bills, uid }) => {
+  const [activeTab, setActiveTab] = useState<'pending' | 'history'>('pending');
+  const [showAddForm, setShowAddForm] = useState(false);
   const [payingBillId, setPayingBillId] = useState<string | null>(null);
-  const [isAdding, setIsAdding] = useState(false);
-  const [editingBill, setEditingBill] = useState<Bill | null>(null);
-  const [formData, setFormData] = useState({ description: '', amount: '', day: '' });
+  const [isLoading, setIsLoading] = useState(false);
 
-  const currencyFormatter = new Intl.NumberFormat('pt-BR', {
-    style: 'currency',
-    currency: 'BRL',
-  });
+  // Form States
+  const [desc, setDesc] = useState('');
+  const [val, setVal] = useState('');
+  const [day, setDay] = useState('10');
+  const [cat, setCat] = useState('Contas Fixas');
 
-  // Separação lógica: Mês Atual vs Futuro
-  const sections = useMemo(() => {
-    const now = new Date();
-    const currentMonth = now.getMonth();
-    const currentYear = now.getFullYear();
+  const format = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v);
 
-    const recurring = bills.filter(b => b.isRecurring);
-
-    const currentMonthBills = recurring.filter(b => {
-      const d = new Date(b.dueDate);
-      return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
-    }).sort((a, b) => new Date(a.dueDate).getDate() - new Date(b.dueDate).getDate());
-
-    const futureBills = recurring.filter(b => {
-      const d = new Date(b.dueDate);
-      // É futuro se o ano for maior ou se o mês for maior no mesmo ano
-      return d.getFullYear() > currentYear || (d.getFullYear() === currentYear && d.getMonth() > currentMonth);
-    }).sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
-
-    return { currentMonthBills, futureBills };
-  }, [bills]);
-
-  const handleConfirmPayment = (method: string) => {
-    if (payingBillId) {
-      onPayBill(payingBillId, method);
-      setPayingBillId(null);
+  const filteredBills = useMemo(() => {
+    const active = bills.filter(b => b.isActive !== false);
+    if (activeTab === 'pending') {
+      return active.filter(b => !b.isPaid).sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
     }
+    return active.filter(b => b.isPaid).sort((a, b) => new Date(b.paidAt || b.dueDate).getTime() - new Date(a.paidAt || a.dueDate).getTime());
+  }, [bills, activeTab]);
+
+  const handleAddBill = async () => {
+    if (!desc || !val || !day) return;
+    setIsLoading(true);
+    await dispatchEvent(uid, {
+      type: 'CREATE_REMINDER',
+      payload: { 
+        description: desc, 
+        amount: parseFloat(val), 
+        dueDay: parseInt(day), 
+        category: cat,
+        recurring: true 
+      },
+      source: 'ui',
+      createdAt: new Date()
+    });
+    setDesc(''); setVal(''); setShowAddForm(false);
+    setIsLoading(false);
   };
 
-  const handleSaveBill = () => {
-    if (formData.description && formData.amount && formData.day) {
-      const today = new Date();
-      const dueDate = new Date(today.getFullYear(), today.getMonth(), parseInt(formData.day)).toISOString();
-      
-      if (editingBill) {
-        onUpdateBill(editingBill.id, {
-          description: formData.description,
-          amount: parseFloat(formData.amount),
-          dueDate: dueDate
-        });
-        setEditingBill(null);
-      } else {
-        onAddBill({
-          description: formData.description,
-          amount: parseFloat(formData.amount),
-          dueDate: dueDate,
-          isRecurring: true,
-          remindersEnabled: true,
-          frequency: 'MONTHLY'
-        });
-      }
-      setFormData({ description: '', amount: '', day: '' });
-      setIsAdding(false);
-    }
+  const handlePayBill = async (method: PaymentMethod) => {
+    if (!payingBillId) return;
+    setIsLoading(true);
+    await dispatchEvent(uid, {
+      type: 'PAY_REMINDER',
+      payload: { billId: payingBillId, paymentMethod: method },
+      source: 'ui',
+      createdAt: new Date()
+    });
+    setPayingBillId(null);
+    setIsLoading(false);
   };
 
-  const startEdit = (bill: Bill) => {
-    const day = new Date(bill.dueDate).getDate().toString();
-    setFormData({ description: bill.description, amount: bill.amount.toString(), day: day });
-    setEditingBill(bill);
-    setIsAdding(true);
+  const handleDelete = async (id: string) => {
+    if (!window.confirm("Deseja remover este lembrete?")) return;
+    await dispatchEvent(uid, {
+      type: 'DELETE_ITEM',
+      payload: { id, collection: 'reminders' },
+      source: 'ui',
+      createdAt: new Date()
+    });
   };
-
-  const BillCard: React.FC<{ bill: Bill }> = ({ bill }) => (
-    <div className={`p-5 rounded-[2.5rem] border-2 flex items-center justify-between transition-all animate-in slide-in-from-right group ${bill.isPaid ? 'bg-gray-50 border-transparent opacity-50' : 'bg-white border-gray-100 shadow-sm'}`}>
-      <div className="flex-1 pr-4">
-        <div className="flex items-center gap-2">
-           <p className="text-sm font-black text-gray-800 uppercase tracking-tighter">{bill.description}</p>
-           {!bill.isPaid && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>}
-        </div>
-        <p className="text-[10px] text-slate-400 font-black uppercase mt-1">
-          {new Date(bill.dueDate).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })}
-        </p>
-      </div>
-      <div className="flex items-center gap-2">
-        <p className="text-sm font-black text-gray-900 mr-2">{currencyFormatter.format(bill.amount)}</p>
-        
-        {!bill.isPaid && (
-          <button 
-            onClick={() => setPayingBillId(bill.id)} 
-            className="w-10 h-10 rounded-2xl flex items-center justify-center bg-emerald-500 text-white shadow-lg active:scale-90"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>
-          </button>
-        )}
-
-        <button 
-          onClick={() => startEdit(bill)}
-          className="w-10 h-10 rounded-2xl flex items-center justify-center bg-slate-100 text-slate-400 hover:text-slate-900 transition-colors"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-        </button>
-
-        <button 
-          onClick={() => onDeleteBill(bill.id)} 
-          className="w-10 h-10 rounded-2xl flex items-center justify-center bg-rose-50 text-rose-300 hover:text-rose-600 transition-colors"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
-        </button>
-      </div>
-    </div>
-  );
 
   return (
-    <div className="flex flex-col h-full bg-[#f8fafc] overflow-hidden relative">
-      {payingBillId && (
-        <div className="fixed inset-0 z-[1000] bg-slate-900/60 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in">
-          <div className="bg-white w-full max-w-xs rounded-[3rem] p-8 shadow-2xl border border-gray-100 text-center">
-            <h3 className="text-xl font-black text-gray-900 mb-6 tracking-tighter italic uppercase">Confirmar Pagamento</h3>
-            <div className="grid grid-cols-1 gap-2">
-              {['PIX', 'Cartão', 'Dinheiro'].map(method => (
-                <button 
-                  key={method} onClick={() => handleConfirmPayment(method)}
-                  className="w-full bg-slate-50 hover:bg-emerald-500 hover:text-white font-black py-4 rounded-2xl transition-all text-[10px] uppercase tracking-widest"
-                >
-                  {method}
-                </button>
-              ))}
-              <button onClick={() => setPayingBillId(null)} className="w-full text-rose-500 font-black py-3 text-[9px] uppercase tracking-widest mt-2">Cancelar</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {isAdding && (
-        <div className="fixed inset-0 z-[1000] bg-slate-900/60 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in">
-          <div className="bg-white w-full max-w-xs rounded-[3rem] p-8 shadow-2xl border border-gray-100">
-            <h3 className="text-xl font-black text-gray-900 mb-6 tracking-tighter italic text-center uppercase">
-              {editingBill ? 'Editar Gasto Fixo' : 'Novo Gasto Fixo'}
-            </h3>
-            <div className="space-y-4">
-               <input 
-                placeholder="Descrição (Ex: Aluguel)" className="w-full bg-gray-50 p-4 rounded-2xl outline-none font-bold text-sm"
-                value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})}
-               />
-               <div className="grid grid-cols-2 gap-2">
-                 <input 
-                  placeholder="Valor R$" type="number" className="w-full bg-gray-50 p-4 rounded-2xl outline-none font-bold text-sm"
-                  value={formData.amount} onChange={e => setFormData({...formData, amount: e.target.value})}
-                 />
-                 <input 
-                  placeholder="Dia Venc." type="number" className="w-full bg-gray-50 p-4 rounded-2xl outline-none font-bold text-sm"
-                  value={formData.day} onChange={e => setFormData({...formData, day: e.target.value})}
-                 />
-               </div>
-               <button 
-                onClick={handleSaveBill}
-                className="w-full bg-emerald-500 text-white font-black py-5 rounded-2xl shadow-xl uppercase text-[10px] tracking-widest"
-               >
-                 Confirmar
-               </button>
-               <button onClick={() => { setIsAdding(false); setEditingBill(null); }} className="w-full text-gray-400 font-bold py-3 text-[9px] uppercase tracking-widest">Cancelar</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      <div className="p-8 pb-4 flex justify-between items-center">
+    <div className="p-6 space-y-6 animate-fade pb-32">
+      <header className="flex justify-between items-end">
         <div>
-          <h2 className="text-3xl font-black text-gray-900 tracking-tighter italic">Lembretes</h2>
-          <p className="text-[10px] text-emerald-600 font-black uppercase tracking-widest mt-1">Gestão de Compromissos Fixos</p>
+          <h2 className="text-[10px] font-black text-[#00a884] uppercase tracking-[0.4em] mb-1">Agenda Mensal</h2>
+          <h1 className="text-3xl font-black text-[#111b21] uppercase italic tracking-tighter">Lembretes</h1>
         </div>
         <button 
-          onClick={() => setIsAdding(true)}
-          className="p-4 bg-slate-900 text-white rounded-2xl shadow-lg active:scale-90"
+          onClick={() => setShowAddForm(true)}
+          className="bg-[#00a884] text-white px-4 py-2 rounded-xl text-[10px] font-black uppercase shadow-lg active:scale-95 transition-all"
         >
-          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          + Nova Conta
+        </button>
+      </header>
+
+      {/* Tabs */}
+      <div className="flex bg-white/50 p-1 rounded-2xl border border-[#d1d7db]">
+        <button 
+          onClick={() => setActiveTab('pending')}
+          className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'pending' ? 'bg-white text-[#00a884] shadow-sm' : 'text-[#667781]'}`}
+        >
+          Pendentes
+        </button>
+        <button 
+          onClick={() => setActiveTab('history')}
+          className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'history' ? 'bg-white text-[#111b21] shadow-sm' : 'text-[#667781]'}`}
+        >
+          Histórico
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-6 space-y-8 no-scrollbar pb-32">
-        {/* SEÇÃO: Mês Atual */}
-        <section className="space-y-4">
-          <div className="flex items-center gap-2 px-2">
-            <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-            <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Contas deste mês</h3>
-          </div>
-          {sections.currentMonthBills.length > 0 ? sections.currentMonthBills.map(bill => (
-            <BillCard key={bill.id} bill={bill} />
-          )) : (
-            <div className="p-10 text-center border-4 border-dashed border-gray-100 rounded-[3rem]">
-              <p className="text-[10px] font-black text-gray-300 uppercase italic">Nada pendente para este mês.</p>
-            </div>
-          )}
-        </section>
-
-        {/* SEÇÃO: Recorrências Futuras */}
-        <section className="space-y-4">
-          <div className="flex items-center gap-2 px-2">
-            <span className="w-2 h-2 rounded-full bg-slate-300"></span>
-            <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Próximos Meses</h3>
-          </div>
-          {sections.futureBills.length > 0 ? (
-            <div className="space-y-3">
-              {sections.futureBills.map(bill => (
-                <div key={bill.id} className="p-4 rounded-3xl bg-white border border-gray-100 flex items-center justify-between opacity-60">
-                  <div>
-                    <p className="text-[11px] font-black text-gray-800 uppercase tracking-tight">{bill.description}</p>
-                    <p className="text-[9px] font-bold text-slate-400">
-                      Vencimento: {new Date(bill.dueDate).toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' })}
-                    </p>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-xs font-black text-gray-400">{currencyFormatter.format(bill.amount)}</p>
-                    <button 
-                      onClick={() => onDeleteBill(bill.id)}
-                      className="text-[8px] font-black text-rose-300 uppercase mt-1"
-                    >
-                      Remover
-                    </button>
-                  </div>
+      <div className="space-y-3">
+        {filteredBills.length > 0 ? filteredBills.map(bill => {
+          const isLate = !bill.isPaid && new Date(bill.dueDate) < new Date();
+          return (
+            <div key={bill.id} className={`group bg-white p-5 rounded-3xl border border-[#d1d7db] flex justify-between items-center shadow-sm relative transition-all ${bill.isPaid ? 'opacity-70' : isLate ? 'border-l-4 border-l-red-500' : 'border-l-4 border-l-[#00a884]'}`}>
+              <div>
+                <h4 className={`text-sm font-black ${isLate ? 'text-red-600' : 'text-[#111b21]'} mb-1`}>{bill.description}</h4>
+                <div className="flex gap-3 items-center">
+                  <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded-full ${bill.isPaid ? 'bg-gray-100 text-gray-500' : isLate ? 'bg-red-50 text-red-500' : 'bg-[#d9fdd3] text-[#00a884]'}`}>
+                    {bill.isPaid ? 'Pago' : isLate ? 'Atrasado' : 'Pendente'}
+                  </span>
+                  <span className="text-[10px] text-[#667781] font-bold">
+                    Vence: {new Date(bill.dueDate).toLocaleDateString()}
+                  </span>
+                  {bill.recurring && <span className="text-[14px]" title="Recorrente">🔁</span>}
                 </div>
-              ))}
+              </div>
+              <div className="text-right flex flex-col items-end gap-2">
+                <p className="text-sm font-black text-[#111b21]">{format(bill.amount)}</p>
+                <div className="flex gap-2">
+                  {!bill.isPaid && (
+                    <button 
+                      onClick={() => setPayingBillId(bill.id)}
+                      className="px-4 py-1.5 bg-[#00a884] text-white rounded-lg text-[10px] font-black uppercase shadow-sm active:scale-95"
+                    >
+                      Paguei
+                    </button>
+                  )}
+                  <button onClick={() => handleDelete(bill.id)} className="opacity-0 group-hover:opacity-100 p-1.5 text-red-300 hover:text-red-500 transition-all">🗑️</button>
+                </div>
+              </div>
             </div>
-          ) : (
-            <div className="p-6 text-center border-2 border-dashed border-gray-50 rounded-[2.5rem]">
-              <p className="text-[9px] font-black text-gray-200 uppercase italic">Sem previsões futuras.</p>
-            </div>
-          )}
-        </section>
+          );
+        }) : (
+          <div className="text-center py-24 bg-white rounded-[3rem] border border-dashed border-[#d1d7db] opacity-40">
+            <p className="text-4xl mb-4">📅</p>
+            <p className="text-[10px] font-black uppercase tracking-widest">Tudo limpo por aqui</p>
+          </div>
+        )}
       </div>
+
+      {/* Modal Pagamento */}
+      {payingBillId && (
+        <div className="fixed inset-0 z-[1000] bg-black/60 backdrop-blur-sm flex items-center justify-center p-6">
+          <div className="bg-white w-full max-w-sm rounded-[3rem] p-10 shadow-2xl relative animate-fade">
+            <button onClick={() => setPayingBillId(null)} className="absolute top-8 right-8 text-[#667781] font-black text-xl">✕</button>
+            <h3 className="text-xl font-black text-[#111b21] uppercase italic text-center mb-8">Confirmar Pagamento</h3>
+            
+            <div className="grid grid-cols-1 gap-3">
+              <button 
+                onClick={() => handlePayBill('PIX')}
+                className="w-full bg-[#00a884] text-white font-black py-4 rounded-2xl text-[11px] uppercase shadow-md flex items-center justify-center gap-3 active:scale-95 transition-all"
+              >
+                <span>⚡</span> PIX / Saldo em Conta
+              </button>
+              <button 
+                onClick={() => handlePayBill('CASH')}
+                className="w-full bg-[#111b21] text-white font-black py-4 rounded-2xl text-[11px] uppercase shadow-md flex items-center justify-center gap-3 active:scale-95 transition-all"
+              >
+                <span>💵</span> Dinheiro Vivo
+              </button>
+              <button 
+                onClick={() => setPayingBillId(null)}
+                className="w-full text-[10px] font-black text-gray-400 uppercase py-2"
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Adicionar Conta */}
+      {showAddForm && (
+        <div className="fixed inset-0 z-[1000] bg-black/60 backdrop-blur-sm flex items-center justify-center p-6">
+          <div className="bg-white w-full max-w-sm rounded-[3rem] p-10 shadow-2xl relative animate-fade">
+            <button onClick={() => setShowAddForm(false)} className="absolute top-8 right-8 text-[#667781] font-black text-xl">✕</button>
+            <h3 className="text-xl font-black text-[#111b21] uppercase italic mb-8 text-center">Nova Conta Recorrente</h3>
+            
+            <div className="space-y-4">
+              <div className="space-y-1">
+                <label className="text-[9px] font-black text-gray-400 uppercase ml-2 tracking-widest">Descrição</label>
+                <input className="w-full bg-[#f0f2f5] rounded-2xl p-4 text-sm font-bold outline-none focus:border-[#00a884] border border-transparent" placeholder="Ex: Internet, Aluguel..." value={desc} onChange={e => setDesc(e.target.value)} />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-[9px] font-black text-gray-400 uppercase ml-2 tracking-widest">Valor R$</label>
+                  <input type="number" className="w-full bg-[#f0f2f5] rounded-2xl p-4 text-sm font-bold outline-none" placeholder="0,00" value={val} onChange={e => setVal(e.target.value)} />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[9px] font-black text-gray-400 uppercase ml-2 tracking-widest">Dia Venc.</label>
+                  <select className="w-full bg-[#f0f2f5] rounded-2xl p-4 text-sm font-bold outline-none" value={day} onChange={e => setDay(e.target.value)}>
+                    {Array.from({length: 31}, (_, i) => i + 1).map(d => (
+                      <option key={d} value={d}>{d}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <div className="space-y-1">
+                <label className="text-[9px] font-black text-gray-400 uppercase ml-2 tracking-widest">Categoria</label>
+                <input className="w-full bg-[#f0f2f5] rounded-2xl p-4 text-sm font-bold outline-none" value={cat} onChange={e => setCat(e.target.value)} />
+              </div>
+              <button 
+                onClick={handleAddBill} 
+                disabled={isLoading}
+                className="w-full bg-[#00a884] text-white py-4 rounded-2xl font-black text-[10px] uppercase shadow-lg mt-4 active:scale-95 transition-all"
+              >
+                {isLoading ? 'Salvando...' : 'Ativar Recorrência Mensal'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

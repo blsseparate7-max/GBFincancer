@@ -1,120 +1,161 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Message } from '../types';
+import { UserSession, Message } from '../types';
+import { parseMessage } from '../services/geminiService';
+import { dispatchEvent } from '../services/eventDispatcher';
 
 interface ChatProps {
+  user: UserSession;
   messages: Message[];
-  onSend: (text: string) => void;
+  setMessages: React.Dispatch<React.SetStateAction<Message[]>>;
 }
 
-const ChatInterface: React.FC<ChatProps> = ({ messages, onSend }) => {
+const ChatInterface: React.FC<ChatProps> = ({ user, messages, setMessages }) => {
   const [input, setInput] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-  }, [messages]);
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [messages, isLoading]);
 
-  const handleSend = () => {
-    if (!input.trim()) return;
-    onSend(input);
+  const handleSend = async (textOverride?: string) => {
+    const messageText = (textOverride || input).trim();
+    if (!messageText) return;
+    
+    // Adiciona mensagem do usuário imediatamente
+    const userMsg: Message = { 
+      id: Date.now().toString(), 
+      text: messageText, 
+      sender: 'user', 
+      timestamp: new Date() 
+    };
+    
+    setMessages(prev => [...prev, userMsg]);
     setInput('');
+    setIsLoading(true);
+
+    try {
+      const result = await parseMessage(messageText, user.name);
+      
+      if (result.event && result.event.type) {
+        await dispatchEvent(user.uid, {
+          ...result.event,
+          source: 'chat',
+          createdAt: new Date()
+        });
+      }
+
+      const aiMsg: Message = { 
+        id: (Date.now() + 1).toString(), 
+        text: result.reply || "Mensagem processada com sucesso.", 
+        sender: 'ai', 
+        timestamp: new Date() 
+      };
+      setMessages(prev => [...prev, aiMsg]);
+    } catch (e) {
+      console.error("Chat Error:", e);
+      setMessages(prev => [...prev, {
+        id: (Date.now() + 1).toString(),
+        text: "Desculpe, tive um problema ao processar. Pode tentar de novo?",
+        sender: 'ai',
+        timestamp: new Date()
+      }]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const startVoiceRecording = () => {
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) return alert("Microfone não suportado no seu navegador.");
+
+    const recognition = new SpeechRecognition();
+    recognition.lang = 'pt-BR';
+    recognition.continuous = false;
+    recognition.interimResults = false;
+
+    recognition.onstart = () => setIsRecording(true);
+    recognition.onresult = (e: any) => {
+      const transcript = e.results[0][0].transcript;
+      if (transcript) handleSend(transcript);
+    };
+    recognition.onerror = () => setIsRecording(false);
+    recognition.onend = () => setIsRecording(false);
+    
+    recognition.start();
   };
 
   return (
-    <div className="flex flex-col h-full relative overflow-hidden bg-[#e5ddd5]">
-      {/* WhatsApp Background Pattern */}
-      <div className="absolute inset-0 whatsapp-pattern z-0"></div>
+    <div className="flex flex-col h-full relative">
+      <div className="absolute inset-0 whatsapp-pattern pointer-events-none z-0"></div>
       
-      {/* Chat Header */}
-      <div className="p-3 bg-[#f0f2f5] border-b border-gray-300 flex items-center justify-between z-20 shrink-0">
-         <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-slate-300 flex items-center justify-center text-lg font-bold text-white shadow-sm overflow-hidden">
-               <span className="text-[#00a884]">GB</span>
-            </div>
-            <div>
-               <h3 className="text-[15px] font-semibold text-gray-900 leading-tight">Assistente Financeiro</h3>
-               <p className="text-[12px] text-gray-500">online</p>
-            </div>
-         </div>
-         <div className="flex gap-5 text-gray-500 pr-3">
-            <button className="hover:text-gray-900 transition-colors">
-               <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-            </button>
-            <button className="hover:text-gray-900 transition-colors">
-               <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/></svg>
-            </button>
-         </div>
-      </div>
-      
-      {/* Message List */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 md:p-6 space-y-3 z-10 no-scrollbar relative">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-3 no-scrollbar pb-24 z-10">
         {messages.length === 0 && (
-          <div className="flex flex-col items-center justify-center h-full">
-             <div className="bg-white/80 backdrop-blur-sm p-8 rounded-3xl shadow-sm border border-gray-200 text-center max-w-xs animate-in zoom-in duration-300">
-                <div className="w-16 h-16 bg-[#00a884] rounded-2xl flex items-center justify-center text-white mx-auto mb-5 text-2xl font-bold">G</div>
-                <h4 className="text-sm font-bold text-gray-800 mb-2">Como posso ajudar?</h4>
-                <p className="text-[12px] text-gray-500 leading-relaxed mb-6">Registre despesas ou peça um resumo das suas finanças.</p>
-                <div className="space-y-2">
-                   {["Gastei 50 no almoço", "Meu saldo?", "Anote minha senha do Pix"].map(cmd => (
-                     <button 
-                      key={cmd}
-                      onClick={() => onSend(cmd)}
-                      className="w-full py-2.5 bg-gray-50 rounded-xl text-[12px] font-semibold text-[#00a884] hover:bg-emerald-50 transition-colors border border-gray-100"
-                     >
-                       {cmd}
-                     </button>
-                   ))}
-                </div>
-             </div>
+          <div className="flex justify-center my-10">
+            <div className="bg-[#fff9c2] px-4 py-2 rounded-lg text-[11px] text-[#54656f] shadow-sm uppercase font-bold border border-[#e1db9f] text-center">
+              🔒 Suas conversas são privadas e protegidas por IA
+            </div>
           </div>
         )}
+        
         {messages.map(msg => (
-          <div key={msg.id} className={`flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'} page-transition`}>
-            <div className={`max-w-[85%] md:max-w-[70%] px-3.5 py-2 text-[14px] relative shadow-sm ${msg.sender === 'user' ? 'chat-bubble-user' : 'chat-bubble-ai'}`}>
-              <p className="whitespace-pre-wrap text-gray-800 leading-normal">{msg.text}</p>
-              <div className="flex items-center justify-end gap-1.5 mt-1 opacity-60">
-                <span className="text-[10px] text-gray-500">
-                  {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                </span>
-                {msg.sender === 'user' && (
-                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#53bdeb" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>
-                )}
+          <div key={msg.id} className={`flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
+            <div className={`max-w-[85%] px-3 py-1.5 text-[14.5px] relative shadow-sm ${msg.sender === 'user' ? 'bubble-user' : 'bubble-ai'}`}>
+              <div className="leading-tight pr-10 whitespace-pre-wrap text-[#111b21]">{msg.text}</div>
+              <div className="text-[10px] text-[#667781] text-right absolute bottom-1 right-2">
+                {new Date(msg.timestamp?.seconds ? msg.timestamp.seconds * 1000 : msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
               </div>
             </div>
           </div>
         ))}
+        {isLoading && (
+          <div className="flex justify-start">
+            <div className="bubble-ai px-4 py-2 text-xs text-[#667781] italic flex items-center gap-2">
+              <div className="flex gap-1">
+                <div className="w-1.5 h-1.5 bg-gray-300 rounded-full animate-bounce"></div>
+                <div className="w-1.5 h-1.5 bg-gray-300 rounded-full animate-bounce [animation-delay:0.2s]"></div>
+                <div className="w-1.5 h-1.5 bg-gray-300 rounded-full animate-bounce [animation-delay:0.4s]"></div>
+              </div>
+              Digitando...
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* Input Area */}
-      <div className="p-3 bg-[#f0f2f5] z-20 shrink-0">
-        <div className="max-w-5xl mx-auto flex gap-3 items-center">
-          <button className="p-2 text-gray-500 hover:text-gray-700 transition-colors">
-             <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>
-          </button>
-          <button className="p-2 text-gray-500 hover:text-gray-700 transition-colors">
-             <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
-          </button>
-          <div className="flex-1 bg-white rounded-xl shadow-sm border border-gray-100 flex items-center px-4 py-2">
-             <input 
-              className="w-full bg-transparent text-[14px] font-medium text-gray-800 focus:outline-none placeholder:text-gray-300"
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleSend()}
-              placeholder="Digite uma mensagem"
-             />
-          </div>
-          <button 
-            onClick={handleSend}
-            className={`w-12 h-12 bg-[#00a884] text-white rounded-full flex items-center justify-center shadow-lg active:scale-90 transition-transform ${!input.trim() ? 'opacity-90' : 'opacity-100'}`}
-          >
-            {input.trim() ? (
-              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
-            ) : (
-              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/></svg>
-            )}
-          </button>
+      <div className="p-2.5 bg-[#f0f2f5] flex items-center gap-2 sticky bottom-0 z-20">
+        <button 
+          onClick={startVoiceRecording}
+          className={`w-12 h-12 flex items-center justify-center rounded-full transition-all ${isRecording ? 'bg-red-500 text-white animate-pulse' : 'text-[#54656f] hover:bg-gray-200'}`}
+        >
+          <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor">
+            <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/><path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
+          </svg>
+        </button>
+
+        <div className="flex-1 bg-white rounded-xl flex items-center px-4 py-3 shadow-sm">
+          <input 
+            className="w-full bg-transparent text-[15.5px] text-[#111b21] focus:outline-none placeholder-[#667781]"
+            placeholder="Mensagem"
+            value={input}
+            onChange={e => setInput(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && !isLoading && handleSend()}
+            autoFocus
+          />
         </div>
+        
+        <button 
+          onClick={() => handleSend()}
+          disabled={!input.trim() || isLoading}
+          className="w-12 h-12 bg-[#00a884] text-white rounded-full flex items-center justify-center disabled:opacity-50 shadow-md active:scale-90 transition-transform"
+        >
+          <svg viewBox="0 0 24 24" height="24" width="24" fill="currentColor">
+            <path d="M1.101,21.757L23.8,12.028L1.101,2.3l0.011,7.912l13.623,1.816L1.112,13.845 L1.101,21.757z"></path>
+          </svg>
+        </button>
       </div>
     </div>
   );

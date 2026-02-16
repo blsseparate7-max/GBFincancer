@@ -1,259 +1,314 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { CustomerData, SubscriptionPlan } from '../types';
-import { isFirebaseConfigured } from '../services/firebaseConfig';
-import { syncUserData } from '../services/databaseService';
-import { getCEOSummary } from '../services/geminiService';
+import { CustomerData, SubscriptionPlan, AdminConfig, AuditLog } from '../types';
+import { db } from '../services/firebaseConfig';
+import { collection, onSnapshot, query, orderBy, limit, doc, getDoc } from 'firebase/firestore';
+import { dispatchEvent } from '../services/eventDispatcher';
 
-interface AdminPanelProps {
-  customers: CustomerData[];
-  onUpdateUserStatus?: (userId: string, status: 'ACTIVE' | 'EXPIRED' | 'PENDING') => void;
-}
-
-const AdminPanel: React.FC<AdminPanelProps> = ({ customers, onUpdateUserStatus }) => {
-  const [activeSubTab, setActiveSubTab] = useState<'kpis' | 'users' | 'strategy' | 'logs'>('kpis');
-  const [selectedUser, setSelectedUser] = useState<CustomerData | null>(null);
-  const [isUpdating, setIsUpdating] = useState(false);
-  const [ceoInsight, setCeoInsight] = useState<string>('O Gemini Pro está analisando sua base de dados...');
+const AdminPanel: React.FC<{ currentAdminId: string }> = ({ currentAdminId }) => {
+  const [customers, setCustomers] = useState<CustomerData[]>([]);
+  const [activeSubTab, setActiveSubTab] = useState<'dashboard' | 'users' | 'messages' | 'config'>('dashboard');
+  const [config, setConfig] = useState<AdminConfig | null>(null);
+  const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
   
-  const firebaseReady = isFirebaseConfigured();
+  // States para Forms
+  const [msgTitle, setMsgTitle] = useState('');
+  const [msgBody, setMsgBody] = useState('');
+  const [targetUser, setTargetUser] = useState<string>(''); // Vazio = Global
 
   useEffect(() => {
-    const fetchInsight = async () => {
-      if (customers.length > 0) {
-        const insight = await getCEOSummary(customers);
-        setCeoInsight(insight);
-      }
-    };
-    fetchInsight();
-  }, [customers.length]);
+    // Escuta Usuários (Privacidade: apenas campos permitidos)
+    const unsubUsers = onSnapshot(query(collection(db, "users"), orderBy("createdAt", "desc")), (snap) => {
+      setCustomers(snap.docs.map(d => {
+        const data = d.data();
+        return {
+          uid: d.id,
+          userId: data.userId || d.id,
+          userName: data.name || 'Usuário',
+          email: data.email || 'N/A',
+          status: data.status || 'active',
+          role: data.role || 'USER',
+          createdAt: data.createdAt,
+          lastLogin: data.lastLogin
+        } as any;
+      }));
+    });
 
-  const metrics = useMemo(() => {
-    const activeSubscribers = customers.filter(c => c.subscriptionStatus === 'ACTIVE');
-    
-    // MRR (Monthly Recurring Revenue) - Valores fictícios baseados no seu plano de R$ 9,90
-    const mrr = activeSubscribers.reduce((acc, curr) => {
-      if (curr.plan === 'MONTHLY') return acc + 9.90;
-      if (curr.plan === 'YEARLY') return acc + (118.80 / 12);
-      return acc;
-    }, 0);
-    
-    // Churn Rate
-    const expiredCount = customers.filter(c => c.subscriptionStatus === 'EXPIRED').length;
-    const churnRate = customers.length > 0 ? (expiredCount / customers.length) * 100 : 0;
-    
-    // ARPU (Average Revenue Per User)
-    const arpu = activeSubscribers.length > 0 ? mrr / activeSubscribers.length : 0;
+    // Escuta Logs
+    const unsubLogs = onSnapshot(query(collection(db, "admin", "auditLogs", "entries"), orderBy("createdAt", "desc"), limit(20)), (snap) => {
+      setAuditLogs(snap.docs.map(d => ({ id: d.id, ...d.data() } as AuditLog)));
+    });
 
-    return { mrr, churnRate, arpu, total: customers.length, activeCount: activeSubscribers.length };
+    // Escuta Config
+    const unsubConfig = onSnapshot(doc(db, "admin", "config"), (d) => {
+      if (d.exists()) setConfig(d.data() as AdminConfig);
+    });
+
+    return () => { unsubUsers(); unsubLogs(); unsubConfig(); };
+  }, []);
+
+  const stats = useMemo(() => {
+    const total = customers.length;
+    const active = customers.filter(c => c.status === 'active').length;
+    const blocked = total - active;
+    const admins = customers.filter(c => c.role === 'ADMIN').length;
+    return { total, active, blocked, admins };
   }, [customers]);
 
-  const handleStatusUpdate = async (userId: string, newStatus: 'ACTIVE' | 'EXPIRED' | 'PENDING') => {
-    setIsUpdating(true);
-    const success = await syncUserData(userId, { subscriptionStatus: newStatus });
-    if (success && onUpdateUserStatus) {
-      onUpdateUserStatus(userId, newStatus);
-      if (selectedUser) setSelectedUser({ ...selectedUser, subscriptionStatus: newStatus });
-    }
-    setIsUpdating(false);
+  const handleUpdateUser = async (targetUid: string, updates: any) => {
+    if (!window.confirm("Confirmar alteração de status/permissão?")) return;
+    setIsLoading(true);
+    await dispatchEvent(currentAdminId, {
+      type: 'ADMIN_UPDATE_USER',
+      payload: { targetUid, updates, adminId: currentAdminId },
+      source: 'admin',
+      createdAt: new Date()
+    });
+    setIsLoading(false);
   };
 
-  const currencyFormatter = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
+  const handleSendBroadcast = async () => {
+    if (!msgTitle || !msgBody) return;
+    setIsLoading(true);
+    await dispatchEvent(currentAdminId, {
+      type: 'ADMIN_SEND_BROADCAST',
+      payload: { 
+        title: msgTitle, 
+        body: msgBody, 
+        targetUid: targetUser || null,
+        adminId: currentAdminId 
+      },
+      source: 'admin',
+      createdAt: new Date()
+    });
+    setMsgTitle(''); setMsgBody(''); setTargetUser('');
+    setIsLoading(false);
+    alert("Mensagem enviada com sucesso!");
+  };
+
+  const handleUpdateConfig = async (newConfig: Partial<AdminConfig>) => {
+    await dispatchEvent(currentAdminId, {
+      type: 'ADMIN_UPDATE_CONFIG',
+      payload: { config: newConfig, adminId: currentAdminId },
+      source: 'admin',
+      createdAt: new Date()
+    });
+  };
 
   return (
-    <div className="h-full flex flex-col bg-[#f8fafc] overflow-hidden font-sans">
-      {/* Header Executivo */}
-      <div className="bg-slate-900 text-white p-8 pb-12 rounded-b-[3.5rem] shadow-2xl shrink-0">
-        <div className="flex justify-between items-center mb-8">
-          <div>
-            <h2 className="text-2xl font-black italic tracking-tighter uppercase text-emerald-400">CEO Control Center</h2>
-            <p className="text-[9px] text-slate-400 font-bold uppercase tracking-[0.2em]">Gestão de Assinaturas & Crescimento</p>
+    <div className="h-full flex flex-col bg-[#0b141a] text-[#e9edef] overflow-hidden animate-fade">
+      {/* Sidebar Admin Interna */}
+      <div className="flex-1 flex overflow-hidden">
+        <aside className="w-64 bg-[#111b21] border-r border-white/5 flex flex-col shrink-0">
+          <div className="p-6 border-b border-white/5">
+            <h2 className="text-xl font-black italic text-[#00a884] tracking-tighter uppercase">Painel de Controle</h2>
+            <p className="text-[10px] text-[#8696a0] font-bold uppercase tracking-widest mt-1">Audit Mode v4.0</p>
           </div>
-          <div className={`px-3 py-1 rounded-full text-[8px] font-black uppercase ${firebaseReady ? 'bg-emerald-500/20 text-emerald-400' : 'bg-rose-500/20 text-rose-400'}`}>
-            {firebaseReady ? 'Cloud Online' : 'Local Storage Only'}
-          </div>
-        </div>
-
-        <nav className="flex gap-2 overflow-x-auto no-scrollbar">
-          {[
-            { id: 'kpis', label: 'Métricas' },
-            { id: 'users', label: 'Clientes' },
-            { id: 'strategy', label: 'Estratégia AI' },
-            { id: 'logs', label: 'Atividade' }
-          ].map(tab => (
-            <button 
-              key={tab.id}
-              onClick={() => setActiveSubTab(tab.id as any)}
-              className={`px-5 py-2.5 rounded-2xl text-[9px] font-black uppercase tracking-widest transition-all shrink-0 ${activeSubTab === tab.id ? 'bg-emerald-500 text-white shadow-lg' : 'bg-white/5 text-slate-400 hover:text-white'}`}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </nav>
-      </div>
-
-      <div className="flex-1 overflow-y-auto p-6 -mt-6 no-scrollbar pb-32">
-        {activeSubTab === 'kpis' && (
-          <div className="space-y-4 animate-in fade-in slide-in-from-bottom duration-500">
-            {/* Grid de KPIs Principais */}
-            <div className="grid grid-cols-2 gap-4">
-              <div className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-slate-100">
-                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Receita Mensal (MRR)</p>
-                <p className="text-2xl font-black text-slate-900">{currencyFormatter.format(metrics.mrr)}</p>
-              </div>
-              <div className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-slate-100">
-                <p className="text-[9px] font-black text-rose-500 uppercase tracking-widest mb-1">Churn Rate</p>
-                <p className="text-2xl font-black text-rose-600">{metrics.churnRate.toFixed(1)}%</p>
-              </div>
-              <div className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-slate-100">
-                <p className="text-[9px] font-black text-emerald-500 uppercase tracking-widest mb-1">Clientes Ativos</p>
-                <p className="text-2xl font-black text-slate-900">{metrics.activeCount}</p>
-              </div>
-              <div className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-slate-100">
-                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Ticket Médio</p>
-                <p className="text-2xl font-black text-slate-900">{currencyFormatter.format(metrics.arpu)}</p>
-              </div>
-            </div>
-
-            {/* Health Score da Base */}
-            <div className="bg-white p-8 rounded-[3rem] shadow-sm border border-slate-100">
-               <h3 className="text-[10px] font-black text-slate-400 uppercase mb-6 tracking-widest">Retenção da Base</h3>
-               <div className="w-full h-4 bg-slate-50 rounded-full overflow-hidden p-1 shadow-inner">
-                 <div 
-                   className="h-full bg-emerald-500 rounded-full transition-all duration-1000" 
-                   style={{ width: `${(metrics.activeCount / (metrics.total || 1)) * 100}%` }}
-                 ></div>
-               </div>
-               <div className="flex justify-between mt-4">
-                 <p className="text-[9px] font-bold text-slate-400 uppercase">{metrics.activeCount} Ativos</p>
-                 <p className="text-[9px] font-bold text-slate-400 uppercase">{metrics.total - metrics.activeCount} Expirados</p>
-               </div>
-            </div>
-          </div>
-        )}
-
-        {activeSubTab === 'users' && (
-          <div className="space-y-3 animate-in fade-in duration-300">
-            <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4 mb-2">Base de Clientes</h3>
-            {customers.map(c => (
-              <div 
-                key={c.userId} 
-                onClick={() => setSelectedUser(c)}
-                className="bg-white p-5 rounded-[2rem] flex items-center justify-between border border-slate-50 hover:border-emerald-200 transition-all cursor-pointer group shadow-sm"
+          
+          <nav className="flex-1 p-3 space-y-1">
+            {[
+              { id: 'dashboard', label: 'Dashboard', icon: '📊' },
+              { id: 'users', label: 'Membros', icon: '👥' },
+              { id: 'messages', label: 'Comunicados', icon: '📢' },
+              { id: 'config', label: 'Sistema', icon: '⚙️' },
+            ].map(tab => (
+              <button 
+                key={tab.id}
+                onClick={() => setActiveSubTab(tab.id as any)}
+                className={`w-full flex items-center gap-3 p-3.5 rounded-xl text-xs font-bold transition-all ${activeSubTab === tab.id ? 'bg-[#2a3942] text-[#00a884]' : 'text-[#8696a0] hover:bg-white/5'}`}
               >
-                <div className="flex items-center gap-4">
-                  <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-black text-lg ${c.subscriptionStatus === 'ACTIVE' ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'}`}>
-                    {c.userName.charAt(0).toUpperCase()}
-                  </div>
-                  <div>
-                    <p className="font-black text-slate-900 text-sm group-hover:text-emerald-600 transition-colors">{c.userName}</p>
-                    <p className="text-[8px] font-black text-slate-300 uppercase tracking-widest">{c.plan} • {c.subscriptionStatus}</p>
-                  </div>
+                <span className="text-lg">{tab.icon}</span>
+                {tab.label}
+              </button>
+            ))}
+          </nav>
+
+          <div className="p-4 bg-[#202c33] border-t border-white/5">
+            <p className="text-[9px] font-black text-[#8696a0] uppercase text-center italic">Privacidade Total Ativada 🔒</p>
+          </div>
+        </aside>
+
+        {/* Conteúdo Admin */}
+        <main className="flex-1 overflow-y-auto p-8 no-scrollbar pb-32">
+          {activeSubTab === 'dashboard' && (
+            <div className="space-y-8 animate-fade">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div className="bg-[#111b21] p-6 rounded-3xl border border-white/5">
+                  <p className="text-[9px] font-black text-[#8696a0] uppercase mb-1">Membros Totais</p>
+                  <h3 className="text-3xl font-black">{stats.total}</h3>
                 </div>
-                <div className="text-right">
-                  <p className="text-xs font-black text-slate-900">{c.transactions?.length || 0} Lanç.</p>
-                  <p className="text-[8px] font-bold text-slate-300 uppercase">Ver detalhes →</p>
+                <div className="bg-[#111b21] p-6 rounded-3xl border border-white/5">
+                  <p className="text-[9px] font-black text-[#8696a0] uppercase mb-1">Status Ativo</p>
+                  <h3 className="text-3xl font-black text-[#00a884]">{stats.active}</h3>
+                </div>
+                <div className="bg-[#111b21] p-6 rounded-3xl border border-white/5">
+                  <p className="text-[9px] font-black text-[#8696a0] uppercase mb-1">Contas Bloqueadas</p>
+                  <h3 className="text-3xl font-black text-rose-500">{stats.blocked}</h3>
+                </div>
+                <div className="bg-[#111b21] p-6 rounded-3xl border border-white/5">
+                  <p className="text-[9px] font-black text-[#8696a0] uppercase mb-1">Administradores</p>
+                  <h3 className="text-3xl font-black text-amber-500">{stats.admins}</h3>
                 </div>
               </div>
-            ))}
-          </div>
-        )}
 
-        {activeSubTab === 'strategy' && (
-          <div className="space-y-6 animate-in fade-in duration-300">
-             <div className="bg-emerald-600 text-white p-8 rounded-[3rem] shadow-xl relative overflow-hidden">
-                <div className="absolute top-0 right-0 p-6 opacity-20">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
+              <div className="space-y-4">
+                <h3 className="text-[10px] font-black text-[#8696a0] uppercase tracking-widest italic">Últimas Ações de Auditoria</h3>
+                <div className="bg-[#111b21] rounded-3xl border border-white/5 overflow-hidden">
+                  {auditLogs.map(log => (
+                    <div key={log.id} className="p-4 border-b border-white/5 flex justify-between items-center text-[11px]">
+                      <div className="flex gap-4 items-center">
+                        <span className="bg-[#2a3942] px-2 py-1 rounded-lg font-black text-[#00a884]">{log.action}</span>
+                        <span className="text-[#8696a0] font-mono">{log.details}</span>
+                      </div>
+                      <span className="text-[#667781]">{new Date(log.createdAt?.seconds * 1000).toLocaleString()}</span>
+                    </div>
+                  ))}
                 </div>
-                <h3 className="text-[10px] font-black uppercase mb-4 tracking-[0.2em] text-emerald-200">Visão Geral da IA Gemini Pro</h3>
-                <p className="text-sm font-bold leading-relaxed italic">"{ceoInsight}"</p>
-             </div>
-             
-             <div className="bg-white p-6 rounded-[2.5rem] border-2 border-dashed border-slate-100">
-                <h4 className="text-[9px] font-black text-slate-400 uppercase mb-4 tracking-widest">Sugestões de Marketing</h4>
-                <ul className="space-y-3">
-                   <li className="text-[11px] font-bold text-slate-600 flex items-center gap-3">
-                     <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full"></span>
-                     Campanha de recuperação para usuários expirados com 20% OFF.
-                   </li>
-                   <li className="text-[11px] font-bold text-slate-600 flex items-center gap-3">
-                     <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full"></span>
-                     Destaque a função de 'Metas' para novos usuários (Melhor Retenção).
-                   </li>
-                </ul>
-             </div>
-          </div>
-        )}
-
-        {activeSubTab === 'logs' && (
-          <div className="space-y-4 animate-in fade-in duration-300">
-            <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-4">Atividade em Tempo Real</h3>
-            <div className="space-y-2">
-              {customers.sort((a,b) => new Date(b.lastActive).getTime() - new Date(a.lastActive).getTime()).map(c => (
-                <div key={c.userId + 'log'} className="bg-white p-4 rounded-2xl flex items-center justify-between border border-slate-50">
-                   <div className="flex items-center gap-3">
-                      <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></div>
-                      <p className="text-[10px] font-bold text-slate-700">
-                        <span className="font-black">{c.userName}</span> sincronizou dados.
-                      </p>
-                   </div>
-                   <p className="text-[8px] font-black text-slate-300 uppercase">{new Date(c.lastActive).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
-                </div>
-              ))}
+              </div>
             </div>
-          </div>
-        )}
+          )}
+
+          {activeSubTab === 'users' && (
+            <div className="space-y-4 animate-fade">
+              <div className="bg-[#111b21] rounded-3xl border border-white/5 overflow-hidden">
+                <table className="w-full text-left">
+                  <thead className="bg-[#202c33] text-[9px] font-black text-[#8696a0] uppercase">
+                    <tr>
+                      <th className="p-4">Membro</th>
+                      <th className="p-4">ID / Email</th>
+                      <th className="p-4">Criado em</th>
+                      <th className="p-4">Status</th>
+                      <th className="p-4 text-right">Ações</th>
+                    </tr>
+                  </thead>
+                  <tbody className="text-sm">
+                    {customers.map(user => (
+                      <tr key={user.uid} className="border-b border-white/5 hover:bg-white/5 transition-all">
+                        <td className="p-4">
+                          <div className="flex items-center gap-3">
+                            <div className="w-8 h-8 rounded-full bg-[#00a884]/20 flex items-center justify-center font-black text-[#00a884] text-xs uppercase">
+                              {user.userName?.charAt(0)}
+                            </div>
+                            <span className="font-bold">{user.userName}</span>
+                          </div>
+                        </td>
+                        <td className="p-4">
+                          <p className="text-[10px] font-mono text-[#8696a0]">{user.userId}</p>
+                          <p className="text-[10px] text-[#667781]">{user.email}</p>
+                        </td>
+                        <td className="p-4 text-[10px] text-[#8696a0]">
+                          {user.createdAt ? new Date(user.createdAt).toLocaleDateString() : 'N/A'}
+                        </td>
+                        <td className="p-4">
+                          <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${user.status === 'active' ? 'bg-[#d9fdd3]/10 text-[#00a884]' : 'bg-rose-500/10 text-rose-500'}`}>
+                            {user.status}
+                          </span>
+                        </td>
+                        <td className="p-4 text-right space-x-2">
+                          <button 
+                            onClick={() => handleUpdateUser(user.uid, { status: user.status === 'active' ? 'blocked' : 'active' })}
+                            className={`p-2 rounded-xl transition-all ${user.status === 'active' ? 'bg-rose-500/10 text-rose-500' : 'bg-[#00a884]/10 text-[#00a884]'}`}
+                            title={user.status === 'active' ? 'Bloquear' : 'Desbloquear'}
+                          >
+                            {user.status === 'active' ? '🚫' : '✅'}
+                          </button>
+                          <button 
+                            onClick={() => handleUpdateUser(user.uid, { role: user.role === 'ADMIN' ? 'USER' : 'ADMIN' })}
+                            className="p-2 bg-amber-500/10 text-amber-500 rounded-xl"
+                            title="Alternar Role"
+                          >
+                            👑
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {activeSubTab === 'messages' && (
+            <div className="max-w-xl mx-auto space-y-8 animate-fade">
+              <div className="bg-[#111b21] p-8 rounded-[3rem] border border-white/5 space-y-6">
+                <header className="text-center">
+                  <h3 className="text-xl font-black italic tracking-tighter uppercase text-[#00a884]">Broadcast Oficial</h3>
+                  <p className="text-[10px] text-[#8696a0] font-bold uppercase tracking-widest mt-1">Envio de Mensagens em Massa</p>
+                </header>
+
+                <div className="space-y-4">
+                  <div className="space-y-1">
+                    <label className="text-[9px] font-black text-[#8696a0] uppercase ml-2">Título da Mensagem</label>
+                    <input className="w-full bg-[#202c33] rounded-2xl p-4 text-sm font-bold outline-none border border-transparent focus:border-[#00a884]" placeholder="Ex: Manutenção Programada" value={msgTitle} onChange={e => setMsgTitle(e.target.value)} />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[9px] font-black text-[#8696a0] uppercase ml-2">Corpo da Mensagem</label>
+                    <textarea className="w-full bg-[#202c33] rounded-2xl p-4 text-sm font-medium outline-none border border-transparent focus:border-[#00a884] h-32 no-scrollbar" placeholder="Escreva o comunicado aqui..." value={msgBody} onChange={e => setMsgBody(e.target.value)} />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[9px] font-black text-[#8696a0] uppercase ml-2">Destinatário (Vazio para Global)</label>
+                    <select className="w-full bg-[#202c33] rounded-2xl p-4 text-sm font-bold outline-none appearance-none text-[#8696a0]" value={targetUser} onChange={e => setTargetUser(e.target.value)}>
+                      <option value="">TODOS OS USUÁRIOS (GLOBAL)</option>
+                      {customers.map(u => <option key={u.uid} value={u.uid}>{u.userName} ({u.userId})</option>)}
+                    </select>
+                  </div>
+                  
+                  <button 
+                    onClick={handleSendBroadcast}
+                    disabled={isLoading}
+                    className="w-full bg-[#00a884] text-white py-4 rounded-2xl font-black text-[10px] uppercase shadow-xl mt-4 active:scale-95 transition-all"
+                  >
+                    {isLoading ? 'Disparando...' : '🚀 Enviar Agora'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activeSubTab === 'config' && (
+            <div className="max-w-xl mx-auto space-y-6 animate-fade">
+              <div className="bg-[#111b21] p-8 rounded-[3rem] border border-white/5 space-y-8">
+                <header>
+                  <h3 className="text-xl font-black italic tracking-tighter uppercase text-[#00a884]">Parâmetros Globais</h3>
+                  <p className="text-[10px] text-[#8696a0] font-bold uppercase tracking-widest mt-1">Configurações de Engine IA</p>
+                </header>
+
+                <div className="space-y-6">
+                  <div className="flex justify-between items-center p-4 bg-[#202c33] rounded-2xl">
+                    <div>
+                      <h4 className="text-xs font-bold text-white">Porcentagem de Aporte</h4>
+                      <p className="text-[9px] text-[#8696a0] uppercase font-bold mt-0.5">Define a sugestão padrão do Dashboard</p>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <input 
+                        type="number" 
+                        className="bg-[#111b21] w-16 p-2 rounded-xl text-center font-black text-[#00a884]" 
+                        value={config?.defaultAportePercent || 30} 
+                        onChange={e => handleUpdateConfig({ defaultAportePercent: parseInt(e.target.value) })}
+                      />
+                      <span className="font-black text-[#00a884]">%</span>
+                    </div>
+                  </div>
+
+                  <div className="flex justify-between items-center p-4 bg-[#202c33] rounded-2xl">
+                    <div>
+                      <h4 className="text-xs font-bold text-white">Modo Manutenção</h4>
+                      <p className="text-[9px] text-[#8696a0] uppercase font-bold mt-0.5">Bloqueia acesso às funções financeiras</p>
+                    </div>
+                    <button 
+                      onClick={() => handleUpdateConfig({ maintenanceMode: !config?.maintenanceMode })}
+                      className={`w-12 h-6 rounded-full relative transition-all ${config?.maintenanceMode ? 'bg-[#00a884]' : 'bg-[#111b21]'}`}
+                    >
+                      <div className={`w-4 h-4 bg-white rounded-full absolute top-1 transition-all ${config?.maintenanceMode ? 'right-1' : 'left-1'}`} />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+        </main>
       </div>
-
-      {/* Modal de Detalhes do Usuário */}
-      {selectedUser && (
-        <div className="fixed inset-0 z-[1100] bg-slate-900/80 backdrop-blur-md flex items-end sm:items-center justify-center p-4 animate-in fade-in">
-          <div className="bg-white w-full max-w-sm rounded-[3rem] p-10 shadow-2xl relative border-t-[12px] border-slate-900 animate-in slide-in-from-bottom">
-            <button onClick={() => setSelectedUser(null)} className="absolute top-8 right-8 p-3 bg-slate-50 rounded-full">
-               <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-            </button>
-            
-            <div className="text-center mb-8">
-               <div className="w-20 h-20 bg-slate-50 rounded-[2.5rem] mx-auto mb-4 flex items-center justify-center text-3xl font-black text-slate-300">
-                 {selectedUser.userName.charAt(0).toUpperCase()}
-               </div>
-               <h3 className="text-2xl font-black tracking-tighter uppercase italic">{selectedUser.userName}</h3>
-               <p className="text-[10px] text-emerald-600 font-black uppercase mt-1 tracking-widest">{selectedUser.plan} • {selectedUser.subscriptionStatus}</p>
-            </div>
-
-            <div className="space-y-3">
-               <div className="grid grid-cols-2 gap-3 mb-6">
-                  <div className="bg-slate-50 p-4 rounded-2xl text-center">
-                    <p className="text-[8px] font-black text-slate-400 uppercase mb-1">Transações</p>
-                    <p className="text-lg font-black text-slate-900">{selectedUser.transactions?.length || 0}</p>
-                  </div>
-                  <div className="bg-slate-50 p-4 rounded-2xl text-center">
-                    <p className="text-[8px] font-black text-slate-400 uppercase mb-1">Metas</p>
-                    <p className="text-lg font-black text-slate-900">{selectedUser.goals?.length || 0}</p>
-                  </div>
-               </div>
-
-               <button 
-                 disabled={isUpdating}
-                 onClick={() => handleStatusUpdate(selectedUser.userId, 'ACTIVE')}
-                 className="w-full bg-emerald-600 text-white font-black py-5 rounded-2xl shadow-xl active:scale-95 transition-all text-[10px] uppercase tracking-widest disabled:opacity-50"
-               >
-                 {isUpdating ? 'ATUALIZANDO...' : 'ATIVAR ACESSO TOTAL'}
-               </button>
-               
-               <button 
-                 disabled={isUpdating}
-                 onClick={() => handleStatusUpdate(selectedUser.userId, 'EXPIRED')}
-                 className="w-full bg-rose-600 text-white font-black py-5 rounded-2xl shadow-xl active:scale-95 transition-all text-[10px] uppercase tracking-widest disabled:opacity-50"
-               >
-                 SUSPENDER ACESSO
-               </button>
-
-               <button onClick={() => setSelectedUser(null)} className="w-full text-slate-400 font-black py-3 text-[9px] uppercase tracking-widest mt-4">Fechar Gerenciador</button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

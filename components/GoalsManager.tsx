@@ -14,11 +14,16 @@ const GoalsManager: React.FC<Props> = ({ goals, onAdd }) => {
 
   const handleAdd = () => {
     if (!name || !target) return;
+    // Fix para o erro de tipagem: adicionando propriedades obrigatórias da interface SavingGoal
     onAdd({
       id: Math.random().toString(36),
       name,
       targetAmount: Number(target),
-      currentAmount: 0
+      currentAmount: 0,
+      location: 'Geral',
+      type: 'CUSTOM',
+      deadlineMonths: 12,
+      updatedAt: new Date()
     });
     setName('');
     setTarget('');

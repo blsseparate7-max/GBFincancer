@@ -1,5 +1,5 @@
 {
-  "name": "gbfinancer---assistente-financeiro",
+  "name": "gbfinancer---ai-finance",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -9,10 +9,10 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "react": "^19.2.4",
     "react-dom": "^19.2.4",
-    "firebase": "^12.8.0",
-    "@google/genai": "^1.39.0"
+    "@google/genai": "^1.40.0",
+    "firebase": "^12.9.0",
+    "react": "^19.2.4"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",

@@ -1,73 +1,89 @@
 
 import { GoogleGenAI, Type } from "@google/genai";
+import { CustomerData } from "../types";
 
-// Initialize the Google GenAI SDK with the API key from environment variables.
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
-const FINANCE_SCHEMA = {
+const FINANCE_PARSER_SCHEMA = {
   type: Type.OBJECT,
   properties: {
-    intent: { 
-      type: Type.STRING, 
-      description: "A intenção do usuário: 'TRANSACTION', 'QUERY' ou 'OTHER'" 
-    },
-    transaction: {
+    event: {
       type: Type.OBJECT,
       properties: {
-        description: { type: Type.STRING },
-        amount: { type: Type.NUMBER },
-        category: { type: Type.STRING },
-        type: { type: Type.STRING, enum: ['INCOME', 'EXPENSE', 'SAVING'] }
-      }
+        type: { 
+          type: Type.STRING, 
+          enum: ['ADD_EXPENSE', 'ADD_INCOME', 'CREATE_GOAL', 'UPDATE_LIMIT', 'CREATE_REMINDER', 'PAY_CARD'] 
+        },
+        payload: { 
+          type: Type.OBJECT,
+          description: "Dados financeiros da transação.",
+          properties: {
+            amount: { type: Type.NUMBER, description: "Valor numérico da transação ou do limite." },
+            category: { type: Type.STRING, description: "Categoria (Alimentação, Transporte, Lazer, etc)." },
+            description: { type: Type.STRING, description: "O que foi comprado ou recebido." },
+            paymentMethod: { 
+              type: Type.STRING, 
+              enum: ['CASH', 'PIX', 'CARD'],
+              description: "CASH para dinheiro/débito, PIX para pix, CARD para cartão de crédito." 
+            },
+            date: { type: Type.STRING, description: "Data no formato ISO (YYYY-MM-DD)." },
+            cardId: { type: Type.STRING, description: "ID do cartão se o usuário mencionar um nome específico." },
+            cardName: { type: Type.STRING, description: "Nome do cartão para pagamento de fatura." }
+          }
+        }
+      },
+      required: ["type", "payload"]
     },
-    reply: { type: Type.STRING, description: "Uma resposta curta e amigável em português para o usuário" }
+    reply: { type: Type.STRING, description: "Resposta amigável do assistente." }
   },
-  required: ["intent", "reply"]
+  required: ["reply"]
 };
 
-export const processFinanceMessage = async (text: string) => {
-  // Use ai.models.generateContent to query GenAI with the model name and prompt.
-  const response = await ai.models.generateContent({
-    model: 'gemini-3-flash-preview',
-    contents: `Você é o GB, um assistente financeiro no WhatsApp. 
-    Analise a mensagem do usuário e extraia dados se for um registro de gasto ou ganho.
-    Categorias comuns: Alimentação, Transporte, Lazer, Saúde, Salário, Casa.
-    Mensagem: "${text}"`,
-    config: {
-      responseMimeType: "application/json",
-      responseSchema: FINANCE_SCHEMA
-    }
-  });
+export const parseMessage = async (text: string, userName: string) => {
+  try {
+    const today = new Date().toISOString().split('T')[0];
+    
+    const response = await ai.models.generateContent({
+      model: 'gemini-3-flash-preview',
+      contents: `Você é o GB, mentor financeiro do usuário ${userName}. Hoje é ${today}.
+      
+      REGRAS CRÍTICAS:
+      1. COMPRA NO CARTÃO: Se o usuário disser "gastei X no cartão", use ADD_EXPENSE com paymentMethod "CARD". Isso não diminui o saldo no dashboard, apenas no limite do cartão.
+      2. PAGAMENTO DE FATURA: Se o usuário disser "paguei a fatura", "liquidei o cartão", use PAY_CARD. Isso CRIA uma saída no dashboard e zera o saldo do cartão.
+      3. Se ele mencionar "no cartão", "crédito", o paymentMethod DEVE ser "CARD".
+      4. Se o usuário quiser limitar um gasto, o tipo é UPDATE_LIMIT.
+      5. Se ele disser "Recebi", o tipo é ADD_INCOME.
+      
+      Mensagem: "${text}"`,
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: FINANCE_PARSER_SCHEMA
+      }
+    });
 
-  // Extract text using the .text property of GenerateContentResponse.
-  return JSON.parse(response.text || "{}");
+    const content = response.text || "{}";
+    return JSON.parse(content);
+  } catch (e) {
+    console.error("Gemini Parse Error:", e);
+    return { reply: "Entendi. Pode me confirmar o valor e o que deseja registrar?" };
+  }
 };
 
-export const getFinancialAdvice = async (data: any) => {
-  // Use ai.models.generateContent to query GenAI with the model name and prompt.
-  const response = await ai.models.generateContent({
-    model: 'gemini-3-flash-preview',
-    contents: `Com base nestes dados: ${JSON.stringify(data)}, dê um conselho financeiro curto e motivador de 1 frase para o usuário.`
-  });
-  // Extract text using the .text property of GenerateContentResponse.
-  return response.text;
-};
+export const getCEOSummary = async (customers: CustomerData[]): Promise<string> => {
+  try {
+    const summaryData = customers.map(c => ({
+      userName: c.userName,
+      status: c.subscriptionStatus,
+      plan: c.plan
+    }));
 
-// Added getCEOSummary to provide high-level insights for the admin dashboard
-export const getCEOSummary = async (customers: any[]) => {
-  const summaryData = customers.map(c => ({
-    userName: c.userName,
-    status: c.subscriptionStatus,
-    plan: c.plan,
-    activityCount: c.transactions?.length || 0
-  }));
+    const response = await ai.models.generateContent({
+      model: 'gemini-3-flash-preview',
+      contents: `Analise estrategicamente a base de clientes do GBFinancer para o CEO: ${JSON.stringify(summaryData)}.`,
+    });
 
-  // Use ai.models.generateContent with a pro model for complex reasoning tasks.
-  const response = await ai.models.generateContent({
-    model: 'gemini-3-pro-preview',
-    contents: `Analise a base de clientes do GBFinancer e forneça um insight estratégico curto em português (1 frase) sobre retenção e receita: ${JSON.stringify(summaryData)}`,
-  });
-
-  // Extract text using the .text property of GenerateContentResponse.
-  return response.text || "Sem insights estratégicos no momento.";
+    return response.text || "Sem análise.";
+  } catch (err) {
+    return "Erro no relatório.";
+  }
 };
