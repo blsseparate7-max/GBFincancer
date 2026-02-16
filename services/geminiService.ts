@@ -2,8 +2,6 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { CustomerData } from "../types";
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-
 const FINANCE_PARSER_SCHEMA = {
   type: Type.OBJECT,
   properties: {
@@ -41,6 +39,8 @@ const FINANCE_PARSER_SCHEMA = {
 
 export const parseMessage = async (text: string, userName: string) => {
   try {
+    // Inicialização dentro da função para garantir que process.env.API_KEY esteja disponível no browser
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     const today = new Date().toISOString().split('T')[0];
     
     const response = await ai.models.generateContent({
@@ -71,6 +71,7 @@ export const parseMessage = async (text: string, userName: string) => {
 
 export const getCEOSummary = async (customers: CustomerData[]): Promise<string> => {
   try {
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     const summaryData = customers.map(c => ({
       userName: c.userName,
       status: c.subscriptionStatus,
