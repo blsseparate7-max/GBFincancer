@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { db } from './services/firebaseConfig';
-import { collection, doc, onSnapshot, query, orderBy, limit, getDocs } from 'firebase/firestore';
+import { collection, doc, onSnapshot, query, orderBy, limit, getDocs, updateDoc, getDoc } from 'firebase/firestore';
 import { UserSession, Transaction, SavingGoal, Notification, Message, Bill, PaymentMethod, CategoryLimit } from './types';
 import Sidebar from './components/Sidebar';
 import Header from './components/Header';
@@ -14,7 +14,8 @@ import Reminders from './components/Reminders';
 import Messages from './components/Messages';
 import ProfileEdit from './components/ProfileEdit';
 import AdminPanel from './components/AdminPanel';
-import Onboarding from './components/Onboarding';
+import SetupWizard from './components/SetupWizard';
+import WelcomeOnboarding from './components/WelcomeOnboarding';
 import HealthScoreTab from './components/HealthScoreTab';
 import ImpactSimulator from './components/ImpactSimulator';
 import YearlySummary from './components/YearlySummary';
@@ -25,7 +26,8 @@ const App: React.FC = () => {
   const [session, setSession] = useState<UserSession | null>(null);
   const [activeTab, setActiveTab] = useState('chat');
   const [sidebarExpanded, setSidebarExpanded] = useState(true);
-  const [showOnboarding, setShowOnboarding] = useState(false);
+  const [showSetupWizard, setShowSetupWizard] = useState(false);
+  const [showWelcome, setShowWelcome] = useState(false);
   
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [goals, setGoals] = useState<SavingGoal[]>([]);
@@ -57,11 +59,22 @@ const App: React.FC = () => {
 
     const userRef = doc(db, "users", session.uid);
 
-    const checkOnboarding = async () => {
+    const checkOnboardingStatus = async () => {
+      const userSnap = await getDoc(userRef);
+      const userData = userSnap.data();
+      
+      // Se nunca viu o onboarding informativo
+      if (!userData?.onboardingSeen) {
+        setShowWelcome(true);
+      }
+
+      // Se não tem transações, mostra o assistente de setup (após o welcome)
       const transSnap = await getDocs(collection(userRef, "transactions"));
-      if (transSnap.empty) setShowOnboarding(true);
+      if (transSnap.empty) {
+        setShowSetupWizard(true);
+      }
     };
-    checkOnboarding();
+    checkOnboardingStatus();
 
     const unsubTrans = onSnapshot(query(collection(userRef, "transactions"), orderBy("createdAt", "desc"), limit(200)), (snap) => {
       setTransactions(snap.docs.map(d => ({ id: d.id, ...d.data() } as Transaction)));
@@ -92,7 +105,14 @@ const App: React.FC = () => {
     };
   }, [session?.uid]);
 
-  const handleOnboardingComplete = async (data: { income: number; bills: any[]; goal: any }) => {
+  const handleWelcomeFinish = async () => {
+    if (!session?.uid) return;
+    const userRef = doc(db, "users", session.uid);
+    await updateDoc(userRef, { onboardingSeen: true });
+    setShowWelcome(false);
+  };
+
+  const handleSetupComplete = async (data: { income: number; bills: any[]; goal: any }) => {
     if (!session?.uid) return;
     
     await dispatchEvent(session.uid, {
@@ -130,12 +150,11 @@ const App: React.FC = () => {
       });
     }
 
-    setShowOnboarding(false);
+    setShowSetupWizard(false);
   };
 
   if (!session) return <Auth onLogin={(s) => setSession(s)} />;
 
-  // Se o usuário estiver bloqueado, desloga ou mostra tela de aviso (simplificado aqui)
   if (session.status === 'blocked') {
     return (
       <div className="h-screen bg-[#0b141a] flex flex-col items-center justify-center p-10 text-center text-white">
@@ -166,7 +185,9 @@ const App: React.FC = () => {
 
   return (
     <div className="flex h-screen bg-[#f0f2f5] text-[#111b21] overflow-hidden">
-      {showOnboarding && <Onboarding user={session} onComplete={handleOnboardingComplete} />}
+      {showWelcome && <WelcomeOnboarding userName={session.name} onFinish={handleWelcomeFinish} />}
+      {!showWelcome && showSetupWizard && <SetupWizard user={session} onComplete={handleSetupComplete} />}
+      
       <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} expanded={sidebarExpanded} setExpanded={setSidebarExpanded} role={session.role} />
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden relative">
         <Header activeTab={activeTab} userName={session.name} onToggleSidebar={() => setSidebarExpanded(!sidebarExpanded)} />

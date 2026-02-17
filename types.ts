@@ -122,6 +122,7 @@ export interface UserSession {
   isLoggedIn: boolean;
   role: 'USER' | 'ADMIN';
   subscriptionStatus: 'ACTIVE' | 'EXPIRED';
+  onboardingSeen?: boolean;
   status?: 'active' | 'blocked' | 'deleted';
   lastLogin?: any;
   createdAt?: any;
@@ -155,6 +156,7 @@ export interface CustomerData {
   status?: 'active' | 'blocked' | 'deleted';
   role?: 'USER' | 'ADMIN';
   plan: SubscriptionPlan;
+  onboardingSeen?: boolean;
   createdAt?: any;
   lastLogin?: any;
   localUpdatedAt?: string;
