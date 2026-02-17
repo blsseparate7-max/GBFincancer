@@ -1,8 +1,14 @@
 
 import React, { useState } from 'react';
 import { db, auth } from '../services/firebaseConfig';
-import { signInWithEmailAndPassword, createUserWithEmailAndPassword, sendPasswordResetEmail } from 'firebase/auth';
-import { doc, setDoc, getDoc, updateDoc } from 'firebase/firestore';
+import { 
+  signInWithEmailAndPassword, 
+  createUserWithEmailAndPassword, 
+  sendPasswordResetEmail,
+  setPersistence,
+  browserLocalPersistence 
+} from 'firebase/auth';
+import { doc, setDoc, getDoc } from 'firebase/firestore';
 import { UserSession } from '../types';
 
 interface AuthProps {
@@ -15,7 +21,6 @@ const Auth: React.FC<AuthProps> = ({ onLogin }) => {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   
-  // Signup specific
   const [name, setName] = useState('');
   const [id, setId] = useState('');
   const [confirmPass, setConfirmPass] = useState('');
@@ -31,6 +36,9 @@ const Auth: React.FC<AuthProps> = ({ onLogin }) => {
     setMessage(null);
 
     try {
+      // Configura persistência local antes do login
+      await setPersistence(auth, browserLocalPersistence);
+      
       const userCred = await signInWithEmailAndPassword(auth, email.trim(), password);
       const userRef = doc(db, "users", userCred.user.uid);
       const finalDoc = await getDoc(userRef);
@@ -46,6 +54,7 @@ const Auth: React.FC<AuthProps> = ({ onLogin }) => {
         subscriptionStatus: userData?.subscriptionStatus || 'ACTIVE'
       });
     } catch (err: any) {
+      console.error(err);
       let friendlyError = "Erro ao entrar. Verifique suas credenciais.";
       if (err.code === "auth/user-not-found") friendlyError = "Usuário não encontrado.";
       if (err.code === "auth/wrong-password") friendlyError = "Senha incorreta.";
@@ -76,6 +85,9 @@ const Auth: React.FC<AuthProps> = ({ onLogin }) => {
         throw new Error("Este ID já está em uso.");
       }
 
+      // Configura persistência local antes do cadastro
+      await setPersistence(auth, browserLocalPersistence);
+      
       const userCred = await createUserWithEmailAndPassword(auth, email.trim(), password);
       
       const userData = {
@@ -86,7 +98,8 @@ const Auth: React.FC<AuthProps> = ({ onLogin }) => {
         role: 'USER' as const,
         subscriptionStatus: 'ACTIVE' as const,
         createdAt: new Date().toISOString(),
-        status: 'active' as const
+        status: 'active' as const,
+        onboardingSeen: false
       };
 
       await setDoc(doc(db, "users", userCred.user.uid), userData);
@@ -121,11 +134,9 @@ const Auth: React.FC<AuthProps> = ({ onLogin }) => {
 
   return (
     <div className="min-h-screen w-full flex flex-col items-center justify-center p-6 bg-[#0B141A] relative overflow-hidden">
-      {/* WhatsApp Pattern Background Overlay */}
       <div className="absolute inset-0 whatsapp-pattern opacity-[0.03] pointer-events-none"></div>
 
       <div className="w-full max-w-[420px] relative z-10 animate-fade">
-        {/* Logo Section */}
         <div className="text-center mb-10">
           <div className="w-20 h-20 bg-[#00A884] rounded-[2.2rem] flex items-center justify-center mx-auto mb-6 shadow-2xl shadow-[#00A884]/20 text-white text-4xl font-black italic transform -rotate-3 border-4 border-white/10">
             GB
@@ -136,7 +147,6 @@ const Auth: React.FC<AuthProps> = ({ onLogin }) => {
           </p>
         </div>
 
-        {/* Card */}
         <div className="bg-[#111B21] p-8 rounded-[2.5rem] shadow-2xl border border-[#2A3942]/60 backdrop-blur-sm">
           <header className="mb-8">
             <h2 className="text-2xl font-black text-[#E9EDEF] tracking-tight">
@@ -297,7 +307,7 @@ const Auth: React.FC<AuthProps> = ({ onLogin }) => {
 
         <div className="mt-8 text-center flex items-center justify-center gap-2 opacity-40">
           <svg className="w-4 h-4 text-[#8696A0]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
-          <p className="text-[10px] font-black text-[#8696A0] uppercase tracking-[0.2em]">Seus dados ficam protegidos</p>
+          <p className="text-[10px] font-black text-[#8696A0] uppercase tracking-[0.2em]">Seus dados ficam protegidos.</p>
         </div>
       </div>
     </div>

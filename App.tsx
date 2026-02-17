@@ -1,8 +1,9 @@
 
 import React, { useState, useEffect } from 'react';
-import { db } from './services/firebaseConfig';
+import { db, auth } from './services/firebaseConfig';
+import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { collection, doc, onSnapshot, query, orderBy, limit, getDocs, updateDoc, getDoc } from 'firebase/firestore';
-import { UserSession, Transaction, SavingGoal, Notification, Message, Bill, PaymentMethod, CategoryLimit } from './types';
+import { UserSession, Transaction, SavingGoal, Notification, Message, Bill, CategoryLimit } from './types';
 import Sidebar from './components/Sidebar';
 import Header from './components/Header';
 import Auth from './components/Auth';
@@ -24,8 +25,10 @@ import { dispatchEvent } from './services/eventDispatcher';
 
 const App: React.FC = () => {
   const [session, setSession] = useState<UserSession | null>(null);
+  const [isInitializing, setIsInitializing] = useState(true);
   const [activeTab, setActiveTab] = useState('chat');
   const [sidebarExpanded, setSidebarExpanded] = useState(true);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [showSetupWizard, setShowSetupWizard] = useState(false);
   const [showWelcome, setShowWelcome] = useState(false);
   
@@ -36,23 +39,58 @@ const App: React.FC = () => {
   const [reminders, setReminders] = useState<Bill[]>([]);
   const [limits, setLimits] = useState<CategoryLimit[]>([]);
 
-  // Proteção reativa para a aba Admin
+  // Detect mobile
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 1024);
+
+  useEffect(() => {
+    const handleResize = () => {
+      const mobile = window.innerWidth < 1024;
+      setIsMobile(mobile);
+      if (!mobile) setIsMobileMenuOpen(false);
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  // Firebase Auth Observer
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      if (firebaseUser) {
+        // Se houver um usuário, buscamos o perfil no Firestore
+        try {
+          const userDoc = await getDoc(doc(db, "users", firebaseUser.uid));
+          if (userDoc.exists()) {
+            const userData = userDoc.data();
+            setSession({
+              uid: firebaseUser.uid,
+              userId: userData.userId,
+              name: userData.name,
+              email: firebaseUser.email || '',
+              isLoggedIn: true,
+              role: userData.role || 'USER',
+              subscriptionStatus: userData.subscriptionStatus || 'ACTIVE',
+              onboardingSeen: userData.onboardingSeen,
+              status: userData.status || 'active'
+            });
+          }
+        } catch (error) {
+          console.error("Erro ao carregar perfil do usuário:", error);
+        }
+      } else {
+        setSession(null);
+      }
+      setIsInitializing(false);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
   useEffect(() => {
     if (activeTab === 'admin' && session?.role !== 'ADMIN') {
       setActiveTab('chat');
     }
-  }, [activeTab, session?.role]);
-
-  useEffect(() => {
-    const cached = localStorage.getItem('gb_session');
-    if (cached) {
-      try {
-        setSession(JSON.parse(cached));
-      } catch (e) {
-        localStorage.removeItem('gb_session');
-      }
-    }
-  }, []);
+    if (isMobile) setIsMobileMenuOpen(false);
+  }, [activeTab, session?.role, isMobile]);
 
   useEffect(() => {
     if (!session?.uid) return;
@@ -63,12 +101,10 @@ const App: React.FC = () => {
       const userSnap = await getDoc(userRef);
       const userData = userSnap.data();
       
-      // Se nunca viu o onboarding informativo
       if (!userData?.onboardingSeen) {
         setShowWelcome(true);
       }
 
-      // Se não tem transações, mostra o assistente de setup (após o welcome)
       const transSnap = await getDocs(collection(userRef, "transactions"));
       if (transSnap.empty) {
         setShowSetupWizard(true);
@@ -153,6 +189,34 @@ const App: React.FC = () => {
     setShowSetupWizard(false);
   };
 
+  const handleLogout = async () => {
+    await signOut(auth);
+    setSession(null);
+  };
+
+  // Splash Loading Screen
+  if (isInitializing) {
+    return (
+      <div className="h-screen w-full bg-[#0B141A] flex flex-col items-center justify-center">
+        <div className="absolute inset-0 whatsapp-pattern opacity-[0.05] pointer-events-none"></div>
+        <div className="w-24 h-24 bg-[#00A884] rounded-[2.2rem] flex items-center justify-center mb-8 shadow-2xl shadow-[#00A884]/20 text-white text-5xl font-black italic animate-pulse border-4 border-white/10">
+          GB
+        </div>
+        <div className="w-48 h-1.5 bg-[#111B21] rounded-full overflow-hidden relative">
+          <div className="absolute top-0 left-0 h-full bg-[#00A884] w-1/3 animate-[loading_1.5s_infinite_ease-in-out]"></div>
+        </div>
+        <p className="mt-6 text-[10px] font-black text-[#8696A0] uppercase tracking-[0.3em] opacity-50">Validando Acesso Seguro...</p>
+        <style>{`
+          @keyframes loading {
+            0% { left: -40%; width: 40%; }
+            50% { left: 40%; width: 60%; }
+            100% { left: 100%; width: 40%; }
+          }
+        `}</style>
+      </div>
+    );
+  }
+
   if (!session) return <Auth onLogin={(s) => setSession(s)} />;
 
   if (session.status === 'blocked') {
@@ -160,7 +224,7 @@ const App: React.FC = () => {
       <div className="h-screen bg-[#0b141a] flex flex-col items-center justify-center p-10 text-center text-white">
         <h1 className="text-4xl font-black text-rose-500 mb-4 tracking-tighter uppercase italic">Acesso Restrito</h1>
         <p className="text-[#8696a0] max-w-sm mb-10">Sua conta foi temporariamente bloqueada pela administração do sistema.</p>
-        <button onClick={() => setSession(null)} className="bg-[#00a884] text-white px-8 py-4 rounded-2xl font-black text-[10px] uppercase">Sair</button>
+        <button onClick={handleLogout} className="bg-[#00a884] text-white px-8 py-4 rounded-2xl font-black text-[10px] uppercase">Sair</button>
       </div>
     );
   }
@@ -177,26 +241,59 @@ const App: React.FC = () => {
       case 'resumo': return <YearlySummary transactions={transactions} />;
       case 'score': return <HealthScoreTab transactions={transactions} />;
       case 'stress': return <ImpactSimulator transactions={transactions} />;
-      case 'profile': return <ProfileEdit user={session} onUpdate={(data) => setSession({...session, ...data})} onLogout={() => setSession(null)} />;
-      case 'config': return <Settings user={session} onLogout={() => setSession(null)} />;
+      case 'profile': return <ProfileEdit user={session} onUpdate={(data) => setSession({...session, ...data})} onLogout={handleLogout} />;
+      case 'config': return <Settings user={session} onLogout={handleLogout} />;
       default: return <ChatInterface user={session} messages={messages} setMessages={setMessages} />;
     }
   };
 
   return (
-    <div className="flex h-screen bg-[#f0f2f5] text-[#111b21] overflow-hidden">
+    <div className="flex h-screen w-full bg-[#f0f2f5] text-[#111b21] overflow-hidden">
       {showWelcome && <WelcomeOnboarding userName={session.name} onFinish={handleWelcomeFinish} />}
       {!showWelcome && showSetupWizard && <SetupWizard user={session} onComplete={handleSetupComplete} />}
       
-      <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} expanded={sidebarExpanded} setExpanded={setSidebarExpanded} role={session.role} />
+      {isMobile && isMobileMenuOpen && (
+        <div 
+          className="fixed inset-0 bg-black/60 z-[100] animate-fade"
+          onClick={() => setIsMobileMenuOpen(false)}
+        />
+      )}
+
+      <div className={`
+        fixed lg:relative z-[110] h-full transition-transform duration-300
+        ${isMobile ? (isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full') : 'translate-x-0'}
+      `}>
+        <Sidebar 
+          activeTab={activeTab} 
+          setActiveTab={setActiveTab} 
+          expanded={isMobile ? true : sidebarExpanded} 
+          setExpanded={setSidebarExpanded} 
+          role={session.role}
+        />
+      </div>
+
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden relative">
-        <Header activeTab={activeTab} userName={session.name} onToggleSidebar={() => setSidebarExpanded(!sidebarExpanded)} />
+        <Header 
+          activeTab={activeTab} 
+          userName={session.name} 
+          onToggleSidebar={() => isMobile ? setIsMobileMenuOpen(true) : setSidebarExpanded(!sidebarExpanded)} 
+        />
+        
         <main className="flex-1 relative overflow-hidden bg-[#efeae2]">
           <div className="absolute inset-0 whatsapp-pattern pointer-events-none"></div>
           <div className="relative z-10 h-full overflow-y-auto no-scrollbar">
             {renderContent()}
           </div>
         </main>
+
+        {isMobile && (
+          <button 
+            onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+            className="fixed bottom-6 right-6 w-14 h-14 bg-[#00a884] text-white rounded-full flex items-center justify-center shadow-2xl z-[120] active:scale-90 transition-transform border-4 border-[#efeae2]"
+          >
+            <span className="text-2xl font-black">$</span>
+          </button>
+        )}
       </div>
     </div>
   );

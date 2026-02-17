@@ -28,8 +28,13 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, expanded, se
   return (
     <aside className={`bg-[#111b21] border-r border-white/10 transition-all duration-300 flex flex-col h-full text-white ${expanded ? 'w-72' : 'w-16'}`}>
       <div className="p-4 flex items-center justify-between h-[60px] shrink-0 border-b border-white/10 bg-[#202c33]">
-        {expanded && <span className="font-black italic text-[#00a884] text-xl tracking-tighter">GBFinancer</span>}
-        <button onClick={() => setExpanded(!expanded)} className="p-2 hover:bg-white/10 rounded-full text-white/70">
+        {expanded && (
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 bg-[#00a884] rounded-lg flex items-center justify-center text-white font-black italic text-xs">GB</div>
+            <span className="font-black italic text-[#00a884] text-xl tracking-tighter">GBFinancer</span>
+          </div>
+        )}
+        <button onClick={() => setExpanded(!expanded)} className="p-2 hover:bg-white/10 rounded-full text-white/70 lg:block hidden">
           {expanded ? '❮' : '❯'}
         </button>
       </div>
