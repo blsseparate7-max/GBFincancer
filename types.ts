@@ -1,4 +1,5 @@
 
+
 export type TransactionType = 'INCOME' | 'EXPENSE' | 'SAVING';
 export type PaymentMethod = 'CASH' | 'PIX' | 'CARD';
 
@@ -74,6 +75,7 @@ export type EventType =
   | 'CREATE_REMINDER' 
   | 'PAY_REMINDER'
   | 'ADD_CARD'
+  | 'ADD_CARD_CHARGE'
   | 'UPDATE_CARD'
   | 'DELETE_CARD'
   | 'PAY_CARD'
