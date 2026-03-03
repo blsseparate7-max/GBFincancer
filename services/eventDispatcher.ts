@@ -2,7 +2,7 @@
 import { db } from "./firebaseConfig";
 import { 
   collection, addDoc, doc, setDoc, deleteDoc, updateDoc, 
-  serverTimestamp, increment, getDoc, arrayUnion 
+  serverTimestamp, increment, getDoc, arrayUnion, getDocs, query, where 
 } from "firebase/firestore";
 import { FinanceEvent } from "../types";
 
@@ -213,6 +213,90 @@ export const dispatchEvent = async (uid: string, event: FinanceEvent) => {
         const { id, collection: colName } = event.payload;
         if (!id || !colName) throw new Error("ID and collection are required for DELETE_ITEM");
         await deleteDoc(doc(userRef, colName, id));
+        break;
+      }
+
+      case 'ADMIN_UPDATE_USER': {
+        const { targetUid, updates, adminId } = event.payload;
+        const targetRef = doc(db, "users", targetUid);
+        await updateDoc(targetRef, {
+          ...updates,
+          localUpdatedAt: new Date().toISOString()
+        });
+        
+        // Log de Auditoria
+        await addDoc(collection(db, "admin", "auditLogs", "entries"), {
+          adminId,
+          action: 'UPDATE_USER',
+          targetUserId: targetUid,
+          details: `Atualizou campos: ${Object.keys(updates).join(', ')}`,
+          createdAt: serverTimestamp()
+        });
+        break;
+      }
+
+      case 'ADMIN_DELETE_USER': {
+        const { targetUid, adminId } = event.payload;
+        await deleteDoc(doc(db, "users", targetUid));
+        
+        // Log de Auditoria
+        await addDoc(collection(db, "admin", "auditLogs", "entries"), {
+          adminId,
+          action: 'DELETE_USER',
+          targetUserId: targetUid,
+          details: `Usuário excluído permanentemente`,
+          createdAt: serverTimestamp()
+        });
+        break;
+      }
+
+      case 'ADMIN_SEND_BROADCAST': {
+        const { title, body, targetUid, adminId } = event.payload;
+        
+        const sendToUser = async (uid: string) => {
+          await addDoc(collection(db, "users", uid, "notifications"), {
+            type: 'ADMIN_BROADCAST',
+            title,
+            body,
+            createdAt: serverTimestamp()
+          });
+        };
+
+        if (targetUid) {
+          await sendToUser(targetUid);
+        } else {
+          // Global
+          const usersSnap = await getDocs(collection(db, "users"));
+          for (const userDoc of usersSnap.docs) {
+            await sendToUser(userDoc.id);
+          }
+        }
+
+        // Log de Auditoria
+        await addDoc(collection(db, "admin", "auditLogs", "entries"), {
+          adminId,
+          action: 'SEND_BROADCAST',
+          targetUserId: targetUid || 'GLOBAL',
+          details: `Título: ${title}`,
+          createdAt: serverTimestamp()
+        });
+        break;
+      }
+
+      case 'ADMIN_UPDATE_CONFIG': {
+        const { config: newConfig, adminId } = event.payload;
+        await setDoc(doc(db, "admin", "config"), {
+          ...newConfig,
+          updatedAt: serverTimestamp()
+        }, { merge: true });
+
+        // Log de Auditoria
+        await addDoc(collection(db, "admin", "auditLogs", "entries"), {
+          adminId,
+          action: 'UPDATE_CONFIG',
+          details: `Configurações globais atualizadas`,
+          createdAt: serverTimestamp()
+        });
         break;
       }
     }

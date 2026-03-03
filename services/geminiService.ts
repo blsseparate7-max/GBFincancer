@@ -63,50 +63,39 @@ export const parseMessage = async (text: string, userName: string, context?: { r
       `CONTEXTO DE LEMBRETES (Contas a vencer): ${JSON.stringify(context.reminders.map(r => ({ desc: r.description, valor: r.amount, dia: r.dueDay, pago: r.isPaid })))}` : 
       'Sem lembretes cadastrados.';
     
+    console.log("GB Debug - Enviando para IA:", text);
+    
     const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
+      model: 'gemini-3.1-pro-preview',
       contents: `Você é o GB, mentor financeiro de ${userName}. Hoje é ${today}.
       
       ${remindersContext}
 
-      COMANDOS ESPECIAIS:
-      - Se a mensagem for "GERAR_RESUMO_MATINAL": Gere um resumo motivador e informativo BASEADO NOS LEMBRETES ACIMA. 
-        Mencione especificamente as contas que vencem hoje ou nos próximos dias. Se não houver contas próximas, dê uma dica de economia.
-        Ex: "Bom dia, ${userName}! ☀️ Hoje vencem 2 contas (Luz e Internet). Seu saldo livre é R$ 1.200. Vamos manter o foco nos seus objetivos hoje?"
+      OBJETIVO: Analisar a mensagem e retornar um JSON com "reply" (texto para o usuário) e opcionalmente "event" (comando para o sistema).
       
-      REGRAS DE CATEGORIZAÇÃO E MAPEAMENTO:
-      Sempre mapeie a categoria para um destes nomes EXATOS:
-      - ALIMENTAÇÃO: Restaurante, Ifood, Rappi, Mercado, Padaria, Açougue, Feira, Marmita, Almoço, Jantar, Café, Pizza, Hambúrguer, Sushi, Churrasco, Compras, Lanche, Lanches, Salgado, Pastel, Coxinha, Padoca, Atacadão, Carrefour, Pão de Açúcar, Extra, Assaí, Quitanda, Empório, Cafeteria, McDonald's, Burger King, Subway, Sorvete, Doce, Bolo, Padaria, Supermercado, Mercearia, Conveniência, Bar, Boteco, Cerveja, Refrigerante, Suco, Água, Sobremesa, Hortifruti, Sacolão, Atacado, Varejo.
-      - TRANSPORTE: Uber, 99, Táxi, Gasolina, Combustível, Álcool, Diesel, Ônibus, Metrô, Trem, Passagem, Viagem, Pedágio, Estacionamento, Oficina, Mecânico, Pneu, Revisão, Seguro, IPVA, Licenciamento, Multa, Lavagem, Carona, Bike, Patinete, Aluguel de Carro, Balsa, Avião, Aeroporto, Posto, GNV, Shell, Ipiranga, Petrobras, BR, Lubrificante, Troca de Óleo, Alinhamento, Balanceamento, Funilaria, Pintura, Auto Elétrica, Borracharia, Peças, Acessórios, Rodoviária, Bilhete Único, VLT.
-      - MORADIA: Aluguel, Condomínio, IPTU, Luz, Energia, Água, Gás, Internet, Telefone, Celular, TV, Streaming, Netflix, Spotify, Limpeza, Faxina, Reforma, Móveis, Decoração, Utensílios, Reparos, Eletricista, Encanador, Pintura, Jardinagem, Piscina, Segurança, Monitoramento, Seguro Residencial, Lavanderia, Enel, Sabesp, Comgás, Vivo, Claro, Tim, Oi, Sky, Amazon Prime, Disney+, HBO Max, Globoplay, Leroy Merlin, Telhanorte, C&C, Tok&Stok, Etna, Camicado, Zelo.
-      - SAÚDE: Farmácia, Remédio, Médico, Consulta, Dentista, Exame, Hospital, Pronto Socorro, Plano de Saúde, Academia, Suplemento, Terapia, Psicólogo, Fisioterapia, Ótica, Óculos, Lente, Vacina, Cirurgia, Internação, Ambulância, Massagem, Yoga, Pilates, Crossfit, Natação, Esporte, Clínica, Laboratório, Droga Raia, Drogasil, Pague Menos, Ultrafarma, Drogaria São Paulo, Onofre, Unimed, Amil, Bradesco Saúde, SulAmérica, Porto Seguro, Smart Fit, Bluefit, Selfit, Bio Ritmo, Personal Trainer, Nutricionista.
-      - EDUCAÇÃO: Escola, Faculdade, Curso, Mensalidade, Livro, Material, Caderno, Caneta, Mochila, Curso Online, Udemy, Hotmart, Inglês, Idiomas, Pós-graduação, Mestrado, Doutorado, Workshop, Palestra, Evento, Certificação, Treinamento, Tutoria, Aula Particular, Intercâmbio, Biblioteca, Xerox, Impressão, Alura, Coursera, edX, Khan Academy, Duolingo, CNA, Fisk, Wizard, Cultura Inglesa, Wise Up, FGV, PUC, USP, UNIP, Estácio, Mackenzie, Senac, Senai, Sebrae, Papelaria, Livraria.
-      - LAZER: Cinema, Teatro, Show, Festa, Balada, Evento, Museu, Parque, Viagem, Hotel, Airbnb, Pousada, Praia, Clube, Boliche, Games, Jogos, Steam, Playstation, Xbox, Nintendo, Hobby, Colecionável, Fotografia, Arte, Leitura, Revista, Jornal, Passeio, Férias, Cruzeiro, Youtube, Twitch, TikTok, Instagram, Facebook, Twitter, Tinder, Happn, Bumble, Badoo, Grindr, Eventim, Sympla, Ingresso.com, Ticketmaster, Rock in Rio, Lollapalooza, Carnaval, Réveillon.
-      - PESSOAL: Roupas, Sapatos, Acessórios, Beleza, Salão, Cabeleireiro, Manicure, Maquiagem, Perfume, Cosmético, Presente, Doação, Dízimo, Caridade, Pet, Ração, Veterinário, Banho e Tosa, Brinquedo, Higiene, Sabonete, Shampoo, Desodorante, Pasta de Dente, Barbear, Depilação, Estética, Spa, Joia, Relógio, Zara, H&M, C&A, Renner, Riachuelo, Marisa, Youcom, Reserva, Arezzo, Schutz, Melissa, Nike, Adidas, Puma, Reebok, O Boticário, Natura, Avon, Sephora, MAC.
-      - FINANCEIRO: Investimento, Ações, Fundos, Tesouro, Poupança, Juros, Multa, Tarifa, Anuidade, Empréstimo, Financiamento, Dívida, Parcelamento, Cartão, Fatura, Seguro de Vida, Previdência, Imposto, IRPF, Taxas, Corretagem, Câmbio, Dólar, Euro, Cripto, Bitcoin, Carteira, Banco, Transferência, Itaú, Bradesco, Santander, Banco do Brasil, Caixa, Nubank, Inter, C6 Bank, BTG Pactual, XP Investimentos, Rico, Clear, Avenue, Binance, Mercado Pago, PicPay, PagSeguro, PayPal, Wise.
- 
-      REGRAS DE MAPEAMENTO DE EVENTOS:
-      - "Gastei 50 no cartão": type='ADD_CARD_CHARGE', cardId='default'
-      - "Gastei 50 em dinheiro/pix": type='ADD_EXPENSE'
-      - "Paguei a fatura do cartão de 300": type='PAY_CARD', cardId='default', amount=300
-      - "Limite de X para categoria Y": type='UPDATE_LIMIT'
-      - "Lembrete de conta Z dia W": type='CREATE_REMINDER'
-      - "Guardar 100 na meta Reserva": type='ADD_TO_GOAL', amount=100, name='Reserva'
-      - "Criar meta Carro de 50000": type='CREATE_GOAL', name='Carro', targetAmount=50000, location='Banco'
+      CATEGORIAS PERMITIDAS: ALIMENTAÇÃO, TRANSPORTE, MORADIA, SAÚDE, EDUCAÇÃO, LAZER, PESSOAL, FINANCEIRO.
       
-      REPOSTA (reply):
-      Confirme o valor, categoria e diga onde foi refletido.
-      Ex: "✅ Feito! R$ 100 guardados na meta Reserva. Seu progresso foi atualizado!"
+      EXEMPLOS DE EVENTOS:
+      - "Gastei 50 no cartão": { "type": "ADD_CARD_CHARGE", "payload": { "amount": 50, "category": "ALIMENTAÇÃO", "description": "Gasto no Cartão", "cardId": "default" } }
+      - "Recebi 1000": { "type": "ADD_INCOME", "payload": { "amount": 1000, "category": "FINANCEIRO", "description": "Receita" } }
+      - "Guardar 100 na meta Reserva": { "type": "ADD_TO_GOAL", "payload": { "amount": 100, "name": "Reserva" } }
       
-      MENSAGEM: "${text}"`,
+      MENSAGEM DO USUÁRIO: "${text}"`,
       config: {
         responseMimeType: "application/json",
         responseSchema: FINANCE_PARSER_SCHEMA
       }
     });
 
-    return JSON.parse(response.text || "{}");
+    if (!response.text) {
+      throw new Error("Resposta da IA vazia");
+    }
+
+    const parsed = JSON.parse(response.text);
+    console.log("GB Debug - IA Respondeu:", parsed);
+    return parsed;
   } catch (e) {
-    return { reply: "Entendi. Pode me dar os detalhes para eu registrar?" };
+    console.error("GB Debug - Erro na IA:", e);
+    return { reply: "Entendi. Pode me dar os detalhes para eu registrar? (Houve um erro técnico na análise)" };
   }
 };

@@ -18,7 +18,7 @@ const AdminPanel: React.FC<{ currentAdminId: string }> = ({ currentAdminId }) =>
   const [targetUser, setTargetUser] = useState<string>(''); // Vazio = Global
 
   useEffect(() => {
-    // Escuta Usuários (Privacidade: apenas campos permitidos)
+    // Escuta Usuários (Privacidade CEO: apenas campos permitidos)
     const unsubUsers = onSnapshot(query(collection(db, "users"), orderBy("createdAt", "desc")), (snap) => {
       setCustomers(snap.docs.map(d => {
         const data = d.data();
@@ -30,8 +30,11 @@ const AdminPanel: React.FC<{ currentAdminId: string }> = ({ currentAdminId }) =>
           status: data.status || 'active',
           role: data.role || 'USER',
           createdAt: data.createdAt,
-          lastLogin: data.lastLogin
-        } as any;
+          lastLogin: data.lastLogin,
+          subscriptionStatus: data.subscriptionStatus || 'PENDING',
+          subscriptionExpiryDate: data.subscriptionExpiryDate,
+          plan: data.plan || 'MONTHLY'
+        } as CustomerData;
       }));
     });
 
@@ -48,20 +51,41 @@ const AdminPanel: React.FC<{ currentAdminId: string }> = ({ currentAdminId }) =>
     return () => { unsubUsers(); unsubLogs(); unsubConfig(); };
   }, []);
 
+  const calculateDaysRemaining = (expiryDate?: string) => {
+    if (!expiryDate) return 0;
+    const expiry = new Date(expiryDate);
+    const now = new Date();
+    const diffTime = expiry.getTime() - now.getTime();
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    return diffDays > 0 ? diffDays : 0;
+  };
+
   const stats = useMemo(() => {
     const total = customers.length;
     const active = customers.filter(c => c.status === 'active').length;
-    const blocked = total - active;
-    const admins = customers.filter(c => c.role === 'ADMIN').length;
-    return { total, active, blocked, admins };
+    const blocked = customers.filter(c => c.status === 'blocked').length;
+    const premium = customers.filter(c => c.subscriptionStatus === 'ACTIVE').length;
+    return { total, active, blocked, premium };
   }, [customers]);
 
   const handleUpdateUser = async (targetUid: string, updates: any) => {
-    if (!window.confirm("Confirmar alteração de status/permissão?")) return;
+    if (!window.confirm("Confirmar alteração?")) return;
     setIsLoading(true);
     await dispatchEvent(currentAdminId, {
       type: 'ADMIN_UPDATE_USER',
       payload: { targetUid, updates, adminId: currentAdminId },
+      source: 'admin',
+      createdAt: new Date()
+    });
+    setIsLoading(false);
+  };
+
+  const handleDeleteUser = async (targetUid: string) => {
+    if (!window.confirm("⚠️ AVISO CRÍTICO: Excluir este usuário permanentemente? Esta ação não pode ser desfeita.")) return;
+    setIsLoading(true);
+    await dispatchEvent(currentAdminId, {
+      type: 'ADMIN_DELETE_USER',
+      payload: { targetUid, adminId: currentAdminId },
       source: 'admin',
       createdAt: new Date()
     });
@@ -102,16 +126,16 @@ const AdminPanel: React.FC<{ currentAdminId: string }> = ({ currentAdminId }) =>
       <div className="flex-1 flex overflow-hidden">
         <aside className="w-64 bg-[#111b21] border-r border-white/5 flex flex-col shrink-0">
           <div className="p-6 border-b border-white/5">
-            <h2 className="text-xl font-black italic text-[#00a884] tracking-tighter uppercase">Painel de Controle</h2>
-            <p className="text-[10px] text-[#8696a0] font-bold uppercase tracking-widest mt-1">Audit Mode v4.0</p>
+            <h2 className="text-xl font-black italic text-[#00a884] tracking-tighter uppercase">CEO Dashboard</h2>
+            <p className="text-[10px] text-[#8696a0] font-bold uppercase tracking-widest mt-1">Gestão de Ativos v5.0</p>
           </div>
           
           <nav className="flex-1 p-3 space-y-1">
             {[
-              { id: 'dashboard', label: 'Dashboard', icon: '📊' },
-              { id: 'users', label: 'Membros', icon: '👥' },
+              { id: 'dashboard', label: 'Visão Geral', icon: '📈' },
+              { id: 'users', label: 'Cadastros & Assinaturas', icon: '💳' },
               { id: 'messages', label: 'Comunicados', icon: '📢' },
-              { id: 'config', label: 'Sistema', icon: '⚙️' },
+              { id: 'config', label: 'Configurações', icon: '⚙️' },
             ].map(tab => (
               <button 
                 key={tab.id}
@@ -125,7 +149,7 @@ const AdminPanel: React.FC<{ currentAdminId: string }> = ({ currentAdminId }) =>
           </nav>
 
           <div className="p-4 bg-[#202c33] border-t border-white/5">
-            <p className="text-[9px] font-black text-[#8696a0] uppercase text-center italic">Privacidade Total Ativada 🔒</p>
+            <p className="text-[9px] font-black text-[#8696a0] uppercase text-center italic">Privacidade CEO: Dados Sensíveis Ocultos 🔒</p>
           </div>
         </aside>
 
@@ -135,35 +159,39 @@ const AdminPanel: React.FC<{ currentAdminId: string }> = ({ currentAdminId }) =>
             <div className="space-y-8 animate-fade">
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <div className="bg-[#111b21] p-6 rounded-3xl border border-white/5">
-                  <p className="text-[9px] font-black text-[#8696a0] uppercase mb-1">Membros Totais</p>
+                  <p className="text-[9px] font-black text-[#8696a0] uppercase mb-1">Total de Cadastros</p>
                   <h3 className="text-3xl font-black">{stats.total}</h3>
                 </div>
                 <div className="bg-[#111b21] p-6 rounded-3xl border border-white/5">
-                  <p className="text-[9px] font-black text-[#8696a0] uppercase mb-1">Status Ativo</p>
-                  <h3 className="text-3xl font-black text-[#00a884]">{stats.active}</h3>
+                  <p className="text-[9px] font-black text-[#8696a0] uppercase mb-1">Assinaturas Ativas</p>
+                  <h3 className="text-3xl font-black text-[#00a884]">{stats.premium}</h3>
                 </div>
                 <div className="bg-[#111b21] p-6 rounded-3xl border border-white/5">
-                  <p className="text-[9px] font-black text-[#8696a0] uppercase mb-1">Contas Bloqueadas</p>
+                  <p className="text-[9px] font-black text-[#8696a0] uppercase mb-1">Usuários Bloqueados</p>
                   <h3 className="text-3xl font-black text-rose-500">{stats.blocked}</h3>
                 </div>
                 <div className="bg-[#111b21] p-6 rounded-3xl border border-white/5">
-                  <p className="text-[9px] font-black text-[#8696a0] uppercase mb-1">Administradores</p>
-                  <h3 className="text-3xl font-black text-amber-500">{stats.admins}</h3>
+                  <p className="text-[9px] font-black text-[#8696a0] uppercase mb-1">Taxa de Conversão</p>
+                  <h3 className="text-3xl font-black text-amber-500">{stats.total > 0 ? ((stats.premium / stats.total) * 100).toFixed(1) : 0}%</h3>
                 </div>
               </div>
 
               <div className="space-y-4">
-                <h3 className="text-[10px] font-black text-[#8696a0] uppercase tracking-widest italic">Últimas Ações de Auditoria</h3>
+                <h3 className="text-[10px] font-black text-[#8696a0] uppercase tracking-widest italic">Logs de Auditoria Recentes</h3>
                 <div className="bg-[#111b21] rounded-3xl border border-white/5 overflow-hidden">
-                  {auditLogs.map(log => (
-                    <div key={log.id} className="p-4 border-b border-white/5 flex justify-between items-center text-[11px]">
-                      <div className="flex gap-4 items-center">
-                        <span className="bg-[#2a3942] px-2 py-1 rounded-lg font-black text-[#00a884]">{log.action}</span>
-                        <span className="text-[#8696a0] font-mono">{log.details}</span>
+                  {auditLogs.length === 0 ? (
+                    <p className="p-8 text-center text-[#8696a0] text-xs italic">Nenhuma atividade registrada.</p>
+                  ) : (
+                    auditLogs.map(log => (
+                      <div key={log.id} className="p-4 border-b border-white/5 flex justify-between items-center text-[11px]">
+                        <div className="flex gap-4 items-center">
+                          <span className="bg-[#2a3942] px-2 py-1 rounded-lg font-black text-[#00a884]">{log.action}</span>
+                          <span className="text-[#8696a0] font-mono">{log.details}</span>
+                        </div>
+                        <span className="text-[#667781]">{log.createdAt?.seconds ? new Date(log.createdAt.seconds * 1000).toLocaleString() : 'Recent'}</span>
                       </div>
-                      <span className="text-[#667781]">{new Date(log.createdAt?.seconds * 1000).toLocaleString()}</span>
-                    </div>
-                  ))}
+                    ))
+                  )}
                 </div>
               </div>
             </div>
@@ -175,54 +203,68 @@ const AdminPanel: React.FC<{ currentAdminId: string }> = ({ currentAdminId }) =>
                 <table className="w-full text-left">
                   <thead className="bg-[#202c33] text-[9px] font-black text-[#8696a0] uppercase">
                     <tr>
-                      <th className="p-4">Membro</th>
-                      <th className="p-4">ID / Email</th>
-                      <th className="p-4">Criado em</th>
+                      <th className="p-4">Nome</th>
+                      <th className="p-4">Email</th>
+                      <th className="p-4">Assinatura</th>
+                      <th className="p-4">Vigência</th>
                       <th className="p-4">Status</th>
                       <th className="p-4 text-right">Ações</th>
                     </tr>
                   </thead>
                   <tbody className="text-sm">
-                    {customers.map(user => (
-                      <tr key={user.uid} className="border-b border-white/5 hover:bg-white/5 transition-all">
-                        <td className="p-4">
-                          <div className="flex items-center gap-3">
-                            <div className="w-8 h-8 rounded-full bg-[#00a884]/20 flex items-center justify-center font-black text-[#00a884] text-xs uppercase">
-                              {user.userName?.charAt(0)}
+                    {customers.map(user => {
+                      const daysLeft = calculateDaysRemaining(user.subscriptionExpiryDate);
+                      return (
+                        <tr key={user.uid} className="border-b border-white/5 hover:bg-white/5 transition-all">
+                          <td className="p-4">
+                            <div className="flex items-center gap-3">
+                              <div className="w-8 h-8 rounded-full bg-[#00a884]/20 flex items-center justify-center font-black text-[#00a884] text-xs uppercase">
+                                {user.userName?.charAt(0)}
+                              </div>
+                              <span className="font-bold">{user.userName}</span>
                             </div>
-                            <span className="font-bold">{user.userName}</span>
-                          </div>
-                        </td>
-                        <td className="p-4">
-                          <p className="text-[10px] font-mono text-[#8696a0]">{user.userId}</p>
-                          <p className="text-[10px] text-[#667781]">{user.email}</p>
-                        </td>
-                        <td className="p-4 text-[10px] text-[#8696a0]">
-                          {user.createdAt ? new Date(user.createdAt).toLocaleDateString() : 'N/A'}
-                        </td>
-                        <td className="p-4">
-                          <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${user.status === 'active' ? 'bg-[#d9fdd3]/10 text-[#00a884]' : 'bg-rose-500/10 text-rose-500'}`}>
-                            {user.status}
-                          </span>
-                        </td>
-                        <td className="p-4 text-right space-x-2">
-                          <button 
-                            onClick={() => handleUpdateUser(user.uid, { status: user.status === 'active' ? 'blocked' : 'active' })}
-                            className={`p-2 rounded-xl transition-all ${user.status === 'active' ? 'bg-rose-500/10 text-rose-500' : 'bg-[#00a884]/10 text-[#00a884]'}`}
-                            title={user.status === 'active' ? 'Bloquear' : 'Desbloquear'}
-                          >
-                            {user.status === 'active' ? '🚫' : '✅'}
-                          </button>
-                          <button 
-                            onClick={() => handleUpdateUser(user.uid, { role: user.role === 'ADMIN' ? 'USER' : 'ADMIN' })}
-                            className="p-2 bg-amber-500/10 text-amber-500 rounded-xl"
-                            title="Alternar Role"
-                          >
-                            👑
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
+                          </td>
+                          <td className="p-4">
+                            <p className="text-[11px] text-[#8696a0]">{user.email}</p>
+                          </td>
+                          <td className="p-4">
+                            <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${user.subscriptionStatus === 'ACTIVE' ? 'bg-[#d9fdd3]/10 text-[#00a884]' : 'bg-rose-500/10 text-rose-500'}`}>
+                              {user.subscriptionStatus}
+                            </span>
+                            <p className="text-[9px] text-[#667781] mt-1">{user.plan}</p>
+                          </td>
+                          <td className="p-4">
+                            <div className="flex flex-col">
+                              <span className={`font-black text-xs ${daysLeft > 5 ? 'text-[#00a884]' : 'text-rose-500'}`}>
+                                {daysLeft} dias
+                              </span>
+                              <span className="text-[9px] text-[#667781]">restantes</span>
+                            </div>
+                          </td>
+                          <td className="p-4">
+                            <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${user.status === 'active' ? 'bg-[#d9fdd3]/10 text-[#00a884]' : 'bg-rose-500/10 text-rose-500'}`}>
+                              {user.status}
+                            </span>
+                          </td>
+                          <td className="p-4 text-right space-x-2">
+                            <button 
+                              onClick={() => handleUpdateUser(user.uid, { status: user.status === 'active' ? 'blocked' : 'active' })}
+                              className={`p-2 rounded-xl transition-all ${user.status === 'active' ? 'bg-rose-500/10 text-rose-500' : 'bg-[#00a884]/10 text-[#00a884]'}`}
+                              title={user.status === 'active' ? 'Bloquear' : 'Desbloquear'}
+                            >
+                              {user.status === 'active' ? '🚫' : '✅'}
+                            </button>
+                            <button 
+                              onClick={() => handleDeleteUser(user.uid)}
+                              className="p-2 bg-rose-500/20 text-rose-500 rounded-xl hover:bg-rose-500 hover:text-white transition-all"
+                              title="Excluir Permanentemente"
+                            >
+                              🗑️
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -250,7 +292,7 @@ const AdminPanel: React.FC<{ currentAdminId: string }> = ({ currentAdminId }) =>
                     <label className="text-[9px] font-black text-[#8696a0] uppercase ml-2">Destinatário (Vazio para Global)</label>
                     <select className="w-full bg-[#202c33] rounded-2xl p-4 text-sm font-bold outline-none appearance-none text-[#8696a0]" value={targetUser} onChange={e => setTargetUser(e.target.value)}>
                       <option value="">TODOS OS USUÁRIOS (GLOBAL)</option>
-                      {customers.map(u => <option key={u.uid} value={u.uid}>{u.userName} ({u.userId})</option>)}
+                      {customers.map(u => <option key={u.uid} value={u.uid}>{u.userName} ({u.email})</option>)}
                     </select>
                   </div>
                   

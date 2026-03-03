@@ -22,6 +22,10 @@ import YearlySummary from './components/YearlySummary';
 import Settings from './components/Settings';
 
 const App: React.FC = () => {
+  useEffect(() => {
+    console.log("GB: Aplicativo iniciado com sucesso!");
+  }, []);
+
   const [session, setSession] = useState<UserSession | null>(null);
   const [isInitializing, setIsInitializing] = useState(true);
   const [activeTab, setActiveTab] = useState('chat');

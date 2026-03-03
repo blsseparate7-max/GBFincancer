@@ -87,6 +87,7 @@ export type EventType =
   | 'PAY_CARD'
   | 'DELETE_ITEM'
   | 'ADMIN_UPDATE_USER'
+  | 'ADMIN_DELETE_USER'
   | 'ADMIN_SEND_BROADCAST'
   | 'ADMIN_UPDATE_CONFIG';
 
