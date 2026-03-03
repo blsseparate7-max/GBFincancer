@@ -45,24 +45,24 @@ export const dispatchEvent = async (uid: string, event: FinanceEvent) => {
       }
 
       case 'ADD_CARD_CHARGE': {
-        const { amount, category, description, cardId } = event.payload;
+        const { amount, category, description, cardId, date } = event.payload;
         
         // 1. Registra a transação como método CARD (O Dashboard irá ignorar no saldo livre)
         await addDoc(collection(userRef, "transactions"), {
           amount, category, description, paymentMethod: 'CARD',
           type: 'EXPENSE',
           cardId: cardId || 'default',
-          date: now.toISOString(),
+          date: date || now.toISOString(),
           createdAt: serverTimestamp()
         });
 
         // 2. Aumenta a dívida no documento do cartão
         const cardRef = doc(userRef, "cards", cardId || 'default');
-        await setDoc(cardRef, {
+        await updateDoc(cardRef, {
           usedAmount: increment(amount),
           availableAmount: increment(-amount),
           updatedAt: serverTimestamp()
-        }, { merge: true });
+        });
 
         // 3. Atualiza limite de categoria
         await updateLimitConsumption(uid, category, amount);
@@ -195,6 +195,43 @@ export const dispatchEvent = async (uid: string, event: FinanceEvent) => {
         break;
       }
 
+      case 'ADD_CARD': {
+        const { name, bank, limit, dueDay, closingDay } = event.payload;
+        await addDoc(collection(userRef, "cards"), {
+          name,
+          bank: bank || '',
+          limit: Number(limit),
+          usedAmount: 0,
+          availableAmount: Number(limit),
+          dueDay: Number(dueDay),
+          closingDay: closingDay ? Number(closingDay) : null,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp()
+        });
+        break;
+      }
+
+      case 'UPDATE_CARD': {
+        const { id, limit, dueDay, closingDay } = event.payload;
+        const cardRef = doc(userRef, "cards", id);
+        const cardSnap = await getDoc(cardRef);
+        
+        if (cardSnap.exists()) {
+          const cardData = cardSnap.data();
+          const usedAmount = cardData.usedAmount || 0;
+          const newLimit = Number(limit);
+          
+          await updateDoc(cardRef, {
+            limit: newLimit,
+            availableAmount: newLimit - usedAmount,
+            dueDay: Number(dueDay),
+            closingDay: closingDay ? Number(closingDay) : (cardData.closingDay || null),
+            updatedAt: serverTimestamp()
+          });
+        }
+        break;
+      }
+
       case 'DELETE_CARD': {
         const { id } = event.payload;
         if (!id) throw new Error("ID is required for DELETE_CARD");
@@ -295,6 +332,53 @@ export const dispatchEvent = async (uid: string, event: FinanceEvent) => {
           adminId,
           action: 'UPDATE_CONFIG',
           details: `Configurações globais atualizadas`,
+          createdAt: serverTimestamp()
+        });
+        break;
+      }
+
+      case 'CREATE_WALLET': {
+        await addDoc(collection(userRef, "wallets"), {
+          ...event.payload,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp()
+        });
+        break;
+      }
+
+      case 'UPDATE_WALLET': {
+        const { id, ...updates } = event.payload;
+        await updateDoc(doc(userRef, "wallets", id), {
+          ...updates,
+          updatedAt: serverTimestamp()
+        });
+        break;
+      }
+
+      case 'DELETE_WALLET': {
+        const { id } = event.payload;
+        await deleteDoc(doc(userRef, "wallets", id));
+        break;
+      }
+
+      case 'TRANSFER_WALLET': {
+        const { fromWalletId, toWalletId, amount, note, date } = event.payload;
+        
+        // 1. Decrementa da origem
+        await updateDoc(doc(userRef, "wallets", fromWalletId), {
+          balance: increment(-amount),
+          updatedAt: serverTimestamp()
+        });
+
+        // 2. Incrementa no destino
+        await updateDoc(doc(userRef, "wallets", toWalletId), {
+          balance: increment(amount),
+          updatedAt: serverTimestamp()
+        });
+
+        // 3. Registra a transferência
+        await addDoc(collection(userRef, "walletTransfers"), {
+          fromWalletId, toWalletId, amount, note, date: date || new Date().toISOString(),
           createdAt: serverTimestamp()
         });
         break;

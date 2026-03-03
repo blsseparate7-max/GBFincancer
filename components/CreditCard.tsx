@@ -8,10 +8,10 @@ import { dispatchEvent } from '../services/eventDispatcher';
 interface CreditCardProps {
   transactions: Transaction[];
   uid: string;
+  cards: CreditCardInfo[];
 }
 
-const CreditCard: React.FC<CreditCardProps> = ({ transactions, uid }) => {
-  const [cards, setCards] = useState<CreditCardInfo[]>([]);
+const CreditCard: React.FC<CreditCardProps> = ({ transactions, uid, cards }) => {
   const [showAddForm, setShowAddForm] = useState(false);
   const [showExtrato, setShowExtrato] = useState<string | null>(null);
   const [isEditing, setIsEditing] = useState<string | null>(null);
@@ -28,14 +28,6 @@ const CreditCard: React.FC<CreditCardProps> = ({ transactions, uid }) => {
   // Payment Modal States
   const [payAmount, setPayAmount] = useState('');
   const [payDate, setPayDate] = useState(new Date().toISOString().split('T')[0]);
-
-  useEffect(() => {
-    if (!uid) return;
-    const unsub = onSnapshot(collection(db, "users", uid, "cards"), (snap) => {
-      setCards(snap.docs.map(d => ({ id: d.id, ...d.data() } as CreditCardInfo)));
-    });
-    return unsub;
-  }, [uid]);
 
   const cardAnalysis = useMemo(() => {
     return cards.map(card => {
@@ -70,19 +62,25 @@ const CreditCard: React.FC<CreditCardProps> = ({ transactions, uid }) => {
     if (res.success) {
       setCardName(''); setCardBank(''); setCardLimit(''); setCardDueDay('10'); setCardClosingDay('');
       setShowAddForm(false);
+    } else {
+      alert("Erro ao adicionar cartão: " + (res.error || "Erro desconhecido"));
     }
     setIsLoading(false);
   };
 
   const handleUpdateCard = async (cardId: string, newLimit: number, newDueDay: number) => {
     setIsLoading(true);
-    await dispatchEvent(uid, {
+    const res = await dispatchEvent(uid, {
       type: 'UPDATE_CARD',
       payload: { id: cardId, limit: newLimit, dueDay: newDueDay },
       source: 'ui',
       createdAt: new Date()
     });
-    setIsEditing(null);
+    if (res.success) {
+      setIsEditing(null);
+    } else {
+      alert("Erro ao atualizar cartão.");
+    }
     setIsLoading(false);
   };
 

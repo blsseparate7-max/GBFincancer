@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { db, auth } from './services/firebaseConfig';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { collection, doc, onSnapshot, query, orderBy, limit, getDoc } from 'firebase/firestore';
-import { UserSession, Transaction, SavingGoal, Notification, Message, Bill, CategoryLimit, CreditCardInfo } from './types';
+import { UserSession, Transaction, SavingGoal, Notification, Message, Bill, CategoryLimit, CreditCardInfo, Wallet } from './types';
 import Sidebar from './components/Sidebar';
 import Header from './components/Header';
 import Auth from './components/Auth';
@@ -20,6 +20,7 @@ import HealthScoreTab from './components/HealthScoreTab';
 import ImpactSimulator from './components/ImpactSimulator';
 import YearlySummary from './components/YearlySummary';
 import Settings from './components/Settings';
+import WalletTab from './components/WalletTab';
 
 const App: React.FC = () => {
   useEffect(() => {
@@ -99,13 +100,17 @@ const App: React.FC = () => {
       setCards(snap.docs.map(d => ({ id: d.id, ...d.data() } as CreditCardInfo)));
     });
 
+    const unsubWallets = onSnapshot(collection(userRef, "wallets"), (snap) => {
+      setWallets(snap.docs.map(d => ({ id: d.id, ...d.data() } as Wallet)));
+    });
+
     const unsubNotifs = onSnapshot(query(collection(userRef, "notifications"), orderBy("createdAt", "desc"), limit(20)), (snap) => {
       setNotifications(snap.docs.map(d => ({ id: d.id, ...d.data() } as Notification)));
     });
 
     return () => { 
       unsubTrans(); unsubGoals(); unsubReminders(); 
-      unsubLimits(); unsubCards(); unsubNotifs(); 
+      unsubLimits(); unsubCards(); unsubWallets(); unsubNotifs(); 
     };
   }, [session?.uid]);
 
@@ -116,6 +121,7 @@ const App: React.FC = () => {
   const [reminders, setReminders] = useState<Bill[]>([]);
   const [limits, setLimits] = useState<CategoryLimit[]>([]);
   const [cards, setCards] = useState<CreditCardInfo[]>([]);
+  const [wallets, setWallets] = useState<Wallet[]>([]);
 
   const handleOnboardingFinish = () => {
     setOnboardingStep('setup');
@@ -176,10 +182,10 @@ const App: React.FC = () => {
     }
 
     switch (activeTab) {
-      case 'chat': return <ChatInterface user={session} messages={messages} setMessages={setMessages} transactions={transactions} limits={limits} reminders={reminders} />;
+      case 'chat': return <ChatInterface user={session} messages={messages} setMessages={setMessages} transactions={transactions} limits={limits} reminders={reminders} cards={cards} wallets={wallets} />;
       case 'dash': return <Dashboard transactions={transactions} goals={goals} limits={limits} uid={session.uid} />;
       case 'goals': return <Goals goals={goals} transactions={transactions} uid={session.uid} />;
-      case 'cc': return <CreditCard transactions={transactions} uid={session.uid} />;
+      case 'cc': return <CreditCard transactions={transactions} uid={session.uid} cards={cards} />;
       case 'reminders': return <Reminders bills={reminders} uid={session.uid} />;
       case 'messages': return <Messages notifications={notifications} />;
       case 'resumo': return <YearlySummary transactions={transactions} />;
@@ -188,6 +194,18 @@ const App: React.FC = () => {
       case 'profile': return <ProfileEdit user={session} onUpdate={(d) => setSession(p => p ? {...p, ...d} : null)} onLogout={() => signOut(auth)} />;
       case 'config': return <Settings user={session} onLogout={() => signOut(auth)} />;
       case 'admin': return session.role === 'ADMIN' ? <AdminPanel currentAdminId={session.uid} /> : null;
+      case 'wallets': {
+        const income = transactions
+          .filter(t => t.type === 'INCOME')
+          .reduce((s, t) => s + (Number(t.amount) || 0), 0);
+        const expense = transactions
+          .filter(t => t.type === 'EXPENSE' && t.paymentMethod !== 'CARD')
+          .reduce((s, t) => s + (Number(t.amount) || 0), 0);
+        const totalSaved = goals.reduce((s, g) => s + (Number(g.currentAmount) || 0), 0);
+        const freeBalance = income - expense - totalSaved;
+        
+        return <WalletTab uid={session.uid} freeBalance={freeBalance} goals={goals} />;
+      }
       default: return <ChatInterface user={session} messages={messages} setMessages={setMessages} transactions={transactions} limits={limits} reminders={reminders} />;
     }
   };

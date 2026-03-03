@@ -89,7 +89,11 @@ export type EventType =
   | 'ADMIN_UPDATE_USER'
   | 'ADMIN_DELETE_USER'
   | 'ADMIN_SEND_BROADCAST'
-  | 'ADMIN_UPDATE_CONFIG';
+  | 'ADMIN_UPDATE_CONFIG'
+  | 'CREATE_WALLET'
+  | 'UPDATE_WALLET'
+  | 'DELETE_WALLET'
+  | 'TRANSFER_WALLET';
 
 export interface FinanceEvent {
   type: EventType;
@@ -189,4 +193,27 @@ export interface SystemMessage {
   text: string;
   type: 'ALERTA' | 'META';
   timestamp: any;
+}
+
+export type WalletType = 'CONTA' | 'CARTEIRA' | 'POUPANÇA' | 'INVESTIMENTO' | 'OUTRO';
+
+export interface Wallet {
+  id: string;
+  name: string;
+  type: WalletType;
+  balance: number;
+  color?: string;
+  icon?: string;
+  createdAt: any;
+  updatedAt: any;
+}
+
+export interface WalletTransfer {
+  id: string;
+  fromWalletId: string;
+  toWalletId: string;
+  amount: number;
+  date: string;
+  note?: string;
+  createdAt: any;
 }

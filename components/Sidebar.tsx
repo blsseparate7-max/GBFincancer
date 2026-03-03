@@ -15,6 +15,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, expanded, se
   const items = [
     { id: 'chat', label: 'Mentor IA', icon: '💬' },
     { id: 'dash', label: 'Dashboard', icon: '📊' },
+    { id: 'wallets', label: 'Carteira', icon: '👛' },
     { id: 'goals', label: 'Metas', icon: '🎯' },
     { id: 'cc', label: 'Cartão de Crédito', icon: '💳' },
     { id: 'reminders', label: 'Lembretes', icon: '⏰' },

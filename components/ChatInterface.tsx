@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { UserSession, Message, Transaction, CategoryLimit, Bill } from '../types';
+import { UserSession, Message, Transaction, CategoryLimit, Bill, CreditCardInfo, Wallet } from '../types';
 import { parseMessage } from '../services/geminiService';
 import { dispatchEvent } from '../services/eventDispatcher';
 
@@ -10,9 +10,11 @@ interface ChatProps {
   transactions: Transaction[];
   limits: CategoryLimit[];
   reminders: Bill[];
+  cards: CreditCardInfo[];
+  wallets: Wallet[];
 }
 
-const ChatInterface: React.FC<ChatProps> = ({ user, messages, setMessages, transactions, limits, reminders }) => {
+const ChatInterface: React.FC<ChatProps> = ({ user, messages, setMessages, transactions, limits, reminders, cards, wallets }) => {
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
@@ -63,7 +65,7 @@ const ChatInterface: React.FC<ChatProps> = ({ user, messages, setMessages, trans
       const triggerSummary = async () => {
         setIsLoading(true);
         try {
-          const result = await parseMessage("GERAR_RESUMO_MATINAL", user.name, { reminders });
+          const result = await parseMessage("GERAR_RESUMO_MATINAL", user.name, { reminders, cards, wallets });
           const aiMsg: Message = { 
             id: `summary-${Date.now()}`, 
             text: result.reply || "Bom dia! Vamos organizar suas finanças hoje?", 
@@ -80,7 +82,7 @@ const ChatInterface: React.FC<ChatProps> = ({ user, messages, setMessages, trans
       };
       triggerSummary();
     }
-  }, [user.uid, messages.length, reminders]);
+  }, [user.uid, messages.length, reminders, cards, wallets]);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -104,7 +106,7 @@ const ChatInterface: React.FC<ChatProps> = ({ user, messages, setMessages, trans
     setIsLoading(true);
 
     try {
-      const result = await parseMessage(messageText, user.name);
+      const result = await parseMessage(messageText, user.name, { reminders, cards, wallets });
       
       let proactiveReply = "";
 

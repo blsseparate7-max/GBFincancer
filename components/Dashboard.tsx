@@ -57,7 +57,7 @@ const Dashboard: React.FC<DashProps> = ({ transactions, goals, limits, uid }) =>
       }, {} as Record<string, number>);
 
     const expenseCategories = transactions
-      .filter(t => t.type === 'EXPENSE')
+      .filter(t => t.type === 'EXPENSE' && t.paymentMethod !== 'CARD')
       .reduce((acc, t) => {
         const cat = normalizeCategory(t.category || 'Outros');
         acc[cat] = (acc[cat] || 0) + (Number(t.amount) || 0);
@@ -324,10 +324,13 @@ const Dashboard: React.FC<DashProps> = ({ transactions, goals, limits, uid }) =>
 
       {/* Histórico Recente */}
       <section className="space-y-4">
-        <h3 className="text-[10px] font-black text-[var(--text-muted)] uppercase tracking-widest italic px-1">Histórico Recente</h3>
+        <h3 className="text-[10px] font-black text-[var(--text-muted)] uppercase tracking-widest italic px-1">Histórico Recente (Fluxo de Caixa)</h3>
         <div className="bg-[var(--surface)] rounded-[2rem] border border-[var(--border)] overflow-hidden">
-          {transactions.slice(0, 10).map((t, i) => (
-            <div key={t.id} className={`p-4 flex justify-between items-center ${i !== 9 && i !== transactions.length - 1 ? 'border-b border-[var(--border)]/50' : ''}`}>
+          {transactions
+            .filter(t => t.paymentMethod !== 'CARD')
+            .slice(0, 10)
+            .map((t, i, filteredArray) => (
+            <div key={t.id} className={`p-4 flex justify-between items-center ${i !== filteredArray.length - 1 ? 'border-b border-[var(--border)]/50' : ''}`}>
               <div className="flex items-center gap-3">
                 <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs ${t.type === 'INCOME' ? 'bg-[var(--green-whatsapp)]/20 text-[var(--green-whatsapp)]' : 'bg-rose-500/20 text-rose-500'}`}>
                   {t.type === 'INCOME' ? '↑' : '↓'}
