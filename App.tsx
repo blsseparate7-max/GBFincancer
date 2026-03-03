@@ -27,6 +27,7 @@ const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState('chat');
   const [sidebarExpanded, setSidebarExpanded] = useState(false); // Oculto por padrão
   const [isMobile, setIsMobile] = useState(window.innerWidth < 1024);
+  const [onboardingStep, setOnboardingStep] = useState<'none' | 'welcome' | 'setup'>('none');
 
   useEffect(() => {
     const handleResize = () => {
@@ -42,7 +43,7 @@ const App: React.FC = () => {
         const userDoc = await getDoc(doc(db, "users", firebaseUser.uid));
         if (userDoc.exists()) {
           const userData = userDoc.data();
-          setSession({
+          const userSession: UserSession = {
             uid: firebaseUser.uid,
             userId: userData.userId,
             name: userData.name,
@@ -53,10 +54,16 @@ const App: React.FC = () => {
             onboardingSeen: userData.onboardingSeen,
             status: userData.status || 'active',
             photoURL: userData.photoURL
-          });
+          };
+          setSession(userSession);
+          
+          if (!userData.onboardingSeen) {
+            setOnboardingStep('welcome');
+          }
         }
       } else {
         setSession(null);
+        setOnboardingStep('none');
       }
       setIsInitializing(false);
     });
@@ -106,12 +113,66 @@ const App: React.FC = () => {
   const [limits, setLimits] = useState<CategoryLimit[]>([]);
   const [cards, setCards] = useState<CreditCardInfo[]>([]);
 
-  if (isInitializing) return <div className="h-dvh bg-[#0B141A] flex items-center justify-center text-[#00A884] font-black italic animate-pulse">GB...</div>;
+  const handleOnboardingFinish = () => {
+    setOnboardingStep('setup');
+  };
+
+  const handleSetupComplete = async (data: { income: number; bills: any[]; goal: any }) => {
+    if (!session?.uid) return;
+    
+    const { dispatchEvent } = await import('./services/eventDispatcher');
+    const { syncUserData } = await import('./services/databaseService');
+
+    // 1. Salvar Renda
+    if (data.income > 0) {
+      await dispatchEvent(session.uid, {
+        type: 'ADD_INCOME',
+        payload: { amount: data.income, description: 'Renda Inicial', category: 'Salário', date: new Date().toISOString() },
+        source: 'ui',
+        createdAt: new Date()
+      });
+    }
+
+    // 2. Salvar Contas Fixas
+    for (const bill of data.bills) {
+      await dispatchEvent(session.uid, {
+        type: 'CREATE_REMINDER',
+        payload: { description: bill.description, amount: bill.amount, dueDay: bill.dueDay, category: 'Contas Fixas' },
+        source: 'ui',
+        createdAt: new Date()
+      });
+    }
+
+    // 3. Salvar Meta
+    if (data.goal.name && data.goal.targetAmount > 0) {
+      await dispatchEvent(session.uid, {
+        type: 'CREATE_GOAL',
+        payload: { name: data.goal.name, targetAmount: data.goal.targetAmount, location: 'Cofre Principal' },
+        source: 'ui',
+        createdAt: new Date()
+      });
+    }
+
+    // 4. Marcar Onboarding como visto
+    await syncUserData(session.uid, { onboardingSeen: true });
+    
+    setSession(prev => prev ? { ...prev, onboardingSeen: true } : null);
+    setOnboardingStep('none');
+  };
+
+  if (isInitializing) return <div className="h-dvh bg-[var(--bg-body)] flex items-center justify-center text-[var(--green-whatsapp)] font-black italic animate-pulse">GB...</div>;
   if (!session) return <Auth onLogin={(s) => setSession(s)} />;
 
   const renderContent = () => {
+    if (onboardingStep === 'welcome') {
+      return <WelcomeOnboarding userName={session.name} onFinish={handleOnboardingFinish} />;
+    }
+    if (onboardingStep === 'setup') {
+      return <SetupWizard user={session} onComplete={handleSetupComplete} />;
+    }
+
     switch (activeTab) {
-      case 'chat': return <ChatInterface user={session} messages={messages} setMessages={setMessages} />;
+      case 'chat': return <ChatInterface user={session} messages={messages} setMessages={setMessages} transactions={transactions} limits={limits} reminders={reminders} />;
       case 'dash': return <Dashboard transactions={transactions} goals={goals} limits={limits} uid={session.uid} />;
       case 'goals': return <Goals goals={goals} transactions={transactions} uid={session.uid} />;
       case 'cc': return <CreditCard transactions={transactions} uid={session.uid} />;
@@ -123,7 +184,7 @@ const App: React.FC = () => {
       case 'profile': return <ProfileEdit user={session} onUpdate={(d) => setSession(p => p ? {...p, ...d} : null)} onLogout={() => signOut(auth)} />;
       case 'config': return <Settings user={session} onLogout={() => signOut(auth)} />;
       case 'admin': return session.role === 'ADMIN' ? <AdminPanel currentAdminId={session.uid} /> : null;
-      default: return <ChatInterface user={session} messages={messages} setMessages={setMessages} />;
+      default: return <ChatInterface user={session} messages={messages} setMessages={setMessages} transactions={transactions} limits={limits} reminders={reminders} />;
     }
   };
 
@@ -132,7 +193,7 @@ const App: React.FC = () => {
   };
 
   return (
-    <div className="flex h-dvh w-full bg-[#0b141a] text-[#e9edef] overflow-hidden">
+    <div className="flex h-dvh w-full bg-[var(--bg-body)] text-[var(--text-primary)] overflow-hidden">
       
       {/* Overlay para fechar menu ao clicar fora */}
       {sidebarExpanded && (
@@ -173,9 +234,9 @@ const App: React.FC = () => {
           }} 
           onLogout={() => signOut(auth)} 
         />
-        <main className="flex-1 relative overflow-hidden bg-[#0b141a] flex flex-col">
+        <main className="flex-1 relative overflow-hidden bg-[var(--chat-bg)] flex flex-col">
           <div className="absolute inset-0 whatsapp-pattern pointer-events-none"></div>
-          <div className="relative z-10 flex-1 min-h-0 h-full flex flex-col overflow-hidden">
+          <div className="relative z-10 flex-1 min-h-0 h-full flex flex-col overflow-y-auto no-scrollbar">
             {renderContent()}
           </div>
         </main>

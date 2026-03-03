@@ -101,7 +101,7 @@ const CreditCard: React.FC<CreditCardProps> = ({ transactions, uid }) => {
       alert("Fatura zerada. Parabéns!");
       return;
     }
-    setPayAmount(card.used.toString());
+    setPayAmount(card.used?.toString() || '0');
     setIsPaying(card.id);
   };
 
@@ -141,16 +141,16 @@ const CreditCard: React.FC<CreditCardProps> = ({ transactions, uid }) => {
   return (
     <div className="p-6 space-y-6 animate-fade pb-32">
       <header className="mb-4">
-        <h2 className="text-[10px] font-black text-[#00a884] uppercase tracking-[0.4em] mb-1">Gestão de Crédito</h2>
-        <h1 className="text-3xl font-black text-[#111b21] uppercase italic tracking-tighter">Carteira Digital</h1>
+        <h2 className="text-[10px] font-black text-[var(--green-whatsapp)] uppercase tracking-[0.4em] mb-1">Gestão de Crédito</h2>
+        <h1 className="text-3xl font-black text-[var(--text-primary)] uppercase italic tracking-tighter">Carteira Digital</h1>
       </header>
 
       {cardAnalysis.length === 0 && !showAddForm ? (
-        <div className="flex flex-col items-center justify-center py-20 text-center space-y-6 bg-white rounded-[3rem] border border-dashed border-[#d1d7db]">
+        <div className="flex flex-col items-center justify-center py-20 text-center space-y-6 bg-white rounded-[3rem] border border-dashed border-[var(--border)]">
           <div className="text-6xl grayscale opacity-20">💳</div>
           <button 
             onClick={() => setShowAddForm(true)}
-            className="bg-[#00a884] text-white px-8 py-4 rounded-2xl font-black text-[10px] uppercase shadow-lg active:scale-95 transition-all"
+            className="bg-[var(--green-whatsapp)] text-white px-8 py-4 rounded-2xl font-black text-[10px] uppercase shadow-lg active:scale-95 transition-all"
           >
             Configurar Cartão
           </button>
@@ -158,20 +158,20 @@ const CreditCard: React.FC<CreditCardProps> = ({ transactions, uid }) => {
       ) : (
         <div className="space-y-6">
           <div className="flex justify-between items-center px-1">
-            <h3 className="text-[10px] font-black text-[#667781] uppercase tracking-widest">Cartões Ativos</h3>
-            <button onClick={() => setShowAddForm(true)} className="text-[10px] font-black text-[#00a884] uppercase tracking-tighter">Novo Cartão</button>
+            <h3 className="text-[10px] font-black text-[var(--text-muted)] uppercase tracking-widest">Cartões Ativos</h3>
+            <button onClick={() => setShowAddForm(true)} className="text-[10px] font-black text-[var(--green-whatsapp)] uppercase tracking-tighter">Novo Cartão</button>
           </div>
 
           {cardAnalysis.map(card => (
-            <div key={card.id} className="bg-gradient-to-br from-[#111b21] via-[#202c33] to-[#111b21] p-8 rounded-[3rem] shadow-2xl relative overflow-hidden text-white group">
+            <div key={card.id} className="bg-gradient-to-br from-[var(--text-primary)] via-[var(--bg-body)] to-[var(--text-primary)] p-8 rounded-[3rem] shadow-2xl relative overflow-hidden text-white group">
               {/* Pattern Decoração */}
-              <div className="absolute top-0 right-0 w-64 h-64 bg-[#00a884]/5 rounded-full blur-3xl -mr-32 -mt-32"></div>
+              <div className="absolute top-0 right-0 w-64 h-64 bg-[var(--green-whatsapp)]/5 rounded-full blur-3xl -mr-32 -mt-32"></div>
               
               <div className="relative z-10">
                 <div className="flex justify-between items-start mb-10">
                   <div>
                     <h4 className="text-2xl font-black italic uppercase tracking-tighter leading-none">{card.name}</h4>
-                    <p className="text-[10px] text-[#8696a0] font-bold uppercase mt-1 tracking-widest">{card.bank || 'Bandeira Digital'}</p>
+                    <p className="text-[10px] text-[var(--text-muted)] font-bold uppercase mt-1 tracking-widest">{card.bank || 'Bandeira Digital'}</p>
                   </div>
                   <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                     <button onClick={() => setIsEditing(card.id)} className="p-2.5 bg-white/10 rounded-xl hover:bg-white/20 transition-all text-xs">✏️</button>
@@ -181,17 +181,17 @@ const CreditCard: React.FC<CreditCardProps> = ({ transactions, uid }) => {
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-10">
                   <div className="space-y-1">
-                    <p className="text-[9px] font-black text-[#8696a0] uppercase tracking-widest">Fatura Atual</p>
+                    <p className="text-[9px] font-black text-[var(--text-muted)] uppercase tracking-widest">Fatura Atual</p>
                     <h3 className="text-4xl font-black text-[#ff4b4b]">{format(card.used)}</h3>
                     <div className="flex items-center gap-2 pt-1">
-                       <span className="w-1.5 h-1.5 bg-[#00a884] rounded-full animate-pulse"></span>
-                       <p className="text-[10px] text-[#00a884] font-black uppercase italic">Vence dia {card.dueDay}</p>
+                       <span className="w-1.5 h-1.5 bg-[var(--green-whatsapp)] rounded-full animate-pulse"></span>
+                       <p className="text-[10px] text-[var(--green-whatsapp)] font-black uppercase italic">Vence dia {card.dueDay}</p>
                     </div>
                   </div>
                   <div className="flex flex-col justify-end md:items-end">
                     <button 
                       onClick={() => handleOpenPayment(card)}
-                      className="bg-[#00a884] hover:bg-[#00c99d] text-white px-8 py-4 rounded-[1.5rem] text-[10px] font-black uppercase shadow-xl shadow-[#00a884]/20 transition-all active:scale-95 w-full md:w-auto"
+                      className="bg-[var(--green-whatsapp)] hover:bg-[#00c99d] text-white px-8 py-4 rounded-[1.5rem] text-[10px] font-black uppercase shadow-xl shadow-[var(--green-whatsapp)]/20 transition-all active:scale-95 w-full md:w-auto"
                     >
                       Pagar Fatura
                     </button>
@@ -200,19 +200,19 @@ const CreditCard: React.FC<CreditCardProps> = ({ transactions, uid }) => {
 
                 <div className="space-y-4 pt-6 border-t border-white/5">
                   <div className="flex justify-between text-[11px] font-black uppercase tracking-tight">
-                    <span className="text-[#8696a0]">Disponível: {format(card.available)}</span>
+                    <span className="text-[var(--text-muted)]">Disponível: {format(card.available)}</span>
                     <span className="text-white">Limite: {format(card.limit)}</span>
                   </div>
                   
                   <div className="h-2.5 w-full bg-white/5 rounded-full overflow-hidden flex">
                     <div 
-                      className={`h-full transition-all duration-1000 ${card.pct > 90 ? 'bg-red-500 shadow-[0_0_10px_rgba(239,68,68,0.5)]' : card.pct > 70 ? 'bg-amber-400' : 'bg-[#00a884]'}`}
+                      className={`h-full transition-all duration-1000 ${card.pct > 90 ? 'bg-red-500 shadow-[0_0_10px_rgba(239,68,68,0.5)]' : card.pct > 70 ? 'bg-amber-400' : 'bg-[var(--green-whatsapp)]'}`}
                       style={{ width: `${card.pct}%` }}
                     />
                   </div>
                   
                   <div className="flex justify-between items-center">
-                     <p className="text-[10px] text-[#8696a0] font-bold uppercase">{card.pct.toFixed(1)}% do limite utilizado</p>
+                     <p className="text-[10px] text-[var(--text-muted)] font-bold uppercase">{card.pct.toFixed(1)}% do limite utilizado</p>
                      <button 
                       onClick={() => setShowExtrato(card.id)}
                       className="bg-white/5 hover:bg-white/10 px-5 py-2.5 rounded-2xl text-[9px] font-black uppercase tracking-widest transition-colors"
@@ -225,28 +225,28 @@ const CreditCard: React.FC<CreditCardProps> = ({ transactions, uid }) => {
 
               {/* Modal Edição Rápida */}
               {isEditing === card.id && (
-                <div className="absolute inset-0 bg-[#111b21]/95 backdrop-blur-xl flex flex-col items-center justify-center p-10 z-20 animate-fade">
-                  <h4 className="text-[10px] font-black uppercase mb-8 tracking-[0.3em] text-[#00a884]">Ajustes do Cartão</h4>
+                <div className="absolute inset-0 bg-[var(--text-primary)]/95 backdrop-blur-xl flex flex-col items-center justify-center p-10 z-20 animate-fade">
+                  <h4 className="text-[10px] font-black uppercase mb-8 tracking-[0.3em] text-[var(--green-whatsapp)]">Ajustes do Cartão</h4>
                   
                   <div className="w-full space-y-6 mb-10">
                     <div className="space-y-2">
-                      <label className="text-[9px] font-black text-[#8696a0] uppercase ml-1">Novo Limite Total</label>
+                      <label className="text-[9px] font-black text-[var(--text-muted)] uppercase ml-1">Novo Limite Total</label>
                       <input 
                         type="number"
-                        className="bg-white/5 border border-white/10 rounded-2xl p-5 w-full text-center text-2xl font-black outline-none focus:border-[#00a884] text-white transition-all"
+                        className="bg-white/5 border border-white/10 rounded-2xl p-5 w-full text-center text-2xl font-black outline-none focus:border-[var(--green-whatsapp)] text-white transition-all"
                         defaultValue={card.limit}
                         id={`limit-edit-${card.id}`}
                       />
                     </div>
                     <div className="space-y-2">
-                      <label className="text-[9px] font-black text-[#8696a0] uppercase ml-1">Dia de Vencimento</label>
+                      <label className="text-[9px] font-black text-[var(--text-muted)] uppercase ml-1">Dia de Vencimento</label>
                       <select 
                         id={`day-edit-${card.id}`}
-                        className="bg-white/5 border border-white/10 rounded-2xl p-5 w-full text-center text-lg font-black outline-none appearance-none text-white focus:border-[#00a884] transition-all"
+                        className="bg-white/5 border border-white/10 rounded-2xl p-5 w-full text-center text-lg font-black outline-none appearance-none text-white focus:border-[var(--green-whatsapp)] transition-all"
                         defaultValue={card.dueDay}
                       >
                         {Array.from({length: 31}, (_, i) => i + 1).map(d => (
-                          <option key={d} value={d} className="bg-[#111b21]">{d}</option>
+                          <option key={d} value={d} className="bg-[var(--text-primary)]">{d}</option>
                         ))}
                       </select>
                     </div>
@@ -261,7 +261,7 @@ const CreditCard: React.FC<CreditCardProps> = ({ transactions, uid }) => {
                         const day = (document.getElementById(`day-edit-${card.id}`) as HTMLSelectElement).value;
                         handleUpdateCard(card.id, parseFloat(val), parseInt(day));
                       }}
-                      className="flex-1 py-5 text-[10px] font-black uppercase bg-[#00a884] rounded-2xl shadow-lg shadow-[#00a884]/20"
+                      className="flex-1 py-5 text-[10px] font-black uppercase bg-[var(--green-whatsapp)] rounded-2xl shadow-lg shadow-[var(--green-whatsapp)]/20"
                     >
                       {isLoading ? '...' : 'Salvar Alterações'}
                     </button>
@@ -275,29 +275,29 @@ const CreditCard: React.FC<CreditCardProps> = ({ transactions, uid }) => {
 
       {/* Modal Pagamento (Fatura) */}
       {isPaying && (
-        <div className="fixed inset-0 z-[1000] bg-black/80 backdrop-blur-md flex items-center justify-center p-6">
+        <div className="fixed inset-0 z-[1000] bg-black/40 backdrop-blur-md flex items-center justify-center p-6">
           <div className="bg-white w-full max-w-sm rounded-[3.5rem] p-10 shadow-2xl relative animate-fade">
-            <button onClick={() => setIsPaying(null)} className="absolute top-10 right-10 text-[#667781] font-black text-xl hover:scale-110 transition-transform">✕</button>
-            <h3 className="text-2xl font-black text-[#111b21] uppercase italic mb-1 text-center tracking-tighter">Liquidar Débito</h3>
-            <p className="text-[10px] text-[#667781] font-black uppercase mb-10 text-center tracking-widest italic opacity-60">Sincronizado com Dashboard</p>
+            <button onClick={() => setIsPaying(null)} className="absolute top-10 right-10 text-[var(--text-muted)] font-black text-xl hover:scale-110 transition-transform">✕</button>
+            <h3 className="text-2xl font-black text-[var(--text-primary)] uppercase italic mb-1 text-center tracking-tighter">Liquidar Débito</h3>
+            <p className="text-[10px] text-[var(--text-muted)] font-black uppercase mb-10 text-center tracking-widest italic opacity-60">Sincronizado com Dashboard</p>
             
             <div className="space-y-6">
               <div className="space-y-2 text-center">
-                <label className="text-[9px] font-black text-[#667781] uppercase tracking-widest">Valor do Pagamento</label>
+                <label className="text-[9px] font-black text-[var(--text-muted)] uppercase tracking-widest">Valor do Pagamento</label>
                 <div className="relative">
-                  <span className="absolute left-6 top-1/2 -translate-y-1/2 text-[#111b21] font-black text-xl">R$</span>
+                  <span className="absolute left-6 top-1/2 -translate-y-1/2 text-[var(--text-primary)] font-black text-xl">R$</span>
                   <input 
                     type="number" 
                     autoFocus
-                    className="w-full bg-[#f0f2f5] rounded-3xl p-8 text-3xl font-black text-center outline-none border-2 border-transparent focus:border-[#00a884] transition-all" 
+                    className="w-full bg-[var(--bg-body)] rounded-3xl p-8 text-3xl font-black text-center outline-none border-2 border-transparent focus:border-[var(--green-whatsapp)] transition-all" 
                     value={payAmount} 
                     onChange={e => setPayAmount(e.target.value)} 
                   />
                 </div>
                 <div className="flex justify-center gap-2 mt-4">
                    <button 
-                    onClick={() => setPayAmount(cardAnalysis.find(c => c.id === isPaying)?.used.toString() || '0')}
-                    className="text-[9px] font-black text-[#00a884] uppercase border border-[#00a884]/20 px-3 py-1.5 rounded-full hover:bg-emerald-50 transition-colors"
+                    onClick={() => setPayAmount(cardAnalysis.find(c => c.id === isPaying)?.used?.toString() || '0')}
+                    className="text-[9px] font-black text-[var(--green-whatsapp)] uppercase border border-[var(--green-whatsapp)]/20 px-3 py-1.5 rounded-full hover:bg-emerald-50 transition-colors"
                    >
                      Total: {format(cardAnalysis.find(c => c.id === isPaying)?.used || 0)}
                    </button>
@@ -305,10 +305,10 @@ const CreditCard: React.FC<CreditCardProps> = ({ transactions, uid }) => {
               </div>
 
               <div className="space-y-2">
-                <label className="text-[9px] font-black text-[#667781] uppercase ml-1 tracking-widest">Data Efetiva</label>
+                <label className="text-[9px] font-black text-[var(--text-muted)] uppercase ml-1 tracking-widest">Data Efetiva</label>
                 <input 
                   type="date"
-                  className="w-full bg-[#f0f2f5] rounded-2xl p-4 text-sm font-bold outline-none border border-transparent focus:border-[#00a884] transition-all" 
+                  className="w-full bg-[var(--bg-body)] rounded-2xl p-4 text-sm font-bold outline-none border border-transparent focus:border-[var(--green-whatsapp)] transition-all" 
                   value={payDate} 
                   onChange={e => setPayDate(e.target.value)} 
                 />
@@ -317,7 +317,7 @@ const CreditCard: React.FC<CreditCardProps> = ({ transactions, uid }) => {
               <button 
                 onClick={handleConfirmPayment}
                 disabled={isLoading}
-                className="w-full bg-[#111b21] text-white py-5 rounded-[1.5rem] font-black text-[11px] uppercase shadow-2xl mt-6 active:scale-95 transition-all flex items-center justify-center gap-3"
+                className="w-full bg-[var(--text-primary)] text-white py-5 rounded-[1.5rem] font-black text-[11px] uppercase shadow-2xl mt-6 active:scale-95 transition-all flex items-center justify-center gap-3"
               >
                 {isLoading ? (
                   <div className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin"></div>
@@ -332,29 +332,29 @@ const CreditCard: React.FC<CreditCardProps> = ({ transactions, uid }) => {
 
       {/* Modal Cadastro de Novo Cartão */}
       {showAddForm && (
-        <div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-md flex items-center justify-center p-6">
+        <div className="fixed inset-0 z-[100] bg-black/40 backdrop-blur-md flex items-center justify-center p-6">
           <div className="bg-white w-full max-w-sm rounded-[3.5rem] p-10 shadow-2xl animate-fade relative">
-            <button onClick={() => setShowAddForm(false)} className="absolute top-10 right-10 text-[#667781] font-black text-xl hover:scale-110 transition-transform">✕</button>
-            <h3 className="text-2xl font-black text-[#111b21] uppercase italic mb-8 text-center tracking-tighter">Novo Cartão</h3>
+            <button onClick={() => setShowAddForm(false)} className="absolute top-10 right-10 text-[var(--text-muted)] font-black text-xl hover:scale-110 transition-transform">✕</button>
+            <h3 className="text-2xl font-black text-[var(--text-primary)] uppercase italic mb-8 text-center tracking-tighter">Novo Cartão</h3>
             
             <div className="space-y-5">
               <div className="space-y-1.5">
                 <label className="text-[9px] font-black text-gray-400 uppercase ml-2 tracking-widest">Identificação</label>
-                <input className="w-full bg-[#f0f2f5] rounded-2xl p-5 text-sm font-bold outline-none border border-transparent focus:border-[#00a884] transition-all" placeholder="Ex: Nubank, Inter..." value={cardName} onChange={e => setCardName(e.target.value)} />
+                <input className="w-full bg-[var(--bg-body)] rounded-2xl p-5 text-sm font-bold outline-none border border-transparent focus:border-[var(--green-whatsapp)] transition-all" placeholder="Ex: Nubank, Inter..." value={cardName} onChange={e => setCardName(e.target.value)} />
               </div>
               <div className="space-y-1.5">
                 <label className="text-[9px] font-black text-gray-400 uppercase ml-2 tracking-widest">Instituição (Opcional)</label>
-                <input className="w-full bg-[#f0f2f5] rounded-2xl p-5 text-sm font-bold outline-none border border-transparent focus:border-[#00a884] transition-all" placeholder="Ex: Banco Itaú" value={cardBank} onChange={e => setCardBank(e.target.value)} />
+                <input className="w-full bg-[var(--bg-body)] rounded-2xl p-5 text-sm font-bold outline-none border border-transparent focus:border-[var(--green-whatsapp)] transition-all" placeholder="Ex: Banco Itaú" value={cardBank} onChange={e => setCardBank(e.target.value)} />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1.5">
                   <label className="text-[9px] font-black text-gray-400 uppercase ml-2 tracking-widest">Limite R$</label>
-                  <input type="number" className="w-full bg-[#f0f2f5] rounded-2xl p-5 text-sm font-bold outline-none border border-transparent focus:border-[#00a884] transition-all" placeholder="0,00" value={cardLimit} onChange={e => setCardLimit(e.target.value)} />
+                  <input type="number" className="w-full bg-[var(--bg-body)] rounded-2xl p-5 text-sm font-bold outline-none border border-transparent focus:border-[var(--green-whatsapp)] transition-all" placeholder="0,00" value={cardLimit} onChange={e => setCardLimit(e.target.value)} />
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-[9px] font-black text-gray-400 uppercase ml-2 tracking-widest">Dia Venc.</label>
                   <select 
-                    className="w-full bg-[#f0f2f5] rounded-2xl p-5 text-sm font-bold outline-none border border-transparent focus:border-[#00a884] transition-all appearance-none"
+                    className="w-full bg-[var(--bg-body)] rounded-2xl p-5 text-sm font-bold outline-none border border-transparent focus:border-[var(--green-whatsapp)] transition-all appearance-none"
                     value={cardDueDay}
                     onChange={e => setCardDueDay(e.target.value)}
                   >
@@ -364,7 +364,7 @@ const CreditCard: React.FC<CreditCardProps> = ({ transactions, uid }) => {
                   </select>
                 </div>
               </div>
-              <button onClick={handleAddCard} disabled={isLoading} className="w-full bg-[#00a884] text-white py-5 rounded-[1.5rem] font-black text-[11px] uppercase shadow-xl mt-4 active:scale-95 transition-all">
+              <button onClick={handleAddCard} disabled={isLoading} className="w-full bg-[var(--green-whatsapp)] text-white py-5 rounded-[1.5rem] font-black text-[11px] uppercase shadow-xl mt-4 active:scale-95 transition-all">
                 {isLoading ? 'Configurando...' : '✨ Salvar e Ativar'}
               </button>
             </div>
@@ -374,11 +374,11 @@ const CreditCard: React.FC<CreditCardProps> = ({ transactions, uid }) => {
 
       {/* Modal Extrato Detalhado */}
       {showExtrato && (
-        <div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-md flex items-center justify-center p-6">
-          <div className="bg-[#f0f2f5] w-full max-w-md rounded-[3.5rem] p-8 shadow-2xl animate-fade max-h-[85vh] flex flex-col relative overflow-hidden">
-            <button onClick={() => setShowExtrato(null)} className="absolute top-8 right-8 text-[#667781] font-black text-xl z-10">✕</button>
-            <h3 className="text-xl font-black text-[#111b21] uppercase italic mb-8 flex items-center gap-3 tracking-tighter">
-              <span className="w-8 h-8 bg-[#111b21] text-white flex items-center justify-center rounded-xl text-xs not-italic">GB</span>
+        <div className="fixed inset-0 z-[100] bg-black/40 backdrop-blur-md flex items-center justify-center p-6">
+          <div className="bg-[var(--bg-body)] w-full max-w-md rounded-[3.5rem] p-8 shadow-2xl animate-fade max-h-[85vh] flex flex-col relative overflow-hidden">
+            <button onClick={() => setShowExtrato(null)} className="absolute top-8 right-8 text-[var(--text-muted)] font-black text-xl z-10">✕</button>
+            <h3 className="text-xl font-black text-[var(--text-primary)] uppercase italic mb-8 flex items-center gap-3 tracking-tighter">
+              <span className="w-8 h-8 bg-[var(--text-primary)] text-white flex items-center justify-center rounded-xl text-xs not-italic">GB</span>
               Extrato do Ciclo
             </h3>
             
@@ -390,21 +390,21 @@ const CreditCard: React.FC<CreditCardProps> = ({ transactions, uid }) => {
                   .sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime())
                   .map(t => (
                     <div key={t.id} className="bg-white p-5 rounded-3xl flex justify-between items-center shadow-sm border border-white relative overflow-hidden">
-                      {t.isPaid && <div className="absolute top-0 left-0 w-1 h-full bg-[#00a884]"></div>}
+                      {t.isPaid && <div className="absolute top-0 left-0 w-1 h-full bg-[var(--green-whatsapp)]"></div>}
                       <div>
-                        <p className={`text-sm font-bold ${t.isPaid ? 'text-gray-400 line-through' : 'text-[#111b21]'}`}>{t.description}</p>
-                        <p className="text-[9px] text-[#667781] uppercase font-bold mt-0.5">{t.category} • {new Date(t.date).toLocaleDateString()}</p>
+                        <p className={`text-sm font-bold ${t.isPaid ? 'text-gray-400 line-through' : 'text-[var(--text-primary)]'}`}>{t.description}</p>
+                        <p className="text-[9px] text-[var(--text-muted)] uppercase font-bold mt-0.5">{t.category} • {new Date(t.date).toLocaleDateString()}</p>
                       </div>
                       <div className="text-right">
                         <span className={`text-sm font-black ${t.isPaid ? 'text-gray-300' : 'text-red-500'}`}>-{format(t.amount)}</span>
-                        {t.isPaid && <p className="text-[8px] font-black text-[#00a884] uppercase mt-1">Liquidado</p>}
+                        {t.isPaid && <p className="text-[8px] font-black text-[var(--green-whatsapp)] uppercase mt-1">Liquidado</p>}
                       </div>
                     </div>
                   ))
               )}
             </div>
             
-            <div className="mt-8 bg-[#111b21] p-6 rounded-[2.5rem] text-white flex justify-between items-center shadow-xl">
+            <div className="mt-8 bg-[var(--text-primary)] p-6 rounded-[2.5rem] text-white flex justify-between items-center shadow-xl">
                <div>
                  <p className="text-[9px] font-black uppercase text-gray-400">Total Aberto</p>
                  <p className="text-xl font-black">{format(cardAnalysis.find(c => c.id === showExtrato)?.used || 0)}</p>
@@ -415,7 +415,7 @@ const CreditCard: React.FC<CreditCardProps> = ({ transactions, uid }) => {
                    if (c) handleOpenPayment(c);
                    setShowExtrato(null);
                  }}
-                 className="bg-[#00a884] text-white px-5 py-2.5 rounded-2xl text-[10px] font-black uppercase shadow-lg"
+                 className="bg-[var(--green-whatsapp)] text-white px-5 py-2.5 rounded-2xl text-[10px] font-black uppercase shadow-lg"
                >
                  Liquidar
                </button>

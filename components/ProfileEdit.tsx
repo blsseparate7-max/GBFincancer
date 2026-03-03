@@ -10,7 +10,7 @@ interface ProfileEditProps {
 }
 
 const ProfileEdit: React.FC<ProfileEditProps> = ({ user, onUpdate, onLogout }) => {
-  const [name, setName] = useState(user.name);
+  const [name, setName] = useState(user.name || '');
   const [loading, setLoading] = useState(false);
   const [photoURL, setPhotoURL] = useState(user.photoURL || '');
   const [uploading, setUploading] = useState(false);

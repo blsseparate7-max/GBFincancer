@@ -63,41 +63,52 @@ const Reminders: React.FC<RemindersProps> = ({ bills, uid }) => {
   };
 
   const handleDelete = async (id: string) => {
+    if (!id) return;
     if (!window.confirm("Deseja remover este lembrete?")) return;
-    await dispatchEvent(uid, {
-      type: 'DELETE_ITEM',
-      payload: { id, collection: 'reminders' },
-      source: 'ui',
-      createdAt: new Date()
-    });
+    
+    try {
+      const res = await dispatchEvent(uid, {
+        type: 'DELETE_REMINDER',
+        payload: { id },
+        source: 'ui',
+        createdAt: new Date()
+      });
+
+      if (!res.success) {
+        throw new Error(res.error?.toString() || "Erro ao excluir lembrete");
+      }
+    } catch (err: any) {
+      console.error("Erro ao excluir lembrete:", err);
+      alert(`Erro: ${err.message || "Tente novamente."}`);
+    }
   };
 
   return (
     <div className="p-6 space-y-6 animate-fade pb-32">
       <header className="flex justify-between items-end">
         <div>
-          <h2 className="text-[10px] font-black text-[#00a884] uppercase tracking-[0.4em] mb-1">Agenda Mensal</h2>
-          <h1 className="text-3xl font-black text-[#111b21] uppercase italic tracking-tighter">Lembretes</h1>
+          <h2 className="text-[10px] font-black text-[var(--green-whatsapp)] uppercase tracking-[0.4em] mb-1">Agenda Mensal</h2>
+          <h1 className="text-3xl font-black text-[var(--text-primary)] uppercase italic tracking-tighter">Lembretes</h1>
         </div>
         <button 
           onClick={() => setShowAddForm(true)}
-          className="bg-[#00a884] text-white px-4 py-2 rounded-xl text-[10px] font-black uppercase shadow-lg active:scale-95 transition-all"
+          className="bg-[var(--green-whatsapp)] text-white px-4 py-2 rounded-xl text-[10px] font-black uppercase shadow-lg active:scale-95 transition-all"
         >
           + Nova Conta
         </button>
       </header>
 
       {/* Tabs */}
-      <div className="flex bg-white/50 p-1 rounded-2xl border border-[#d1d7db]">
+      <div className="flex bg-white/50 p-1 rounded-2xl border border-[var(--border)]">
         <button 
           onClick={() => setActiveTab('pending')}
-          className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'pending' ? 'bg-white text-[#00a884] shadow-sm' : 'text-[#667781]'}`}
+          className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'pending' ? 'bg-white text-[var(--green-whatsapp)] shadow-sm' : 'text-[var(--text-muted)]'}`}
         >
           Pendentes
         </button>
         <button 
           onClick={() => setActiveTab('history')}
-          className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'history' ? 'bg-white text-[#111b21] shadow-sm' : 'text-[#667781]'}`}
+          className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'history' ? 'bg-white text-[var(--text-primary)] shadow-sm' : 'text-[var(--text-muted)]'}`}
         >
           Histórico
         </button>
@@ -107,26 +118,26 @@ const Reminders: React.FC<RemindersProps> = ({ bills, uid }) => {
         {filteredBills.length > 0 ? filteredBills.map(bill => {
           const isLate = !bill.isPaid && new Date(bill.dueDate) < new Date();
           return (
-            <div key={bill.id} className={`group bg-white p-5 rounded-3xl border border-[#d1d7db] flex justify-between items-center shadow-sm relative transition-all ${bill.isPaid ? 'opacity-70' : isLate ? 'border-l-4 border-l-red-500' : 'border-l-4 border-l-[#00a884]'}`}>
+            <div key={bill.id} className={`group bg-white p-5 rounded-3xl border border-[var(--border)] flex justify-between items-center shadow-sm relative transition-all ${bill.isPaid ? 'opacity-70' : isLate ? 'border-l-4 border-l-red-500' : 'border-l-4 border-l-[var(--green-whatsapp)]'}`}>
               <div>
-                <h4 className={`text-sm font-black ${isLate ? 'text-red-600' : 'text-[#111b21]'} mb-1`}>{bill.description}</h4>
+                <h4 className={`text-sm font-black ${isLate ? 'text-red-600' : 'text-[var(--text-primary)]'} mb-1`}>{bill.description}</h4>
                 <div className="flex gap-3 items-center">
-                  <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded-full ${bill.isPaid ? 'bg-gray-100 text-gray-500' : isLate ? 'bg-red-50 text-red-500' : 'bg-[#d9fdd3] text-[#00a884]'}`}>
+                  <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded-full ${bill.isPaid ? 'bg-gray-100 text-gray-500' : isLate ? 'bg-red-50 text-red-500' : 'bg-[#d9fdd3] text-[var(--green-whatsapp)]'}`}>
                     {bill.isPaid ? 'Pago' : isLate ? 'Atrasado' : 'Pendente'}
                   </span>
-                  <span className="text-[10px] text-[#667781] font-bold">
+                  <span className="text-[10px] text-[var(--text-muted)] font-bold">
                     Vence: {new Date(bill.dueDate).toLocaleDateString()}
                   </span>
                   {bill.recurring && <span className="text-[14px]" title="Recorrente">🔁</span>}
                 </div>
               </div>
               <div className="text-right flex flex-col items-end gap-2">
-                <p className="text-sm font-black text-[#111b21]">{format(bill.amount)}</p>
+                <p className="text-sm font-black text-[var(--text-primary)]">{format(bill.amount)}</p>
                 <div className="flex gap-2">
                   {!bill.isPaid && (
                     <button 
                       onClick={() => setPayingBillId(bill.id)}
-                      className="px-4 py-1.5 bg-[#00a884] text-white rounded-lg text-[10px] font-black uppercase shadow-sm active:scale-95"
+                      className="px-4 py-1.5 bg-[var(--green-whatsapp)] text-white rounded-lg text-[10px] font-black uppercase shadow-sm active:scale-95"
                     >
                       Paguei
                     </button>
@@ -137,7 +148,7 @@ const Reminders: React.FC<RemindersProps> = ({ bills, uid }) => {
             </div>
           );
         }) : (
-          <div className="text-center py-24 bg-white rounded-[3rem] border border-dashed border-[#d1d7db] opacity-40">
+          <div className="text-center py-24 bg-white rounded-[3rem] border border-dashed border-[var(--border)] opacity-40">
             <p className="text-4xl mb-4">📅</p>
             <p className="text-[10px] font-black uppercase tracking-widest">Tudo limpo por aqui</p>
           </div>
@@ -146,21 +157,21 @@ const Reminders: React.FC<RemindersProps> = ({ bills, uid }) => {
 
       {/* Modal Pagamento */}
       {payingBillId && (
-        <div className="fixed inset-0 z-[1000] bg-black/60 backdrop-blur-sm flex items-center justify-center p-6">
+        <div className="fixed inset-0 z-[1000] bg-black/40 backdrop-blur-sm flex items-center justify-center p-6">
           <div className="bg-white w-full max-w-sm rounded-[3rem] p-10 shadow-2xl relative animate-fade">
-            <button onClick={() => setPayingBillId(null)} className="absolute top-8 right-8 text-[#667781] font-black text-xl">✕</button>
-            <h3 className="text-xl font-black text-[#111b21] uppercase italic text-center mb-8">Confirmar Pagamento</h3>
+            <button onClick={() => setPayingBillId(null)} className="absolute top-8 right-8 text-[var(--text-muted)] font-black text-xl">✕</button>
+            <h3 className="text-xl font-black text-[var(--text-primary)] uppercase italic text-center mb-8">Confirmar Pagamento</h3>
             
             <div className="grid grid-cols-1 gap-3">
               <button 
                 onClick={() => handlePayBill('PIX')}
-                className="w-full bg-[#00a884] text-white font-black py-4 rounded-2xl text-[11px] uppercase shadow-md flex items-center justify-center gap-3 active:scale-95 transition-all"
+                className="w-full bg-[var(--green-whatsapp)] text-white font-black py-4 rounded-2xl text-[11px] uppercase shadow-md flex items-center justify-center gap-3 active:scale-95 transition-all"
               >
                 <span>⚡</span> PIX / Saldo em Conta
               </button>
               <button 
                 onClick={() => handlePayBill('CASH')}
-                className="w-full bg-[#111b21] text-white font-black py-4 rounded-2xl text-[11px] uppercase shadow-md flex items-center justify-center gap-3 active:scale-95 transition-all"
+                className="w-full bg-[var(--text-primary)] text-white font-black py-4 rounded-2xl text-[11px] uppercase shadow-md flex items-center justify-center gap-3 active:scale-95 transition-all"
               >
                 <span>💵</span> Dinheiro Vivo
               </button>
@@ -177,24 +188,24 @@ const Reminders: React.FC<RemindersProps> = ({ bills, uid }) => {
 
       {/* Modal Adicionar Conta */}
       {showAddForm && (
-        <div className="fixed inset-0 z-[1000] bg-black/60 backdrop-blur-sm flex items-center justify-center p-6">
+        <div className="fixed inset-0 z-[1000] bg-black/40 backdrop-blur-sm flex items-center justify-center p-6">
           <div className="bg-white w-full max-w-sm rounded-[3rem] p-10 shadow-2xl relative animate-fade">
-            <button onClick={() => setShowAddForm(false)} className="absolute top-8 right-8 text-[#667781] font-black text-xl">✕</button>
-            <h3 className="text-xl font-black text-[#111b21] uppercase italic mb-8 text-center">Nova Conta Recorrente</h3>
+            <button onClick={() => setShowAddForm(false)} className="absolute top-8 right-8 text-[var(--text-muted)] font-black text-xl">✕</button>
+            <h3 className="text-xl font-black text-[var(--text-primary)] uppercase italic mb-8 text-center">Nova Conta Recorrente</h3>
             
             <div className="space-y-4">
               <div className="space-y-1">
                 <label className="text-[9px] font-black text-gray-400 uppercase ml-2 tracking-widest">Descrição</label>
-                <input className="w-full bg-[#f0f2f5] rounded-2xl p-4 text-sm font-bold outline-none focus:border-[#00a884] border border-transparent" placeholder="Ex: Internet, Aluguel..." value={desc} onChange={e => setDesc(e.target.value)} />
+                <input className="w-full bg-[var(--bg-body)] rounded-2xl p-4 text-sm font-bold outline-none focus:border-[var(--green-whatsapp)] border border-transparent" placeholder="Ex: Internet, Aluguel..." value={desc} onChange={e => setDesc(e.target.value)} />
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
                   <label className="text-[9px] font-black text-gray-400 uppercase ml-2 tracking-widest">Valor R$</label>
-                  <input type="number" className="w-full bg-[#f0f2f5] rounded-2xl p-4 text-sm font-bold outline-none" placeholder="0,00" value={val} onChange={e => setVal(e.target.value)} />
+                  <input type="number" className="w-full bg-[var(--bg-body)] rounded-2xl p-4 text-sm font-bold outline-none" placeholder="0,00" value={val} onChange={e => setVal(e.target.value)} />
                 </div>
                 <div className="space-y-1">
                   <label className="text-[9px] font-black text-gray-400 uppercase ml-2 tracking-widest">Dia Venc.</label>
-                  <select className="w-full bg-[#f0f2f5] rounded-2xl p-4 text-sm font-bold outline-none" value={day} onChange={e => setDay(e.target.value)}>
+                  <select className="w-full bg-[var(--bg-body)] rounded-2xl p-4 text-sm font-bold outline-none" value={day} onChange={e => setDay(e.target.value)}>
                     {Array.from({length: 31}, (_, i) => i + 1).map(d => (
                       <option key={d} value={d}>{d}</option>
                     ))}
@@ -203,12 +214,12 @@ const Reminders: React.FC<RemindersProps> = ({ bills, uid }) => {
               </div>
               <div className="space-y-1">
                 <label className="text-[9px] font-black text-gray-400 uppercase ml-2 tracking-widest">Categoria</label>
-                <input className="w-full bg-[#f0f2f5] rounded-2xl p-4 text-sm font-bold outline-none" value={cat} onChange={e => setCat(e.target.value)} />
+                <input className="w-full bg-[var(--bg-body)] rounded-2xl p-4 text-sm font-bold outline-none" value={cat} onChange={e => setCat(e.target.value)} />
               </div>
               <button 
                 onClick={handleAddBill} 
                 disabled={isLoading}
-                className="w-full bg-[#00a884] text-white py-4 rounded-2xl font-black text-[10px] uppercase shadow-lg mt-4 active:scale-95 transition-all"
+                className="w-full bg-[var(--green-whatsapp)] text-white py-4 rounded-2xl font-black text-[10px] uppercase shadow-lg mt-4 active:scale-95 transition-all"
               >
                 {isLoading ? 'Salvando...' : 'Ativar Recorrência Mensal'}
               </button>

@@ -142,7 +142,20 @@ export const dispatchEvent = async (uid: string, event: FinanceEvent) => {
       }
 
       case 'ADD_TO_GOAL': {
-        const { goalId, amount, note } = event.payload;
+        let { goalId, amount, note, name } = event.payload;
+        
+        if (!goalId && name) {
+          // Tenta encontrar por nome
+          const { getDocs, query, where } = await import("firebase/firestore");
+          const q = query(collection(userRef, "goals"), where("name", "==", name));
+          const snap = await getDocs(q);
+          if (!snap.empty) {
+            goalId = snap.docs[0].id;
+          }
+        }
+
+        if (!goalId) return { success: false, error: "Goal not found" };
+
         const goalRef = doc(userRef, "goals", goalId);
         await updateDoc(goalRef, {
           currentAmount: increment(amount),
@@ -165,8 +178,40 @@ export const dispatchEvent = async (uid: string, event: FinanceEvent) => {
         break;
       }
 
+      case 'UPDATE_GOAL': {
+        const { goalId, ...updates } = event.payload;
+        const goalRef = doc(userRef, "goals", goalId);
+        await updateDoc(goalRef, {
+          ...updates,
+          updatedAt: serverTimestamp()
+        });
+        break;
+      }
+
+      case 'DELETE_GOAL': {
+        const { id } = event.payload;
+        if (!id) throw new Error("ID is required for DELETE_GOAL");
+        await deleteDoc(doc(userRef, "goals", id));
+        break;
+      }
+
+      case 'DELETE_CARD': {
+        const { id } = event.payload;
+        if (!id) throw new Error("ID is required for DELETE_CARD");
+        await deleteDoc(doc(userRef, "cards", id));
+        break;
+      }
+
+      case 'DELETE_REMINDER': {
+        const { id } = event.payload;
+        if (!id) throw new Error("ID is required for DELETE_REMINDER");
+        await deleteDoc(doc(userRef, "reminders", id));
+        break;
+      }
+
       case 'DELETE_ITEM': {
         const { id, collection: colName } = event.payload;
+        if (!id || !colName) throw new Error("ID and collection are required for DELETE_ITEM");
         await deleteDoc(doc(userRef, colName, id));
         break;
       }

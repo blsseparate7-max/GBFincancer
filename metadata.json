@@ -1,6 +1,6 @@
 {
   "name": "GBFinancer - AI Finance",
-  "description": "Gestão financeira reativa com IA determinística e WhatsApp UI.",
+  "description": "Mentor financeiro proativo com IA e interface estilo WhatsApp.",
   "requestFramePermissions": [
     "microphone"
   ]

@@ -16,7 +16,7 @@ interface ProfileModalProps {
 const ProfileModal: React.FC<ProfileModalProps> = ({ 
   user, onClose, onUpdate, onLogout, onSyncForce, onManageCategories, onExportBackup, onImportBackup 
 }) => {
-  const [name, setName] = useState(user.name);
+  const [name, setName] = useState(user.name || '');
   const [password, setPassword] = useState(user.password || '');
   const [photoURL, setPhotoURL] = useState(user.photoURL || '');
   const [isEditing, setIsEditing] = useState(false);

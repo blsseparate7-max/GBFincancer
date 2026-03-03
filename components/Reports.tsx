@@ -14,11 +14,11 @@ const Reports: React.FC<ReportsProps> = ({ transactions }) => {
     // Cálculo de balanço real a partir do zero
     const totalIncome = transactions
       .filter(t => t.type === 'INCOME')
-      .reduce((s, t) => s + t.amount, 0);
+      .reduce((s, t) => s + (Number(t.amount) || 0), 0);
       
     const totalExpense = transactions
       .filter(t => t.type === 'EXPENSE')
-      .reduce((s, t) => s + t.amount, 0);
+      .reduce((s, t) => s + (Number(t.amount) || 0), 0);
     
     const monthlyGroups: Record<string, { income: number; expense: number }> = {};
     const monthNames = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
@@ -28,8 +28,8 @@ const Reports: React.FC<ReportsProps> = ({ transactions }) => {
       const key = `${monthNames[date.getMonth()]} ${date.getFullYear()}`;
       if (!monthlyGroups[key]) monthlyGroups[key] = { income: 0, expense: 0 };
       
-      if (t.type === 'INCOME') monthlyGroups[key].income += t.amount;
-      else if (t.type === 'EXPENSE') monthlyGroups[key].expense += t.amount;
+      if (t.type === 'INCOME') monthlyGroups[key].income += (Number(t.amount) || 0);
+      else if (t.type === 'EXPENSE') monthlyGroups[key].expense += (Number(t.amount) || 0);
     });
 
     return { totalIncome, totalExpense, balance: totalIncome - totalExpense, monthlyGroups };
