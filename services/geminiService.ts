@@ -2,11 +2,18 @@
 import { GoogleGenAI, Type } from "@google/genai";
 
 const getAI = () => {
-  // Tenta buscar de ambas as variáveis injetadas pelo Vite
-  const apiKey = process.env.GEMINI_API_KEY || process.env.API_KEY;
+  const v1 = (import.meta as any).env?.VITE_GEMINI_API_KEY;
+  const v2 = process.env.GEMINI_API_KEY;
+  const v3 = process.env.API_KEY;
+
+  console.log("GB Debug - Verificando chaves:");
+  console.log("- VITE_GEMINI_API_KEY:", v1 ? "Presente (começa com " + v1.substring(0, 4) + ")" : "Ausente");
+  console.log("- process.env.GEMINI_API_KEY:", v2 ? "Presente" : "Ausente");
+  console.log("- process.env.API_KEY:", v3 ? "Presente" : "Ausente");
+
+  const apiKey = v1 || v2 || v3;
   
-  if (!apiKey || apiKey === 'undefined' || apiKey === '') {
-    console.warn("GB: API Key do Gemini não encontrada. Verifique as variáveis de ambiente.");
+  if (!apiKey || apiKey === 'undefined' || apiKey === '' || apiKey === 'null') {
     return null;
   }
   
