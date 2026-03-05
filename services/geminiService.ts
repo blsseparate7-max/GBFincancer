@@ -45,7 +45,8 @@ const FINANCE_PARSER_SCHEMA = {
             goalId: { type: Type.STRING },
             fromWalletId: { type: Type.STRING },
             toWalletId: { type: Type.STRING },
-            note: { type: Type.STRING }
+            note: { type: Type.STRING },
+            type: { type: Type.STRING, enum: ['PAY', 'RECEIVE'] }
           }
         }
       },
@@ -56,7 +57,7 @@ const FINANCE_PARSER_SCHEMA = {
   required: ["reply"]
 };
 
-export const parseMessage = async (text: string, userName: string, context?: { reminders?: any[], cards?: any[], wallets?: any[] }) => {
+export const parseMessage = async (text: string, userName: string, context?: { reminders?: any[], cards?: any[], wallets?: any[], categories?: any[] }) => {
   try {
     const ai = getAI();
     if (!ai) return { reply: "IA Indisponível." };
@@ -74,6 +75,10 @@ export const parseMessage = async (text: string, userName: string, context?: { r
       `CARTEIRAS DISPONÍVEIS: ${JSON.stringify(context.wallets.map(w => ({ id: w.id, nome: w.name, saldo: w.balance })))}` :
       'Nenhuma carteira cadastrada ainda.';
 
+    const categoriesContext = context?.categories && context.categories.length > 0 ?
+      `CATEGORIAS DO USUÁRIO: ${JSON.stringify(context.categories.map(c => ({ nome: c.name, tipo: c.type })))}` :
+      'Nenhuma categoria personalizada cadastrada ainda.';
+
     console.log("GB Debug - Enviando para IA:", text);
     
     const response = await ai.models.generateContent({
@@ -83,6 +88,7 @@ export const parseMessage = async (text: string, userName: string, context?: { r
       ${remindersContext}
       ${cardsContext}
       ${walletsContext}
+      ${categoriesContext}
 
       OBJETIVO: Analisar a mensagem e retornar um JSON com "reply" (texto para o usuário) e opcionalmente "event" (comando para o sistema).
       
@@ -99,11 +105,15 @@ export const parseMessage = async (text: string, userName: string, context?: { r
          - Se não encontrar uma das carteiras, responda: "Não encontrei a carteira '[NOME]'. Quer criar agora?".
          - NÃO crie transações normais para transferências. Use o evento "TRANSFER_WALLET".
       
-      CATEGORIAS PERMITIDAS: ALIMENTAÇÃO, TRANSPORTE, MORADIA, SAÚDE, EDUCAÇÃO, LAZER, PESSOAL, FINANCEIRO.
+      3. CATEGORIAS:
+         - Use preferencialmente as "CATEGORIAS DO USUÁRIO".
+         - Se a categoria sugerida NÃO estiver na lista do usuário, use "Outros" ou sugira ao usuário criar a categoria na aba "Categorias".
+         - Se o usuário não tiver categorias cadastradas, use categorias genéricas como: ALIMENTAÇÃO, TRANSPORTE, MORADIA, SAÚDE, EDUCAÇÃO, LAZER, PESSOAL, FINANCEIRO.
       
       EXEMPLOS DE EVENTOS:
       - "Gastei 50 no cartão": { "type": "ADD_CARD_CHARGE", "payload": { "amount": 50, "category": "ALIMENTAÇÃO", "description": "Gasto no Cartão", "cardId": "ID_DO_CARTAO_AQUI" } }
       - "Transferi 200 do nubank para dinheiro": { "type": "TRANSFER_WALLET", "payload": { "amount": 200, "fromWalletId": "ID_NUBANK", "toWalletId": "ID_DINHEIRO", "note": "Transferência via chat" } }
+      - "Lembrar de receber 1000 de aluguel todo dia 10": { "type": "CREATE_REMINDER", "payload": { "amount": 1000, "description": "Aluguel", "dueDay": 10, "type": "RECEIVE" } }
       
       MENSAGEM DO USUÁRIO: "${text}"`,
       config: {

@@ -4,14 +4,16 @@ import { Transaction, CreditCardInfo } from '../types';
 import { db } from '../services/firebaseConfig';
 import { collection, onSnapshot, query, doc } from 'firebase/firestore';
 import { dispatchEvent } from '../services/eventDispatcher';
+import MoneyInput from './MoneyInput';
 
 interface CreditCardProps {
   transactions: Transaction[];
   uid: string;
   cards: CreditCardInfo[];
+  loading?: boolean;
 }
 
-const CreditCard: React.FC<CreditCardProps> = ({ transactions, uid, cards }) => {
+const CreditCard: React.FC<CreditCardProps> = ({ transactions, uid, cards, loading }) => {
   const [showAddForm, setShowAddForm] = useState(false);
   const [showExtrato, setShowExtrato] = useState<string | null>(null);
   const [isEditing, setIsEditing] = useState<string | null>(null);
@@ -23,24 +25,56 @@ const CreditCard: React.FC<CreditCardProps> = ({ transactions, uid, cards }) => 
   const [cardBank, setCardBank] = useState('');
   const [cardLimit, setCardLimit] = useState('');
   const [cardDueDay, setCardDueDay] = useState('10');
-  const [cardClosingDay, setCardClosingDay] = useState('');
+  const [cardClosingDay, setCardClosingDay] = useState('5');
 
   // Payment Modal States
   const [payAmount, setPayAmount] = useState('');
   const [payDate, setPayDate] = useState(new Date().toISOString().split('T')[0]);
+  const [payCycle, setPayCycle] = useState('');
 
   const cardAnalysis = useMemo(() => {
+    const now = new Date();
+    const currentMonth = now.getMonth();
+    const currentYear = now.getFullYear();
+
     return cards.map(card => {
-      // Usamos os valores salvos no documento para a UI principal (Vida Real)
+      const closingDay = card.closingDay || 5;
+      
+      // Determina os ciclos
+      const currentCycleDate = new Date(currentYear, currentMonth, 1);
+      const currentCycle = `${currentCycleDate.getFullYear()}-${String(currentCycleDate.getMonth() + 1).padStart(2, '0')}`;
+      
+      const nextCycleDate = new Date(currentYear, currentMonth + 1, 1);
+      const nextCycle = `${nextCycleDate.getFullYear()}-${String(nextCycleDate.getMonth() + 1).padStart(2, '0')}`;
+
+      // Filtramos transações
+      const allCardExpenses = transactions.filter(t => t.cardId === card.id || (t.paymentMethod === 'CARD' && !t.cardId));
+      
+      const currentInvoiceExpenses = allCardExpenses.filter(t => t.invoiceCycle === currentCycle);
+      const nextInvoiceExpenses = allCardExpenses.filter(t => t.invoiceCycle === nextCycle);
+
+      const currentAmount = currentInvoiceExpenses.filter(t => !t.isPaid).reduce((sum, t) => sum + t.amount, 0);
+      const nextAmount = nextInvoiceExpenses.filter(t => !t.isPaid).reduce((sum, t) => sum + t.amount, 0);
+
       const used = Number(card.usedAmount) || 0;
       const limit = Number(card.limit) || 0;
       const available = Number(card.availableAmount) || 0;
       const pct = limit > 0 ? Math.min(100, (used / limit) * 100) : 0;
       
-      // Filtramos transações apenas para o extrato detalhado
-      const allCardExpenses = transactions.filter(t => t.cardId === card.id || (t.paymentMethod === 'CARD' && !t.cardId));
-      
-      return { ...card, used, available, limit, pct, expenses: allCardExpenses };
+      return { 
+        ...card, 
+        used, 
+        available, 
+        limit, 
+        pct, 
+        expenses: allCardExpenses,
+        currentCycle,
+        nextCycle,
+        currentAmount,
+        nextAmount,
+        currentInvoiceExpenses,
+        nextInvoiceExpenses
+      };
     });
   }, [cards, transactions]);
 
@@ -68,11 +102,11 @@ const CreditCard: React.FC<CreditCardProps> = ({ transactions, uid, cards }) => 
     setIsLoading(false);
   };
 
-  const handleUpdateCard = async (cardId: string, newLimit: number, newDueDay: number) => {
+  const handleUpdateCard = async (cardId: string, newLimit: number, newDueDay: number, newClosingDay: number) => {
     setIsLoading(true);
     const res = await dispatchEvent(uid, {
       type: 'UPDATE_CARD',
-      payload: { id: cardId, limit: newLimit, dueDay: newDueDay },
+      payload: { id: cardId, limit: newLimit, dueDay: newDueDay, closingDay: newClosingDay },
       source: 'ui',
       createdAt: new Date()
     });
@@ -94,12 +128,13 @@ const CreditCard: React.FC<CreditCardProps> = ({ transactions, uid, cards }) => 
     });
   };
 
-  const handleOpenPayment = (card: any) => {
-    if (card.used <= 0) {
+  const handleOpenPayment = (card: any, cycle: string, amount: number) => {
+    if (amount <= 0) {
       alert("Fatura zerada. Parabéns!");
       return;
     }
-    setPayAmount(card.used?.toString() || '0');
+    setPayAmount(amount.toString());
+    setPayCycle(cycle);
     setIsPaying(card.id);
   };
 
@@ -119,7 +154,8 @@ const CreditCard: React.FC<CreditCardProps> = ({ transactions, uid, cards }) => 
         cardId: card.id, 
         cardName: card.name, 
         amount: amount,
-        date: payDate
+        date: payDate,
+        cycle: payCycle
       },
       source: 'ui',
       createdAt: new Date()
@@ -128,6 +164,7 @@ const CreditCard: React.FC<CreditCardProps> = ({ transactions, uid, cards }) => 
     if (res.success) {
       setIsPaying(null);
       setPayAmount('');
+      setPayCycle('');
     } else {
       alert("Erro ao processar pagamento.");
     }
@@ -135,6 +172,15 @@ const CreditCard: React.FC<CreditCardProps> = ({ transactions, uid, cards }) => 
   };
 
   const format = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v);
+
+  if (loading) {
+    return (
+      <div className="p-6 space-y-6 animate-pulse">
+        <div className="h-20 bg-white/50 rounded-3xl"></div>
+        <div className="h-64 bg-white/50 rounded-[3rem]"></div>
+      </div>
+    );
+  }
 
   return (
     <div className="p-6 space-y-6 animate-fade pb-32">
@@ -178,45 +224,53 @@ const CreditCard: React.FC<CreditCardProps> = ({ transactions, uid, cards }) => 
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-10">
-                  <div className="space-y-1">
-                    <p className="text-[9px] font-black text-[var(--text-muted)] uppercase tracking-widest">Fatura Atual</p>
-                    <h3 className="text-4xl font-black text-[#ff4b4b]">{format(card.used)}</h3>
-                    <div className="flex items-center gap-2 pt-1">
-                       <span className="w-1.5 h-1.5 bg-[var(--green-whatsapp)] rounded-full animate-pulse"></span>
-                       <p className="text-[10px] text-[var(--green-whatsapp)] font-black uppercase italic">Vence dia {card.dueDay}</p>
+                  <div className="space-y-4">
+                    <div className="p-4 bg-white/5 rounded-3xl border border-white/5">
+                      <p className="text-[9px] font-black text-[var(--text-muted)] uppercase tracking-widest mb-1">Fatura Atual ({card.currentCycle})</p>
+                      <div className="flex justify-between items-end">
+                        <h3 className="text-3xl font-black text-[#ff4b4b]">{format(card.currentAmount)}</h3>
+                        <button 
+                          onClick={() => handleOpenPayment(card, card.currentCycle, card.currentAmount)}
+                          className="bg-[var(--green-whatsapp)] hover:bg-[#00c99d] text-white px-4 py-2 rounded-xl text-[9px] font-black uppercase transition-all active:scale-95"
+                        >
+                          Pagar
+                        </button>
+                      </div>
+                      <div className="flex items-center gap-2 pt-2">
+                        <span className="w-1.5 h-1.5 bg-[var(--green-whatsapp)] rounded-full animate-pulse"></span>
+                        <p className="text-[9px] text-[var(--green-whatsapp)] font-black uppercase italic">Vence dia {card.dueDay} • Fecha dia {card.closingDay}</p>
+                      </div>
+                    </div>
+
+                    <div className="p-4 bg-white/5 rounded-3xl border border-white/5 opacity-80">
+                      <p className="text-[9px] font-black text-[var(--text-muted)] uppercase tracking-widest mb-1">Próxima Fatura ({card.nextCycle})</p>
+                      <div className="flex justify-between items-end">
+                        <h3 className="text-2xl font-black text-white">{format(card.nextAmount)}</h3>
+                        <button 
+                          onClick={() => handleOpenPayment(card, card.nextCycle, card.nextAmount)}
+                          className="bg-white/10 hover:bg-white/20 text-white px-4 py-2 rounded-xl text-[9px] font-black uppercase transition-all active:scale-95"
+                        >
+                          Pagar
+                        </button>
+                      </div>
                     </div>
                   </div>
-                  <div className="flex flex-col justify-end md:items-end">
-                    <button 
-                      onClick={() => handleOpenPayment(card)}
-                      className="bg-[var(--green-whatsapp)] hover:bg-[#00c99d] text-white px-8 py-4 rounded-[1.5rem] text-[10px] font-black uppercase shadow-xl shadow-[var(--green-whatsapp)]/20 transition-all active:scale-95 w-full md:w-auto"
-                    >
-                      Pagar Fatura
-                    </button>
-                  </div>
-                </div>
-
-                <div className="space-y-4 pt-6 border-t border-white/5">
-                  <div className="flex justify-between text-[11px] font-black uppercase tracking-tight">
-                    <span className="text-[var(--text-muted)]">Disponível: {format(card.available)}</span>
-                    <span className="text-white">Limite: {format(card.limit)}</span>
-                  </div>
                   
-                  <div className="h-2.5 w-full bg-white/5 rounded-full overflow-hidden flex">
-                    <div 
-                      className={`h-full transition-all duration-1000 ${card.pct > 90 ? 'bg-red-500 shadow-[0_0_10px_rgba(239,68,68,0.5)]' : card.pct > 70 ? 'bg-amber-400' : 'bg-[var(--green-whatsapp)]'}`}
-                      style={{ width: `${card.pct}%` }}
-                    />
-                  </div>
-                  
-                  <div className="flex justify-between items-center">
-                     <p className="text-[10px] text-[var(--text-muted)] font-bold uppercase">{card.pct.toFixed(1)}% do limite utilizado</p>
-                     <button 
-                      onClick={() => setShowExtrato(card.id)}
-                      className="bg-white/5 hover:bg-white/10 px-5 py-2.5 rounded-2xl text-[9px] font-black uppercase tracking-widest transition-colors"
-                     >
-                       Ver Extrato
-                     </button>
+                  <div className="flex flex-col justify-center space-y-4">
+                    <div className="bg-white/5 p-6 rounded-3xl border border-white/5">
+                      <p className="text-[9px] font-black text-[var(--text-muted)] uppercase tracking-widest mb-2">Resumo de Limite</p>
+                      <div className="flex justify-between text-[11px] font-black uppercase tracking-tight mb-2">
+                        <span className="text-[var(--text-muted)]">Livre: {format(card.available)}</span>
+                        <span className="text-white">Total: {format(card.limit)}</span>
+                      </div>
+                      <div className="h-2.5 w-full bg-white/5 rounded-full overflow-hidden flex mb-2">
+                        <div 
+                          className={`h-full transition-all duration-1000 ${card.pct > 90 ? 'bg-red-500 shadow-[0_0_10px_rgba(239,68,68,0.5)]' : card.pct > 70 ? 'bg-amber-400' : 'bg-[var(--green-whatsapp)]'}`}
+                          style={{ width: `${card.pct}%` }}
+                        />
+                      </div>
+                      <p className="text-[10px] text-[var(--text-muted)] font-bold uppercase">{card.pct.toFixed(1)}% utilizado</p>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -229,12 +283,27 @@ const CreditCard: React.FC<CreditCardProps> = ({ transactions, uid, cards }) => 
                   <div className="w-full space-y-6 mb-10">
                     <div className="space-y-2">
                       <label className="text-[9px] font-black text-[var(--text-muted)] uppercase ml-1">Novo Limite Total</label>
-                      <input 
-                        type="number"
+                      <MoneyInput 
                         className="bg-white/5 border border-white/10 rounded-2xl p-5 w-full text-center text-2xl font-black outline-none focus:border-[var(--green-whatsapp)] text-white transition-all"
-                        defaultValue={card.limit}
+                        value={card.limit}
+                        onChange={(val) => {
+                          const input = document.getElementById(`limit-edit-${card.id}`) as HTMLInputElement;
+                          if (input) input.value = val.toString();
+                        }}
                         id={`limit-edit-${card.id}`}
                       />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-[9px] font-black text-[var(--text-muted)] uppercase ml-1">Dia de Fechamento</label>
+                      <select 
+                        id={`closing-edit-${card.id}`}
+                        className="bg-white/5 border border-white/10 rounded-2xl p-5 w-full text-center text-lg font-black outline-none appearance-none text-white focus:border-[var(--green-whatsapp)] transition-all"
+                        defaultValue={card.closingDay}
+                      >
+                        {Array.from({length: 31}, (_, i) => i + 1).map(d => (
+                          <option key={d} value={d} className="bg-[var(--text-primary)]">{d}</option>
+                        ))}
+                      </select>
                     </div>
                     <div className="space-y-2">
                       <label className="text-[9px] font-black text-[var(--text-muted)] uppercase ml-1">Dia de Vencimento</label>
@@ -257,7 +326,8 @@ const CreditCard: React.FC<CreditCardProps> = ({ transactions, uid, cards }) => 
                       onClick={() => {
                         const val = (document.getElementById(`limit-edit-${card.id}`) as HTMLInputElement).value;
                         const day = (document.getElementById(`day-edit-${card.id}`) as HTMLSelectElement).value;
-                        handleUpdateCard(card.id, parseFloat(val), parseInt(day));
+                        const closing = (document.getElementById(`closing-edit-${card.id}`) as HTMLSelectElement).value;
+                        handleUpdateCard(card.id, parseFloat(val), parseInt(day), parseInt(closing));
                       }}
                       className="flex-1 py-5 text-[10px] font-black uppercase bg-[var(--green-whatsapp)] rounded-2xl shadow-lg shadow-[var(--green-whatsapp)]/20"
                     >
@@ -283,13 +353,12 @@ const CreditCard: React.FC<CreditCardProps> = ({ transactions, uid, cards }) => 
               <div className="space-y-2 text-center">
                 <label className="text-[9px] font-black text-[var(--text-muted)] uppercase tracking-widest">Valor do Pagamento</label>
                 <div className="relative">
-                  <span className="absolute left-6 top-1/2 -translate-y-1/2 text-[var(--text-primary)] font-black text-xl">R$</span>
-                  <input 
-                    type="number" 
+                  <MoneyInput 
                     autoFocus
                     className="w-full bg-[var(--bg-body)] rounded-3xl p-8 text-3xl font-black text-center outline-none border-2 border-transparent focus:border-[var(--green-whatsapp)] transition-all" 
-                    value={payAmount} 
-                    onChange={e => setPayAmount(e.target.value)} 
+                    placeholder="R$ 0,00"
+                    value={Number(payAmount) || 0} 
+                    onChange={val => setPayAmount(val.toString())} 
                   />
                 </div>
                 <div className="flex justify-center gap-2 mt-4">
@@ -347,8 +416,27 @@ const CreditCard: React.FC<CreditCardProps> = ({ transactions, uid, cards }) => 
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1.5">
                   <label className="text-[9px] font-black text-gray-400 uppercase ml-2 tracking-widest">Limite R$</label>
-                  <input type="number" className="w-full bg-[var(--bg-body)] rounded-2xl p-5 text-sm font-bold outline-none border border-transparent focus:border-[var(--green-whatsapp)] transition-all" placeholder="0,00" value={cardLimit} onChange={e => setCardLimit(e.target.value)} />
+                  <MoneyInput 
+                    className="w-full bg-[var(--bg-body)] rounded-2xl p-5 text-sm font-bold outline-none border border-transparent focus:border-[var(--green-whatsapp)] transition-all" 
+                    placeholder="R$ 0,00" 
+                    value={Number(cardLimit) || 0} 
+                    onChange={val => setCardLimit(val.toString())} 
+                  />
                 </div>
+                <div className="space-y-1.5">
+                  <label className="text-[9px] font-black text-gray-400 uppercase ml-2 tracking-widest">Dia Fech.</label>
+                  <select 
+                    className="w-full bg-[var(--bg-body)] rounded-2xl p-5 text-sm font-bold outline-none border border-transparent focus:border-[var(--green-whatsapp)] transition-all appearance-none"
+                    value={cardClosingDay}
+                    onChange={e => setCardClosingDay(e.target.value)}
+                  >
+                    {Array.from({length: 31}, (_, i) => i + 1).map(d => (
+                      <option key={d} value={d}>{d}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1.5">
                   <label className="text-[9px] font-black text-gray-400 uppercase ml-2 tracking-widest">Dia Venc.</label>
                   <select 
@@ -391,7 +479,7 @@ const CreditCard: React.FC<CreditCardProps> = ({ transactions, uid, cards }) => 
                       {t.isPaid && <div className="absolute top-0 left-0 w-1 h-full bg-[var(--green-whatsapp)]"></div>}
                       <div>
                         <p className={`text-sm font-bold ${t.isPaid ? 'text-gray-400 line-through' : 'text-[var(--text-primary)]'}`}>{t.description}</p>
-                        <p className="text-[9px] text-[var(--text-muted)] uppercase font-bold mt-0.5">{t.category} • {new Date(t.date).toLocaleDateString()}</p>
+                        <p className="text-[9px] text-[var(--text-muted)] uppercase font-bold mt-0.5">{t.category} • {new Date(t.date).toLocaleDateString()} • Ciclo: {t.invoiceCycle || 'N/A'}</p>
                       </div>
                       <div className="text-right">
                         <span className={`text-sm font-black ${t.isPaid ? 'text-gray-300' : 'text-red-500'}`}>-{format(t.amount)}</span>
@@ -410,7 +498,7 @@ const CreditCard: React.FC<CreditCardProps> = ({ transactions, uid, cards }) => 
                <button 
                  onClick={() => {
                    const c = cardAnalysis.find(c => c.id === showExtrato);
-                   if (c) handleOpenPayment(c);
+                   if (c) handleOpenPayment(c, '', c.used);
                    setShowExtrato(null);
                  }}
                  className="bg-[var(--green-whatsapp)] text-white px-5 py-2.5 rounded-2xl text-[10px] font-black uppercase shadow-lg"

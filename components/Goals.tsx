@@ -2,14 +2,16 @@
 import React, { useState, useMemo } from 'react';
 import { SavingGoal, Transaction, Contribution } from '../types';
 import { dispatchEvent } from '../services/eventDispatcher';
+import MoneyInput from './MoneyInput';
 
 interface GoalsProps {
   goals: SavingGoal[];
   transactions: Transaction[];
   uid: string;
+  loading?: boolean;
 }
 
-const Goals: React.FC<GoalsProps> = ({ goals, transactions, uid }) => {
+const Goals: React.FC<GoalsProps> = ({ goals, transactions, uid, loading }) => {
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingGoalId, setEditingGoalId] = useState<string | null>(null);
   const [newGoalName, setNewGoalName] = useState('');
@@ -20,20 +22,34 @@ const Goals: React.FC<GoalsProps> = ({ goals, transactions, uid }) => {
   const [newGoalIcon, setNewGoalIcon] = useState('💰');
 
   const [showAporteModal, setShowAporteModal] = useState<string | null>(null);
+  const [showGastoModal, setShowGastoModal] = useState<string | null>(null);
   const [aporteAmount, setAporteAmount] = useState('');
   const [aporteNote, setAporteNote] = useState('');
+  
+  const [gastoAmount, setGastoAmount] = useState('');
+  const [gastoDesc, setGastoDesc] = useState('');
+  const [gastoCat, setGastoCat] = useState('Lazer');
+  
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   const categories = ['Viagem', 'Carro', 'Casa', 'Reserva', 'Educação', 'Lazer', 'Outros'];
   const priorities = ['Baixa', 'Média', 'Alta'];
   const icons = ['💰', '🚗', '🏠', '✈️', '🎓', '🏥', '🎮', '💍', '👶', '🏖️', '💻', '📈'];
 
-  // Cálculo do Saldo Livre para validação
-  const saldoLivre = useMemo(() => {
+  // Cálculo da Sobra Mensal e Capacidade de Guardar
+  const { sobraMensal, capacidadeGuardar } = useMemo(() => {
     const income = transactions.filter(t => t.type === 'INCOME').reduce((s, t) => s + (Number(t.amount) || 0), 0);
     const expense = transactions.filter(t => t.type === 'EXPENSE' && t.paymentMethod !== 'CARD').reduce((s, t) => s + (Number(t.amount) || 0), 0);
     const totalSaved = goals.reduce((s, g) => s + (Number(g.currentAmount) || 0), 0);
-    return income - expense - totalSaved;
+    
+    const sobra = income - expense;
+    const livre = sobra - totalSaved;
+    const capacidade = Math.max(0, Math.min(sobra * 0.30, livre));
+    
+    return { sobraMensal: sobra, capacidadeGuardar: capacidade };
   }, [transactions, goals]);
+
+  const saldoLivre = sobraMensal - goals.reduce((s, g) => s + (Number(g.currentAmount) || 0), 0);
 
   const format = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v);
 
@@ -147,6 +163,62 @@ const Goals: React.FC<GoalsProps> = ({ goals, transactions, uid }) => {
     }
   };
 
+  const handleQuickAporte = async (goalId: string, amount: number) => {
+    if (amount <= 0) return;
+    
+    const res = await dispatchEvent(uid, {
+      type: 'ADD_TO_GOAL',
+      payload: {
+        goalId,
+        amount,
+        note: 'Aporte sugerido pelo sistema',
+        date: new Date().toISOString()
+      },
+      source: 'ui',
+      createdAt: new Date()
+    });
+
+    if (res.success) {
+      setSuccessMessage(`Parabéns! Você guardou ${format(amount)} na meta.`);
+      setTimeout(() => setSuccessMessage(null), 5000);
+    }
+  };
+
+  const handleSpendFromGoal = async () => {
+    const val = parseFloat(gastoAmount);
+    if (!showGastoModal || isNaN(val) || val <= 0) return;
+
+    const goal = goals.find(g => g.id === showGastoModal);
+    if (!goal) return;
+
+    if (val > goal.currentAmount) {
+      alert(`Saldo insuficiente na meta! Você tem ${format(goal.currentAmount)} guardado.`);
+      return;
+    }
+
+    const res = await dispatchEvent(uid, {
+      type: 'SPEND_FROM_GOAL',
+      payload: {
+        goalId: showGastoModal,
+        amount: val,
+        description: gastoDesc,
+        category: gastoCat
+      },
+      source: 'ui',
+      createdAt: new Date()
+    });
+
+    if (res.success) {
+      setSuccessMessage(`${format(val)} retirados da meta ${goal.name}.`);
+      setGastoAmount('');
+      setGastoDesc('');
+      setShowGastoModal(null);
+      setTimeout(() => setSuccessMessage(null), 5000);
+    } else {
+      alert("Erro ao processar gasto da meta.");
+    }
+  };
+
   const handleDelete = async (id: string) => {
     if (!id) return;
     if (!window.confirm("Deseja realmente excluir esta meta?")) return;
@@ -168,12 +240,31 @@ const Goals: React.FC<GoalsProps> = ({ goals, transactions, uid }) => {
     }
   };
 
+  if (loading) {
+    return (
+      <div className="p-6 space-y-6 animate-pulse">
+        <div className="h-20 bg-white/50 rounded-3xl"></div>
+        <div className="grid grid-cols-2 gap-4">
+          <div className="h-24 bg-white/50 rounded-3xl"></div>
+          <div className="h-24 bg-white/50 rounded-3xl"></div>
+        </div>
+        <div className="h-64 bg-white/50 rounded-[3rem]"></div>
+      </div>
+    );
+  }
+
   return (
     <div className="p-6 space-y-6 animate-fade pb-32 no-scrollbar">
       <header className="mb-4">
         <h2 className="text-[10px] font-black text-[var(--green-whatsapp)] uppercase tracking-[0.4em] mb-1">Patrimônio Manual</h2>
         <h1 className="text-3xl font-black text-[var(--text-primary)] uppercase italic tracking-tighter">Meus Cofres</h1>
       </header>
+
+      {successMessage && (
+        <div className="bg-[var(--green-whatsapp)] text-white p-4 rounded-2xl text-[10px] font-black uppercase tracking-widest animate-bounce shadow-lg flex items-center gap-3">
+          <span>🎉</span> {successMessage}
+        </div>
+      )}
 
       <div className="grid grid-cols-2 gap-4">
         <div className="bg-white p-6 rounded-3xl border border-[var(--border)] shadow-sm">
@@ -188,9 +279,14 @@ const Goals: React.FC<GoalsProps> = ({ goals, transactions, uid }) => {
 
       <div className="bg-amber-100 p-5 rounded-3xl border border-amber-200 flex items-start gap-4">
         <span className="text-2xl">💡</span>
-        <p className="text-[11px] text-[var(--text-primary)] font-bold leading-tight uppercase">
-          Dica: O valor aportado sai do seu "Saldo Livre" do Dashboard e fica reservado no cofre escolhido.
-        </p>
+        <div>
+          <p className="text-[11px] text-[var(--text-primary)] font-bold leading-tight uppercase mb-1">
+            Dica: O valor aportado sai do seu "Saldo Livre" do Dashboard e fica reservado no cofre escolhido.
+          </p>
+          <p className="text-[9px] text-amber-700 font-black uppercase">
+            Sua capacidade de poupança ideal: <span className="text-amber-900">{format(capacidadeGuardar)}/mês</span> (30% da sobra)
+          </p>
+        </div>
       </div>
 
       <div className="flex justify-between items-center px-1">
@@ -265,34 +361,53 @@ const Goals: React.FC<GoalsProps> = ({ goals, transactions, uid }) => {
                 </div>
                 <div className="h-4 w-full bg-[var(--bg-body)] rounded-full overflow-hidden p-1 border border-black/5 relative">
                   <div className="h-full bg-[var(--green-whatsapp)] rounded-full transition-all duration-1000 shadow-[0_0_10px_rgba(0,168,132,0.3)]" style={{ width: `${pct}%` }} />
-                  {/* Milestones */}
-                  <div className="absolute inset-0 flex justify-between px-4 pointer-events-none">
-                    <div className="h-full w-px bg-black/5"></div>
-                    <div className="h-full w-px bg-black/5"></div>
-                    <div className="h-full w-px bg-black/5"></div>
-                  </div>
                 </div>
+                
+                {/* Sugestão Dinâmica */}
+                <div className="bg-[var(--bg-body)]/50 p-4 rounded-2xl border border-dashed border-black/5 space-y-2">
+                  {capacidadeGuardar > 0 ? (
+                    <>
+                      <p className="text-[9px] font-black text-[var(--text-primary)] uppercase">
+                        ✨ Sugestão: Você consegue guardar <span className="text-[var(--green-whatsapp)]">{format(capacidadeGuardar)}/mês</span>
+                      </p>
+                      <div className="flex justify-between text-[8px] font-bold text-[var(--text-muted)] uppercase italic">
+                        <span>Tempo estimado: {Math.ceil((goal.targetAmount - goal.currentAmount) / capacidadeGuardar)} meses</span>
+                        <span>Se guardar metade: {Math.ceil((goal.targetAmount - goal.currentAmount) / (capacidadeGuardar / 2))} meses</span>
+                      </div>
+                      <button 
+                        onClick={() => handleQuickAporte(goal.id, capacidadeGuardar)}
+                        className="w-full mt-2 bg-white border border-[var(--green-whatsapp)] text-[var(--green-whatsapp)] py-2 rounded-xl text-[8px] font-black uppercase hover:bg-[var(--green-whatsapp)] hover:text-white transition-all active:scale-95"
+                      >
+                        Aportar Sugestão ({format(capacidadeGuardar)})
+                      </button>
+                    </>
+                  ) : (
+                    <p className="text-[9px] font-black text-rose-500 uppercase text-center italic">
+                      ⚠️ Sem sobra suficiente este mês para avançar. Ajuste gastos.
+                    </p>
+                  )}
+                </div>
+
                 <div className="flex justify-between items-center text-[9px] font-black text-[var(--text-muted)] uppercase italic">
                   <span>Faltam {format(goal.targetAmount - goal.currentAmount)}</span>
                   <span>Previsão: {estDate}</span>
                 </div>
-                
-                {/* Milestone Labels */}
-                <div className="flex justify-between px-1 text-[7px] font-black text-[var(--text-muted)] opacity-50 uppercase tracking-tighter">
-                  <span>Início</span>
-                  <span>25%</span>
-                  <span>50%</span>
-                  <span>75%</span>
-                  <span>Alvo</span>
-                </div>
               </div>
 
-              <button 
-                onClick={() => setShowAporteModal(goal.id)}
-                className="w-full bg-[var(--green-whatsapp)] text-white py-5 rounded-[1.5rem] font-black text-[11px] uppercase shadow-xl shadow-[var(--green-whatsapp)]/20 active:scale-95 transition-all mb-6 flex items-center justify-center gap-2"
-              >
-                <span>⚡</span> Aportar no Cofre
-              </button>
+              <div className="flex flex-col gap-3 mb-6">
+                <button 
+                  onClick={() => setShowAporteModal(goal.id)}
+                  className="w-full bg-[var(--green-whatsapp)] text-white py-5 rounded-[1.5rem] font-black text-[11px] uppercase shadow-xl shadow-[var(--green-whatsapp)]/20 active:scale-95 transition-all flex items-center justify-center gap-2"
+                >
+                  <span>⚡</span> Aportar no Cofre
+                </button>
+                <button 
+                  onClick={() => setShowGastoModal(goal.id)}
+                  className="w-full bg-white border-2 border-rose-500 text-rose-500 py-4 rounded-[1.5rem] font-black text-[10px] uppercase hover:bg-rose-50 transition-all active:scale-95 flex items-center justify-center gap-2"
+                >
+                  <span>💸</span> Gastar da Meta
+                </button>
+              </div>
 
               {goal.contributions && goal.contributions.length > 0 && (
                 <div className="pt-6 border-t border-gray-50">
@@ -348,7 +463,12 @@ const Goals: React.FC<GoalsProps> = ({ goals, transactions, uid }) => {
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <label className="text-[9px] font-black text-[var(--text-muted)] uppercase ml-2">Meta Financeira</label>
-                  <input type="number" className="w-full bg-[var(--bg-body)] rounded-2xl p-5 text-sm font-bold outline-none focus:border-[var(--green-whatsapp)] border-2 border-transparent transition-all" placeholder="0,00" value={newGoalTarget} onChange={e => setNewGoalTarget(e.target.value)} />
+                  <MoneyInput 
+                    className="w-full bg-[var(--bg-body)] rounded-2xl p-5 text-sm font-bold outline-none focus:border-[var(--green-whatsapp)] border-2 border-transparent transition-all" 
+                    placeholder="R$ 0,00" 
+                    value={Number(newGoalTarget) || 0} 
+                    onChange={val => setNewGoalTarget(val.toString())} 
+                  />
                 </div>
                 <div className="space-y-2">
                   <label className="text-[9px] font-black text-[var(--text-muted)] uppercase ml-2">Onde Guardar?</label>
@@ -397,19 +517,58 @@ const Goals: React.FC<GoalsProps> = ({ goals, transactions, uid }) => {
             
             <div className="space-y-6">
               <div className="relative">
-                <span className="absolute left-6 top-1/2 -translate-y-1/2 text-[var(--text-primary)] font-black text-xl">R$</span>
-                <input 
-                  type="number" 
+                <MoneyInput 
                   autoFocus 
                   className="w-full bg-[var(--bg-body)] rounded-3xl p-8 text-3xl font-black text-center outline-none border-2 border-transparent focus:border-[var(--green-whatsapp)] transition-all" 
-                  placeholder="0,00" 
-                  value={aporteAmount} 
-                  onChange={e => setAporteAmount(e.target.value)} 
+                  placeholder="R$ 0,00" 
+                  value={Number(aporteAmount) || 0} 
+                  onChange={val => setAporteAmount(val.toString())} 
                 />
               </div>
               <input className="w-full bg-[var(--bg-body)] rounded-2xl p-5 text-xs font-bold outline-none focus:border-[var(--green-whatsapp)] border-2 border-transparent transition-all" placeholder="Nota opcional (Ex: Bônus do mês)" value={aporteNote} onChange={e => setAporteNote(e.target.value)} />
               <button onClick={handleAddAporte} className="w-full bg-[var(--green-whatsapp)] text-white py-6 rounded-[2rem] font-black text-[11px] uppercase shadow-xl shadow-[var(--green-whatsapp)]/20 mt-4 active:scale-95 transition-all">
                 ✨ Confirmar e Guardar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Gasto da Meta */}
+      {showGastoModal && (
+        <div className="fixed inset-0 z-[100] bg-black/40 backdrop-blur-md flex items-center justify-center p-6">
+          <div className="bg-white w-full max-w-sm rounded-[3.5rem] p-10 shadow-2xl relative animate-fade text-center">
+            <button onClick={() => setShowGastoModal(null)} className="absolute top-10 right-10 text-[var(--text-muted)] font-black text-xl">✕</button>
+            <h3 className="text-2xl font-black text-rose-500 uppercase italic mb-2 tracking-tighter">Gastar da Meta</h3>
+            <p className="text-[10px] text-[var(--text-muted)] font-bold uppercase mb-10 italic">
+              Saldo na Meta: {format(goals.find(g => g.id === showGastoModal)?.currentAmount || 0)}
+            </p>
+            
+            <div className="space-y-4">
+              <div className="relative">
+                <MoneyInput 
+                  autoFocus 
+                  className="w-full bg-[var(--bg-body)] rounded-3xl p-8 text-3xl font-black text-center outline-none border-2 border-transparent focus:border-rose-500 transition-all" 
+                  placeholder="R$ 0,00" 
+                  value={Number(gastoAmount) || 0} 
+                  onChange={val => setGastoAmount(val.toString())} 
+                />
+              </div>
+              <input 
+                className="w-full bg-[var(--bg-body)] rounded-2xl p-5 text-xs font-bold outline-none focus:border-rose-500 border-2 border-transparent transition-all" 
+                placeholder="O que você comprou?" 
+                value={gastoDesc} 
+                onChange={e => setGastoDesc(e.target.value)} 
+              />
+              <select 
+                className="w-full bg-[var(--bg-body)] rounded-2xl p-5 text-xs font-bold outline-none focus:border-rose-500 border-2 border-transparent transition-all appearance-none"
+                value={gastoCat}
+                onChange={e => setGastoCat(e.target.value)}
+              >
+                {categories.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+              <button onClick={handleSpendFromGoal} className="w-full bg-rose-500 text-white py-6 rounded-[2rem] font-black text-[11px] uppercase shadow-xl shadow-rose-500/20 mt-4 active:scale-95 transition-all">
+                💸 Confirmar Gasto
               </button>
             </div>
           </div>

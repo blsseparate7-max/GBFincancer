@@ -1,12 +1,15 @@
 
 import React, { useMemo } from 'react';
-import { Transaction } from '../types';
+import { Transaction, SavingGoal, Wallet } from '../types';
+import ChartNetWorth from './ChartNetWorth';
 
 interface YearlySummaryProps {
   transactions: Transaction[];
+  goals: SavingGoal[];
+  wallets: Wallet[];
 }
 
-const YearlySummary: React.FC<YearlySummaryProps> = ({ transactions }) => {
+const YearlySummary: React.FC<YearlySummaryProps> = ({ transactions, goals, wallets }) => {
   const months = [
     "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
     "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"
@@ -41,6 +44,11 @@ const YearlySummary: React.FC<YearlySummaryProps> = ({ transactions }) => {
         <h2 className="text-[10px] font-black text-[var(--green-whatsapp)] uppercase tracking-[0.4em] mb-1">Performance Consolidada</h2>
         <h1 className="text-3xl font-black text-[var(--text-primary)] uppercase italic tracking-tighter">Resumo Anual {new Date().getFullYear()}</h1>
       </header>
+
+      {/* Gráfico de Evolução */}
+      <div className="mb-8">
+        <ChartNetWorth transactions={transactions} goals={goals} wallets={wallets} />
+      </div>
 
       {/* Totais do Ano */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">

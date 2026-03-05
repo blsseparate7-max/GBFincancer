@@ -1,39 +1,28 @@
 import React, { useMemo, useState } from 'react';
-import { Transaction, SavingGoal, CategoryLimit } from '../types';
+import { Transaction, SavingGoal, CategoryLimit, Wallet } from '../types';
 import { dispatchEvent } from '../services/eventDispatcher';
-import { 
-  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell,
-  PieChart, Pie, Legend
-} from 'recharts';
-import { TrendingUp, TrendingDown, PieChart as PieIcon, BarChart3 } from 'lucide-react';
+import { normalizeCategoryName } from '../services/normalizationService';
+import ChartCategory from './ChartCategory';
+import ChartNetWorth from './ChartNetWorth';
+import { TrendingUp, TrendingDown } from 'lucide-react';
+import MoneyInput from './MoneyInput';
 
 interface DashProps {
   transactions: Transaction[];
   goals: SavingGoal[];
   limits: CategoryLimit[];
+  wallets: Wallet[];
   uid: string;
+  loading?: boolean;
 }
 
-const Dashboard: React.FC<DashProps> = ({ transactions, goals, limits, uid }) => {
+const Dashboard: React.FC<DashProps> = ({ transactions, goals, limits, wallets, uid, loading }) => {
   const [showLimitModal, setShowLimitModal] = useState(false);
   
   const [limitCat, setLimitCat] = useState('');
   const [limitVal, setLimitVal] = useState('');
 
   const format = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v);
-
-  const normalizeCategory = (cat: string) => {
-    const c = cat.toUpperCase().trim();
-    if (['LANCHE', 'LANCHES', 'COMIDA', 'RESTAURANTE', 'IFOOD', 'ALIMENTAÇÃO', 'ALIMENTACAO'].includes(c)) return 'ALIMENTAÇÃO';
-    if (['UBER', '99', 'GASOLINA', 'COMBUSTIVEL', 'TRANSPORTE', 'TRANSP'].includes(c)) return 'TRANSPORTE';
-    if (['ALUGUEL', 'CONDOMINIO', 'LUZ', 'AGUA', 'INTERNET', 'MORADIA'].includes(c)) return 'MORADIA';
-    if (['FARMACIA', 'MEDICO', 'SAUDE', 'SAÚDE', 'ACADEMIA'].includes(c)) return 'SAÚDE';
-    if (['ESCOLA', 'CURSO', 'FACULDADE', 'EDUCAÇÃO', 'EDUCACAO'].includes(c)) return 'EDUCAÇÃO';
-    if (['CINEMA', 'LAZER', 'VIAGEM', 'SHOW'].includes(c)) return 'LAZER';
-    if (['ROUPA', 'BELEZA', 'PESSOAL', 'PET'].includes(c)) return 'PESSOAL';
-    if (['INVESTIMENTO', 'BANCO', 'JUROS', 'FINANCEIRO'].includes(c)) return 'FINANCEIRO';
-    return c;
-  };
 
   const stats = useMemo(() => {
     const income = transactions
@@ -51,7 +40,7 @@ const Dashboard: React.FC<DashProps> = ({ transactions, goals, limits, uid }) =>
     const incomeCategories = transactions
       .filter(t => t.type === 'INCOME')
       .reduce((acc, t) => {
-        const cat = normalizeCategory(t.category || 'Outros');
+        const cat = normalizeCategoryName(t.category || 'Outros');
         acc[cat] = (acc[cat] || 0) + (Number(t.amount) || 0);
         return acc;
       }, {} as Record<string, number>);
@@ -59,7 +48,7 @@ const Dashboard: React.FC<DashProps> = ({ transactions, goals, limits, uid }) =>
     const expenseCategories = transactions
       .filter(t => t.type === 'EXPENSE' && t.paymentMethod !== 'CARD')
       .reduce((acc, t) => {
-        const cat = normalizeCategory(t.category || 'Outros');
+        const cat = normalizeCategoryName(t.category || 'Outros');
         acc[cat] = (acc[cat] || 0) + (Number(t.amount) || 0);
         return acc;
       }, {} as Record<string, number>);
@@ -129,6 +118,21 @@ const Dashboard: React.FC<DashProps> = ({ transactions, goals, limits, uid }) =>
     setLimitCat(''); setLimitVal(''); setShowLimitModal(false);
   };
 
+  if (loading) {
+    return (
+      <div className="p-6 space-y-8 animate-pulse">
+        <div className="h-20 bg-white/5 rounded-3xl"></div>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          {[1,2,3,4].map(i => <div key={i} className="h-24 bg-white/5 rounded-3xl"></div>)}
+        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="h-64 bg-white/5 rounded-[2rem]"></div>
+          <div className="h-64 bg-white/5 rounded-[2rem]"></div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="p-6 space-y-8 animate-fade pb-32 relative z-10">
       <header className="flex justify-between items-end">
@@ -176,79 +180,10 @@ const Dashboard: React.FC<DashProps> = ({ transactions, goals, limits, uid }) =>
         </div>
       </section>
 
-      {/* Gráficos */}
+      {/* Gráficos Premium */}
       <section className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Comparativo Entradas vs Saídas */}
-        <div className="bg-[var(--surface)] p-6 rounded-[2rem] border border-[var(--border)] shadow-sm min-h-[300px] flex flex-col">
-          <div className="flex items-center gap-2 mb-6">
-            <BarChart3 size={14} className="text-[var(--green-whatsapp)]" />
-            <h3 className="text-[10px] font-black text-[var(--text-primary)] uppercase tracking-widest italic">Comparativo Financeiro</h3>
-          </div>
-          <div className="flex-1 w-full">
-            <ResponsiveContainer width="100%" height={200}>
-              <BarChart data={stats.barData}>
-                <XAxis 
-                  dataKey="name" 
-                  axisLine={false} 
-                  tickLine={false} 
-                  tick={{ fill: '#667781', fontSize: 10, fontWeight: 'bold' }} 
-                />
-                <Tooltip 
-                  cursor={{ fill: 'rgba(0,0,0,0.05)' }}
-                  contentStyle={{ backgroundColor: '#ffffff', border: '1px solid #e9edef', borderRadius: '12px', fontSize: '10px' }}
-                  itemStyle={{ fontWeight: 'bold' }}
-                  formatter={(value: number) => [format(value), '']}
-                />
-                <Bar dataKey="value" radius={[10, 10, 0, 0]}>
-                  {stats.barData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.color} />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-
-        {/* Distribuição de Gastos */}
-        <div className="bg-[var(--surface)] p-6 rounded-[2rem] border border-[var(--border)] shadow-sm min-h-[300px] flex flex-col">
-          <div className="flex items-center gap-2 mb-6">
-            <PieIcon size={14} className="text-rose-500" />
-            <h3 className="text-[10px] font-black text-[var(--text-primary)] uppercase tracking-widest italic">Distribuição de Gastos</h3>
-          </div>
-          <div className="flex-1 w-full flex items-center justify-center">
-            {stats.pieData.length > 0 ? (
-              <ResponsiveContainer width="100%" height={200}>
-                <PieChart>
-                  <Pie
-                    data={stats.pieData}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={60}
-                    outerRadius={80}
-                    paddingAngle={5}
-                    dataKey="value"
-                  >
-                    {stats.pieData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={['#f43f5e', '#fb7185', '#fda4af', '#fecdd3', '#fff1f2'][index % 5]} />
-                    ))}
-                  </Pie>
-                  <Tooltip 
-                    contentStyle={{ backgroundColor: '#ffffff', border: '1px solid #e9edef', borderRadius: '12px', fontSize: '10px' }}
-                    formatter={(value: number) => [format(value), '']}
-                  />
-                  <Legend 
-                    verticalAlign="bottom" 
-                    height={36} 
-                    iconType="circle"
-                    formatter={(value) => <span className="text-[9px] font-bold text-[var(--text-muted)] uppercase">{value}</span>}
-                  />
-                </PieChart>
-              </ResponsiveContainer>
-            ) : (
-              <p className="text-[10px] text-[var(--text-muted)] italic">Sem dados de gastos para exibir.</p>
-            )}
-          </div>
-        </div>
+        <ChartNetWorth transactions={transactions} goals={goals} wallets={wallets} />
+        <ChartCategory transactions={transactions} />
       </section>
 
       {/* Categorias de Entradas e Saídas */}
@@ -369,7 +304,12 @@ const Dashboard: React.FC<DashProps> = ({ transactions, goals, limits, uid }) =>
             <h3 className="text-xl font-black text-[var(--text-primary)] uppercase italic mb-6">Configurar Teto</h3>
             <div className="space-y-4">
               <input className="w-full bg-[var(--bg-body)] rounded-xl p-4 text-sm font-bold text-[var(--text-primary)] outline-none border border-transparent focus:border-[var(--green-whatsapp)]" placeholder="Categoria (Ex: Lanche)" value={limitCat} onChange={e => setLimitCat(e.target.value)} />
-              <input type="number" className="w-full bg-[var(--bg-body)] rounded-xl p-4 text-sm font-bold text-[var(--text-primary)] outline-none border border-transparent focus:border-[var(--green-whatsapp)]" placeholder="Limite R$" value={limitVal} onChange={e => setLimitVal(e.target.value)} />
+              <MoneyInput 
+                className="w-full bg-[var(--bg-body)] rounded-xl p-4 text-sm font-bold text-[var(--text-primary)] outline-none border border-transparent focus:border-[var(--green-whatsapp)]" 
+                placeholder="Limite R$" 
+                value={Number(limitVal) || 0} 
+                onChange={val => setLimitVal(val.toString())} 
+              />
               <button onClick={handleCreateLimit} className="w-full bg-[var(--green-whatsapp)] text-white py-4 rounded-xl font-black text-[10px] uppercase shadow-lg mt-4">Ativar Teto</button>
             </div>
           </div>

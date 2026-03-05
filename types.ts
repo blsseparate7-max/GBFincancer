@@ -37,6 +37,7 @@ export interface Transaction {
   createdAt: any;
   cardId?: string;
   isPaid?: boolean;
+  invoiceCycle?: string;
 }
 
 export interface CategoryLimit {
@@ -58,7 +59,7 @@ export interface CreditCardInfo {
   usedAmount: number;  
   availableAmount: number; 
   dueDay: number;     
-  closingDay?: number; 
+  closingDay: number; 
   updatedAt: any;
 }
 
@@ -73,9 +74,11 @@ export type EventType =
   | 'ADD_EXPENSE' 
   | 'ADD_INCOME' 
   | 'ADD_TO_GOAL' 
+  | 'UPDATE_TRANSACTION'
   | 'CREATE_GOAL' 
   | 'UPDATE_GOAL'
   | 'DELETE_GOAL'
+  | 'SPEND_FROM_GOAL'
   | 'UPDATE_LIMIT' 
   | 'CREATE_REMINDER' 
   | 'PAY_REMINDER'
@@ -93,7 +96,10 @@ export type EventType =
   | 'CREATE_WALLET'
   | 'UPDATE_WALLET'
   | 'DELETE_WALLET'
-  | 'TRANSFER_WALLET';
+  | 'TRANSFER_WALLET'
+  | 'CREATE_CATEGORY'
+  | 'UPDATE_CATEGORY'
+  | 'DELETE_CATEGORY';
 
 export interface FinanceEvent {
   type: EventType;
@@ -125,6 +131,7 @@ export interface Bill {
   cardId?: string;   
   isActive?: boolean; 
   originalBillId?: string;
+  type?: 'PAY' | 'RECEIVE';
 }
 
 export interface UserSession {
@@ -176,9 +183,14 @@ export interface CustomerData {
   subscriptionExpiryDate?: string;
 }
 
-export interface Category {
+export interface UserCategory {
+  id: string;
   name: string;
+  icon: string;
+  color?: string;
   type: 'INCOME' | 'EXPENSE';
+  createdAt: any;
+  updatedAt: any;
 }
 
 export interface Note {
@@ -193,6 +205,16 @@ export interface SystemMessage {
   text: string;
   type: 'ALERTA' | 'META';
   timestamp: any;
+}
+
+export interface WeeklySummary {
+  startDate: string;
+  endDate: string;
+  income: number;
+  expense: number;
+  balance: number;
+  topCategories: { category: string; amount: number }[];
+  generatedAt: string;
 }
 
 export type WalletType = 'CONTA' | 'CARTEIRA' | 'POUPANÇA' | 'INVESTIMENTO' | 'OUTRO';

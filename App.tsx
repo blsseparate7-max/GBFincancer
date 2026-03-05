@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { db, auth } from './services/firebaseConfig';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { collection, doc, onSnapshot, query, orderBy, limit, getDoc } from 'firebase/firestore';
-import { UserSession, Transaction, SavingGoal, Notification, Message, Bill, CategoryLimit, CreditCardInfo, Wallet } from './types';
+import { UserSession, Transaction, SavingGoal, Notification, Message, Bill, CategoryLimit, CreditCardInfo, Wallet, UserCategory } from './types';
 import Sidebar from './components/Sidebar';
 import Header from './components/Header';
 import Auth from './components/Auth';
@@ -21,6 +21,10 @@ import ImpactSimulator from './components/ImpactSimulator';
 import YearlySummary from './components/YearlySummary';
 import Settings from './components/Settings';
 import WalletTab from './components/WalletTab';
+import Insights from './components/Insights';
+import Extrato from './components/Extrato';
+import CategoriesTab from './components/CategoriesTab';
+import { normalizeCard, normalizeGoal, normalizeReminder, normalizeLimit, normalizeWallet, normalizeUserCategory, normalizeTransaction, assertSchema } from './services/normalizationService';
 
 const App: React.FC = () => {
   useEffect(() => {
@@ -80,28 +84,47 @@ const App: React.FC = () => {
     if (!session?.uid) return;
     const userRef = doc(db, "users", session.uid);
 
+    setLoadingCards(true);
+    setLoadingGoals(true);
+    setLoadingReminders(true);
+    setLoadingLimits(true);
+    setLoadingWallets(true);
+    setLoadingCategories(true);
+
     const unsubTrans = onSnapshot(query(collection(userRef, "transactions"), orderBy("createdAt", "desc"), limit(100)), (snap) => {
-      setTransactions(snap.docs.map(d => ({ id: d.id, ...d.data() } as Transaction)));
+      const normalized = snap.docs.map(d => normalizeTransaction(d));
+      setTransactions(normalized);
+      assertSchema(session.uid, { transactions: normalized, goals, cards });
     });
 
     const unsubGoals = onSnapshot(collection(userRef, "goals"), (snap) => {
-      setGoals(snap.docs.map(d => ({ id: d.id, ...d.data() } as SavingGoal)));
+      setGoals(snap.docs.map(d => normalizeGoal(d, session.uid)));
+      setLoadingGoals(false);
     });
 
     const unsubReminders = onSnapshot(collection(userRef, "reminders"), (snap) => {
-      setReminders(snap.docs.map(d => ({ id: d.id, ...d.data() } as Bill)));
+      setReminders(snap.docs.map(d => normalizeReminder(d)));
+      setLoadingReminders(false);
     });
 
     const unsubLimits = onSnapshot(collection(userRef, "limits"), (snap) => {
-      setLimits(snap.docs.map(d => ({ id: d.id, ...d.data() } as CategoryLimit)));
+      setLimits(snap.docs.map(d => normalizeLimit(d)));
+      setLoadingLimits(false);
     });
 
     const unsubCards = onSnapshot(collection(userRef, "cards"), (snap) => {
-      setCards(snap.docs.map(d => ({ id: d.id, ...d.data() } as CreditCardInfo)));
+      setCards(snap.docs.map(d => normalizeCard(d, session.uid)));
+      setLoadingCards(false);
     });
 
     const unsubWallets = onSnapshot(collection(userRef, "wallets"), (snap) => {
-      setWallets(snap.docs.map(d => ({ id: d.id, ...d.data() } as Wallet)));
+      setWallets(snap.docs.map(d => normalizeWallet(d, session.uid)));
+      setLoadingWallets(false);
+    });
+
+    const unsubCats = onSnapshot(collection(userRef, "categories"), (snap) => {
+      setCategories(snap.docs.map(d => normalizeUserCategory(d)));
+      setLoadingCategories(false);
     });
 
     const unsubNotifs = onSnapshot(query(collection(userRef, "notifications"), orderBy("createdAt", "desc"), limit(20)), (snap) => {
@@ -110,7 +133,7 @@ const App: React.FC = () => {
 
     return () => { 
       unsubTrans(); unsubGoals(); unsubReminders(); 
-      unsubLimits(); unsubCards(); unsubWallets(); unsubNotifs(); 
+      unsubLimits(); unsubCards(); unsubWallets(); unsubNotifs(); unsubCats();
     };
   }, [session?.uid]);
 
@@ -122,12 +145,20 @@ const App: React.FC = () => {
   const [limits, setLimits] = useState<CategoryLimit[]>([]);
   const [cards, setCards] = useState<CreditCardInfo[]>([]);
   const [wallets, setWallets] = useState<Wallet[]>([]);
+  const [categories, setCategories] = useState<UserCategory[]>([]);
+
+  const [loadingCards, setLoadingCards] = useState(true);
+  const [loadingGoals, setLoadingGoals] = useState(true);
+  const [loadingReminders, setLoadingReminders] = useState(true);
+  const [loadingLimits, setLoadingLimits] = useState(true);
+  const [loadingWallets, setLoadingWallets] = useState(true);
+  const [loadingCategories, setLoadingCategories] = useState(true);
 
   const handleOnboardingFinish = () => {
     setOnboardingStep('setup');
   };
 
-  const handleSetupComplete = async (data: { income: number; bills: any[]; goal: any }) => {
+  const handleSetupComplete = async (data: { income: number; bills: any[]; goals: any[] }) => {
     if (!session?.uid) return;
     
     const { dispatchEvent } = await import('./services/eventDispatcher');
@@ -143,24 +174,41 @@ const App: React.FC = () => {
       });
     }
 
-    // 2. Salvar Contas Fixas
+    // 2. Salvar Contas Fixas / Recebimentos
     for (const bill of data.bills) {
       await dispatchEvent(session.uid, {
         type: 'CREATE_REMINDER',
-        payload: { description: bill.description, amount: bill.amount, dueDay: bill.dueDay, category: 'Contas Fixas' },
+        payload: { 
+          description: bill.description, 
+          amount: bill.amount, 
+          dueDay: bill.dueDay, 
+          category: bill.type === 'RECEIVE' ? 'Recebimento' : 'Contas Fixas',
+          type: bill.type || 'PAY'
+        },
         source: 'ui',
         createdAt: new Date()
       });
     }
 
-    // 3. Salvar Meta
-    if (data.goal.name && data.goal.targetAmount > 0) {
-      await dispatchEvent(session.uid, {
-        type: 'CREATE_GOAL',
-        payload: { name: data.goal.name, targetAmount: data.goal.targetAmount, location: 'Cofre Principal' },
-        source: 'ui',
-        createdAt: new Date()
-      });
+    // 3. Salvar Metas
+    if (data.goals && data.goals.length > 0) {
+      for (const goal of data.goals) {
+        await dispatchEvent(session.uid, {
+          type: 'CREATE_GOAL',
+          payload: { 
+            name: goal.name, 
+            targetAmount: goal.targetAmount, 
+            currentAmount: goal.currentAmount || 0,
+            location: goal.location || 'Cofre Principal',
+            category: goal.category,
+            priority: goal.priority,
+            icon: goal.icon,
+            deadlineMonths: goal.deadlineMonths
+          },
+          source: 'ui',
+          createdAt: new Date()
+        });
+      }
     }
 
     // 4. Marcar Onboarding como visto
@@ -182,13 +230,16 @@ const App: React.FC = () => {
     }
 
     switch (activeTab) {
-      case 'chat': return <ChatInterface user={session} messages={messages} setMessages={setMessages} transactions={transactions} limits={limits} reminders={reminders} cards={cards} wallets={wallets} />;
-      case 'dash': return <Dashboard transactions={transactions} goals={goals} limits={limits} uid={session.uid} />;
-      case 'goals': return <Goals goals={goals} transactions={transactions} uid={session.uid} />;
-      case 'cc': return <CreditCard transactions={transactions} uid={session.uid} cards={cards} />;
-      case 'reminders': return <Reminders bills={reminders} uid={session.uid} />;
+      case 'chat': return <ChatInterface user={session} messages={messages} setMessages={setMessages} transactions={transactions} limits={limits} reminders={reminders} cards={cards} wallets={wallets} categories={categories} />;
+      case 'extrato': return <Extrato uid={session.uid} cards={cards} categories={categories} />;
+      case 'categories': return <CategoriesTab uid={session.uid} categories={categories} loading={loadingCategories} />;
+      case 'dash': return <Dashboard transactions={transactions} goals={goals} limits={limits} wallets={wallets} uid={session.uid} loading={loadingCards || loadingGoals || loadingLimits || loadingWallets} />;
+      case 'goals': return <Goals goals={goals} transactions={transactions} uid={session.uid} loading={loadingGoals} />;
+      case 'cc': return <CreditCard transactions={transactions} uid={session.uid} cards={cards} loading={loadingCards} />;
+      case 'reminders': return <Reminders bills={reminders} uid={session.uid} loading={loadingReminders} />;
       case 'messages': return <Messages notifications={notifications} />;
-      case 'resumo': return <YearlySummary transactions={transactions} />;
+      case 'resumo': return <YearlySummary transactions={transactions} goals={goals} wallets={wallets} />;
+      case 'insights': return <Insights transactions={transactions} />;
       case 'score': return <HealthScoreTab transactions={transactions} />;
       case 'stress': return <ImpactSimulator transactions={transactions} />;
       case 'profile': return <ProfileEdit user={session} onUpdate={(d) => setSession(p => p ? {...p, ...d} : null)} onLogout={() => signOut(auth)} />;
@@ -204,7 +255,7 @@ const App: React.FC = () => {
         const totalSaved = goals.reduce((s, g) => s + (Number(g.currentAmount) || 0), 0);
         const freeBalance = income - expense - totalSaved;
         
-        return <WalletTab uid={session.uid} freeBalance={freeBalance} goals={goals} />;
+        return <WalletTab uid={session.uid} freeBalance={freeBalance} goals={goals} wallets={wallets} loading={loadingWallets || loadingGoals} />;
       }
       default: return <ChatInterface user={session} messages={messages} setMessages={setMessages} transactions={transactions} limits={limits} reminders={reminders} />;
     }

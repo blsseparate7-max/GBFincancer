@@ -1,7 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { UserSession, Message, Transaction, CategoryLimit, Bill, CreditCardInfo, Wallet } from '../types';
+import { UserSession, Message, Transaction, CategoryLimit, Bill, CreditCardInfo, Wallet, UserCategory } from '../types';
 import { parseMessage } from '../services/geminiService';
 import { dispatchEvent } from '../services/eventDispatcher';
+import { calculateWeeklySummary, formatCurrency } from '../services/summaryService';
 
 interface ChatProps {
   user: UserSession;
@@ -12,9 +13,10 @@ interface ChatProps {
   reminders: Bill[];
   cards: CreditCardInfo[];
   wallets: Wallet[];
+  categories: UserCategory[];
 }
 
-const ChatInterface: React.FC<ChatProps> = ({ user, messages, setMessages, transactions, limits, reminders, cards, wallets }) => {
+const ChatInterface: React.FC<ChatProps> = ({ user, messages, setMessages, transactions, limits, reminders, cards, wallets, categories }) => {
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
@@ -24,6 +26,7 @@ const ChatInterface: React.FC<ChatProps> = ({ user, messages, setMessages, trans
   const recognitionRef = useRef<any>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const isProcessingRef = useRef(false);
 
   // Limpeza ao desmontar
   useEffect(() => {
@@ -65,7 +68,7 @@ const ChatInterface: React.FC<ChatProps> = ({ user, messages, setMessages, trans
       const triggerSummary = async () => {
         setIsLoading(true);
         try {
-          const result = await parseMessage("GERAR_RESUMO_MATINAL", user.name, { reminders, cards, wallets });
+          const result = await parseMessage("GERAR_RESUMO_MATINAL", user.name, { reminders, cards, wallets, categories });
           const aiMsg: Message = { 
             id: `summary-${Date.now()}`, 
             text: result.reply || "Bom dia! Vamos organizar suas finanças hoje?", 
@@ -84,6 +87,41 @@ const ChatInterface: React.FC<ChatProps> = ({ user, messages, setMessages, trans
     }
   }, [user.uid, messages.length, reminders, cards, wallets]);
 
+  // Resumo Semanal Automático
+  useEffect(() => {
+    const now = new Date();
+    const startOfWeek = new Date(now);
+    startOfWeek.setDate(now.getDate() - now.getDay()); // Domingo
+    const weekKey = `weekly_summary_${user.uid}_${startOfWeek.toLocaleDateString()}`;
+    const hasSeenWeekly = localStorage.getItem(weekKey);
+
+    if (!hasSeenWeekly && transactions.length > 0) {
+      const showWeeklySummary = async () => {
+        const summary = calculateWeeklySummary(transactions);
+        const topCat = summary.topCategories[0];
+        
+        const summaryText = `📊 *RESUMO DA SEMANA*\n\n` +
+          `💰 Entradas: *${formatCurrency(summary.income)}*\n` +
+          `📉 Saídas: *${formatCurrency(summary.expense)}*\n` +
+          `⚖️ Sobra: *${formatCurrency(summary.balance)}*\n\n` +
+          (topCat ? `🔥 *Maior gasto:* ${topCat.category} (${formatCurrency(topCat.amount)})` : "");
+
+        const aiMsg: Message = {
+          id: `weekly-${Date.now()}`,
+          text: summaryText,
+          sender: 'ai',
+          timestamp: new Date()
+        };
+        
+        setMessages(prev => [...prev, aiMsg]);
+        localStorage.setItem(weekKey, 'true');
+      };
+      
+      const timer = setTimeout(showWeeklySummary, 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [user.uid, transactions, setMessages]);
+
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
@@ -92,8 +130,9 @@ const ChatInterface: React.FC<ChatProps> = ({ user, messages, setMessages, trans
 
   const handleSend = async (textOverride?: string) => {
     const messageText = (textOverride || input).trim();
-    if (!messageText || isLoading) return;
+    if (!messageText || isLoading || isProcessingRef.current) return;
     
+    isProcessingRef.current = true;
     const userMsg: Message = { 
       id: Date.now().toString(), 
       text: messageText, 
@@ -106,7 +145,7 @@ const ChatInterface: React.FC<ChatProps> = ({ user, messages, setMessages, trans
     setIsLoading(true);
 
     try {
-      const result = await parseMessage(messageText, user.name, { reminders, cards, wallets });
+      const result = await parseMessage(messageText, user.name, { reminders, cards, wallets, categories });
       
       let proactiveReply = "";
 
@@ -149,6 +188,7 @@ const ChatInterface: React.FC<ChatProps> = ({ user, messages, setMessages, trans
       }]);
     } finally {
       setIsLoading(false);
+      isProcessingRef.current = false;
     }
   };
 
@@ -225,7 +265,7 @@ const ChatInterface: React.FC<ChatProps> = ({ user, messages, setMessages, trans
         className="flex-1 min-h-0 overflow-y-auto px-4 py-4 space-y-3 overscroll-contain no-scrollbar relative z-10"
         style={{ scrollBehavior: 'smooth' }}
       >
-        {messages.length === 0 && (
+        {messages.length === 0 && !isLoading && (
           <div className="flex justify-center my-10">
             <div className="bg-[var(--surface)] px-4 py-2 rounded-xl text-[10px] text-[var(--text-muted)] shadow-sm uppercase font-black border border-[var(--border)] text-center">
               🔒 Auditoria IA Ativa • Mensagens Protegidas

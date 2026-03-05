@@ -3,15 +3,18 @@ import { db } from '../services/firebaseConfig';
 import { collection, onSnapshot, query, orderBy, doc } from 'firebase/firestore';
 import { Wallet, WalletTransfer, WalletType, SavingGoal } from '../types';
 import { dispatchEvent } from '../services/eventDispatcher';
+import MoneyInput from './MoneyInput';
 
 interface WalletTabProps {
   uid: string;
   freeBalance: number;
   goals: SavingGoal[];
+  wallets: Wallet[];
+  loading?: boolean;
 }
 
-const WalletTab: React.FC<WalletTabProps> = ({ uid, freeBalance, goals }) => {
-  const [wallets, setWallets] = useState<Wallet[]>([]);
+const WalletTab: React.FC<WalletTabProps> = ({ uid, freeBalance, goals, wallets: walletsFromProps, loading }) => {
+  const [wallets, setWallets] = useState<Wallet[]>(walletsFromProps);
   const [transfers, setTransfers] = useState<WalletTransfer[]>([]);
   const [isAdding, setIsAdding] = useState(false);
   const [isTransferring, setIsTransferring] = useState(false);
@@ -29,18 +32,18 @@ const WalletTab: React.FC<WalletTabProps> = ({ uid, freeBalance, goals }) => {
   const [transferNote, setTransferNote] = useState('');
 
   useEffect(() => {
+    setWallets(walletsFromProps);
+  }, [walletsFromProps]);
+
+  useEffect(() => {
     if (!uid) return;
     const userRef = doc(db, "users", uid);
     
-    const unsubWallets = onSnapshot(query(collection(userRef, "wallets"), orderBy("createdAt", "desc")), (snap) => {
-      setWallets(snap.docs.map(d => ({ id: d.id, ...d.data() } as Wallet)));
-    });
-
     const unsubTransfers = onSnapshot(query(collection(userRef, "walletTransfers"), orderBy("createdAt", "desc")), (snap) => {
       setTransfers(snap.docs.map(d => ({ id: d.id, ...d.data() } as WalletTransfer)));
     });
 
-    return () => { unsubWallets(); unsubTransfers(); };
+    return () => { unsubTransfers(); };
   }, [uid]);
 
   const totalInWallets = useMemo(() => wallets.reduce((acc, w) => acc + (w.balance || 0), 0), [wallets]);
@@ -89,6 +92,17 @@ const WalletTab: React.FC<WalletTabProps> = ({ uid, freeBalance, goals }) => {
       createdAt: new Date()
     });
   };
+
+  if (loading) {
+    return (
+      <div className="p-4 lg:p-8 space-y-8 animate-pulse max-w-5xl mx-auto">
+        <div className="h-40 bg-[#111b21] rounded-[2rem]"></div>
+        <div className="grid grid-cols-3 gap-4">
+          {[1,2,3].map(i => <div key={i} className="h-32 bg-[#111b21] rounded-3xl"></div>)}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="p-4 lg:p-8 space-y-8 animate-fade max-w-5xl mx-auto pb-32">
@@ -219,7 +233,12 @@ const WalletTab: React.FC<WalletTabProps> = ({ uid, freeBalance, goals }) => {
                 </div>
                 <div className="space-y-1">
                   <label className="text-[9px] font-black text-[#8696a0] uppercase ml-2">Saldo Inicial</label>
-                  <input type="number" className="w-full bg-[#202c33] rounded-2xl p-4 text-sm font-bold outline-none border border-transparent focus:border-[#00a884]" placeholder="0.00" value={balance} onChange={e => setBalance(e.target.value)} />
+                  <MoneyInput 
+                    className="w-full bg-[#202c33] rounded-2xl p-4 text-sm font-bold outline-none border border-transparent focus:border-[#00a884] text-white" 
+                    placeholder="R$ 0,00" 
+                    value={Number(balance) || 0} 
+                    onChange={val => setBalance(val.toString())} 
+                  />
                 </div>
               </div>
               <div className="space-y-1">
@@ -269,7 +288,12 @@ const WalletTab: React.FC<WalletTabProps> = ({ uid, freeBalance, goals }) => {
               </div>
               <div className="space-y-1">
                 <label className="text-[9px] font-black text-[#8696a0] uppercase ml-2">Valor</label>
-                <input type="number" className="w-full bg-[#202c33] rounded-2xl p-4 text-sm font-bold outline-none border border-transparent focus:border-[#00a884]" placeholder="0.00" value={transferAmount} onChange={e => setTransferAmount(e.target.value)} />
+                <MoneyInput 
+                  className="w-full bg-[#202c33] rounded-2xl p-4 text-sm font-bold outline-none border border-transparent focus:border-[#00a884] text-white" 
+                  placeholder="R$ 0,00" 
+                  value={Number(transferAmount) || 0} 
+                  onChange={val => setTransferAmount(val.toString())} 
+                />
               </div>
               <div className="space-y-1">
                 <label className="text-[9px] font-black text-[#8696a0] uppercase ml-2">Observação (Opcional)</label>

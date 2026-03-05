@@ -13,6 +13,7 @@
     "@google/genai": "^1.40.0",
     "firebase": "^12.9.0",
     "lucide-react": "^0.575.0",
+    "motion": "^12.35.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "recharts": "^3.7.0"

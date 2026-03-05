@@ -1,6 +1,7 @@
 
 import React, { useState } from 'react';
 import { SavingGoal } from '../types';
+import MoneyInput from './MoneyInput';
 
 interface Props {
   goals: SavingGoal[];
@@ -47,7 +48,12 @@ const GoalsManager: React.FC<Props> = ({ goals, onAdd }) => {
       {showAdd && (
         <div className="bg-white p-6 rounded-3xl shadow-xl border border-gray-100 mb-6 space-y-4 animate-in slide-in-from-top">
           <input className="w-full bg-gray-50 rounded-xl p-3 text-sm font-bold" placeholder="Nome da Meta (ex: Viagem)" value={name} onChange={e => setName(e.target.value)} />
-          <input className="w-full bg-gray-50 rounded-xl p-3 text-sm font-bold" type="number" placeholder="Valor Alvo R$" value={target} onChange={e => setTarget(e.target.value)} />
+          <MoneyInput 
+            className="w-full bg-gray-50 rounded-xl p-3 text-sm font-bold" 
+            placeholder="Valor Alvo R$" 
+            value={Number(target) || 0} 
+            onChange={val => setTarget(val.toString())} 
+          />
           <div className="flex gap-2">
             <button onClick={handleAdd} className="flex-1 bg-[#075e54] text-white py-3 rounded-xl font-black text-xs uppercase">Salvar</button>
             <button onClick={() => setShowAdd(false)} className="flex-1 bg-gray-100 text-gray-500 py-3 rounded-xl font-black text-xs uppercase">Cancelar</button>

@@ -1,6 +1,7 @@
 
 import React, { useState } from 'react';
 import { UserSession } from '../types';
+import MoneyInput from './MoneyInput';
 
 interface OnboardingProps {
   user: UserSession;
@@ -74,14 +75,12 @@ const Onboarding: React.FC<OnboardingProps> = ({ user, onComplete }) => {
                <h3 className="text-xl font-bold mt-4 text-[#111b21]">Qual sua renda mensal?</h3>
             </div>
             <div className="relative">
-              <span className="absolute left-5 top-1/2 -translate-y-1/2 text-[#667781] font-bold text-lg">R$</span>
-              <input 
-                type="number" 
+              <MoneyInput 
                 autoFocus
-                className="w-full bg-[#f0f2f5] border border-transparent p-5 pl-12 rounded-xl text-2xl font-black outline-none focus:border-[#00a884] transition-all text-[#111b21]"
-                placeholder="0,00"
-                value={income || ''}
-                onChange={(e) => setIncome(parseFloat(e.target.value))}
+                className="w-full bg-[#f0f2f5] border border-transparent p-5 rounded-xl text-2xl font-black outline-none focus:border-[#00a884] transition-all text-[#111b21]"
+                placeholder="R$ 0,00"
+                value={income}
+                onChange={(val) => setIncome(val)}
               />
             </div>
             <button 
@@ -107,10 +106,11 @@ const Onboarding: React.FC<OnboardingProps> = ({ user, onComplete }) => {
                 value={billDesc} onChange={e => setBillDesc(e.target.value)}
               />
               <div className="grid grid-cols-2 gap-2">
-                <input 
-                  placeholder="Valor R$" type="number" 
+                <MoneyInput 
+                  placeholder="Valor R$" 
                   className="w-full bg-white border border-[#d1d7db] p-3 rounded-xl text-sm outline-none focus:border-[#00a884] font-bold"
-                  value={billVal} onChange={e => setBillVal(e.target.value)}
+                  value={Number(billVal) || 0} 
+                  onChange={val => setBillVal(val.toString())}
                 />
                 <input 
                   placeholder="Dia Venc." type="number" 
@@ -159,12 +159,11 @@ const Onboarding: React.FC<OnboardingProps> = ({ user, onComplete }) => {
                 value={goalName}
                 onChange={(e) => setGoalName(e.target.value)}
               />
-              <input 
-                type="number"
+              <MoneyInput 
                 className="w-full bg-[#f0f2f5] border border-[#d1d7db] p-5 rounded-xl text-sm font-black outline-none focus:border-[#00a884] text-[#111b21]"
                 placeholder="Valor Alvo R$"
-                value={goalTarget}
-                onChange={(e) => setGoalTarget(e.target.value)}
+                value={Number(goalTarget) || 0}
+                onChange={(val) => setGoalTarget(val.toString())}
               />
             </div>
 
