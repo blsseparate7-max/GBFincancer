@@ -8,7 +8,7 @@ interface WelcomeOnboardingProps {
 
 const WelcomeOnboarding: React.FC<WelcomeOnboardingProps> = ({ userName, onFinish }) => {
   return (
-    <div className="fixed inset-0 z-[6000] bg-[#0B141A] flex items-center justify-center p-4 sm:p-6 overflow-hidden animate-fade">
+    <div className="fixed inset-0 z-[6000] bg-[#0B141A] flex items-center justify-center p-4 sm:p-6 overflow-y-auto animate-fade">
       <div className="absolute inset-0 whatsapp-pattern opacity-[0.05] pointer-events-none"></div>
       
       <div className="relative z-10 w-full max-w-lg bg-[#111B21] rounded-[3rem] shadow-2xl border border-[#2A3942]/60 flex flex-col max-h-[90vh]">
@@ -23,7 +23,7 @@ const WelcomeOnboarding: React.FC<WelcomeOnboardingProps> = ({ userName, onFinis
         </div>
 
         {/* Conteúdo com Scroll */}
-        <div className="flex-1 overflow-y-auto px-8 py-4 no-scrollbar space-y-8">
+        <div className="flex-1 overflow-y-auto px-8 py-4 space-y-8">
           
           <section>
             <h3 className="text-[10px] font-black text-[#00A884] uppercase tracking-widest mb-4 flex items-center gap-2">

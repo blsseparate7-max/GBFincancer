@@ -93,7 +93,7 @@ const CategoriesTab: React.FC<CategoriesTabProps> = ({ uid, categories, loading 
   }
 
   return (
-    <div className="flex-1 flex flex-col h-full bg-[var(--bg-body)] overflow-hidden">
+    <div className="flex-1 flex flex-col h-full bg-[var(--bg-body)]">
       <div className="p-6 flex justify-between items-end bg-white/5 border-b border-white/10">
         <div>
           <h2 className="text-[10px] font-black text-[var(--green-whatsapp)] uppercase tracking-[0.4em] mb-1">Personalização</h2>
@@ -107,7 +107,7 @@ const CategoriesTab: React.FC<CategoriesTabProps> = ({ uid, categories, loading 
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto no-scrollbar p-6 space-y-4">
+      <div className="flex-1 overflow-y-auto p-6 space-y-4">
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {categories.map(cat => (
             <div 

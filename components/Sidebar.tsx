@@ -45,7 +45,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, expanded, se
         </button>
       </div>
 
-      <nav className="flex-1 overflow-y-auto no-scrollbar p-3 space-y-1">
+      <nav className="flex-1 overflow-y-auto p-3 space-y-1">
         {isAdmin && (
           <button
             onClick={() => { setActiveTab('admin'); if(onClose) onClose(); }}

@@ -28,8 +28,8 @@ body {
     font-family: 'Inter', sans-serif; 
     background-color: var(--bg-body); 
     color: var(--text-primary);
-    overflow: hidden;
-    height: 100dvh;
+    overflow-x: hidden;
+    min-height: 100dvh;
     width: 100vw;
 }
 

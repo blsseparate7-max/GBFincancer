@@ -154,7 +154,7 @@ const AdminPanel: React.FC<{ currentAdminId: string }> = ({ currentAdminId }) =>
         </aside>
 
         {/* Conteúdo Admin */}
-        <main className="flex-1 overflow-y-auto p-8 no-scrollbar pb-32">
+        <main className="flex-1 overflow-y-auto p-8 pb-32">
           {activeSubTab === 'dashboard' && (
             <div className="space-y-8 animate-fade">
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -286,7 +286,7 @@ const AdminPanel: React.FC<{ currentAdminId: string }> = ({ currentAdminId }) =>
                   </div>
                   <div className="space-y-1">
                     <label className="text-[9px] font-black text-[#8696a0] uppercase ml-2">Corpo da Mensagem</label>
-                    <textarea className="w-full bg-[#202c33] rounded-2xl p-4 text-sm font-medium outline-none border border-transparent focus:border-[#00a884] h-32 no-scrollbar" placeholder="Escreva o comunicado aqui..." value={msgBody} onChange={e => setMsgBody(e.target.value)} />
+                    <textarea className="w-full bg-[#202c33] rounded-2xl p-4 text-sm font-medium outline-none border border-transparent focus:border-[#00a884] h-32" placeholder="Escreva o comunicado aqui..." value={msgBody} onChange={e => setMsgBody(e.target.value)} />
                   </div>
                   <div className="space-y-1">
                     <label className="text-[9px] font-black text-[#8696a0] uppercase ml-2">Destinatário (Vazio para Global)</label>

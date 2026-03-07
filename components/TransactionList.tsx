@@ -11,7 +11,7 @@ const TransactionList: React.FC<ListProps> = ({ transactions, onDelete }) => {
   const currency = (val: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
 
   return (
-    <div className="p-6 h-full overflow-y-auto no-scrollbar pb-24">
+    <div className="p-6 h-full overflow-y-auto pb-24">
       <h2 className="text-2xl font-black text-gray-900 tracking-tighter italic uppercase mb-6">Extrato Detalhado</h2>
       <div className="space-y-3">
         {transactions.map(t => (

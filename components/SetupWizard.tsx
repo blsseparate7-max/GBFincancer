@@ -208,7 +208,7 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ user, onComplete }) => {
                <h3 className="text-2xl font-black text-[#E9EDEF] tracking-tight">Como você recebe seu dinheiro?</h3>
             </div>
             
-            <div className="grid grid-cols-1 gap-3 max-h-[400px] overflow-y-auto pr-2 no-scrollbar">
+            <div className="grid grid-cols-1 gap-3 max-h-[400px] overflow-y-auto pr-2">
               {occupationOptions.map((opt) => (
                 <button
                   key={opt.id}
@@ -241,7 +241,7 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ user, onComplete }) => {
                <p className="text-xs text-[#8696A0]">Adicione todas as formas que você recebe dinheiro.</p>
             </div>
 
-            <div className="space-y-3 max-h-[300px] overflow-y-auto no-scrollbar">
+            <div className="space-y-3 max-h-[300px] overflow-y-auto">
               {sources.map((s) => (
                 <div key={s.id} className="bg-[#202C33] p-4 rounded-2xl border border-[#2A3942]/40 flex justify-between items-center group">
                   <div className="flex items-center gap-3">
@@ -377,7 +377,7 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ user, onComplete }) => {
               </div>
             </div>
 
-            <div className="max-h-24 overflow-y-auto space-y-2 no-scrollbar px-1">
+            <div className="max-h-24 overflow-y-auto space-y-2 px-1">
               {bills.map((b, i) => (
                 <div key={i} className="flex justify-between items-center bg-[#202C33] p-4 rounded-2xl border border-[#2A3942]/20">
                   <div className="flex items-center gap-3">
@@ -406,7 +406,7 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ user, onComplete }) => {
                <h3 className="text-2xl font-black text-[#E9EDEF] tracking-tight">Onde você quer chegar?</h3>
             </div>
             
-            <div className="space-y-4 max-h-[400px] overflow-y-auto no-scrollbar pr-1">
+            <div className="space-y-4 max-h-[400px] overflow-y-auto pr-1">
               {/* Carro */}
               <div className="bg-[#202C33] p-6 rounded-[2.5rem] border border-[#2A3942]/40 space-y-4">
                 <div className="flex justify-between items-center">
@@ -504,7 +504,7 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ user, onComplete }) => {
   };
 
   return (
-    <div className="fixed inset-0 z-[5000] bg-[#0B141A] flex items-center justify-center p-4 sm:p-6 overflow-hidden">
+    <div className="fixed inset-0 z-[5000] bg-[#0B141A] flex items-center justify-center p-4 sm:p-6 overflow-y-auto">
       <div className="absolute inset-0 whatsapp-pattern opacity-[0.03] pointer-events-none"></div>
       
       <div className="relative z-10 w-full max-w-md bg-[#111B21] rounded-[3rem] shadow-2xl p-8 border border-[#2A3942]/60 flex flex-col min-h-[500px]">

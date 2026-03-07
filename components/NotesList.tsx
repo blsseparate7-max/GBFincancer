@@ -9,7 +9,7 @@ interface NotesListProps {
 
 const NotesList: React.FC<NotesListProps> = ({ notes, onDeleteNote }) => {
   return (
-    <div className="p-8 h-full overflow-y-auto bg-[#f8fafc] no-scrollbar pb-32">
+    <div className="p-8 h-full overflow-y-auto bg-[#f8fafc] pb-32">
       <div className="mb-10">
         <h2 className="text-3xl font-black text-gray-900 tracking-tighter italic">Anotações</h2>
         <p className="text-[10px] text-emerald-600 font-black uppercase tracking-[0.2em] mt-1">Sua base de conhecimento IA</p>

@@ -258,7 +258,7 @@ const Goals: React.FC<GoalsProps> = ({ goals, transactions, uid, loading }) => {
   }
 
   return (
-    <div className="p-6 space-y-6 animate-fade pb-32 no-scrollbar">
+    <div className="p-6 space-y-6 animate-fade pb-32">
       <header className="mb-4">
         <h2 className="text-[10px] font-black text-[var(--green-whatsapp)] uppercase tracking-[0.4em] mb-1">Patrimônio Manual</h2>
         <h1 className="text-3xl font-black text-[var(--text-primary)] uppercase italic tracking-tighter">Meus Cofres</h1>
@@ -416,7 +416,7 @@ const Goals: React.FC<GoalsProps> = ({ goals, transactions, uid, loading }) => {
               {goal.contributions && goal.contributions.length > 0 && (
                 <div className="pt-6 border-t border-gray-50">
                   <p className="text-[9px] font-black text-[var(--text-muted)] uppercase mb-3 tracking-widest">Histórico Recente</p>
-                  <div className="space-y-2 max-h-40 overflow-y-auto no-scrollbar">
+                  <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
                     {goal.contributions.slice().reverse().map((c: Contribution) => (
                       <div key={c.id} className="flex justify-between items-center bg-[var(--bg-body)] p-4 rounded-2xl border border-black/5">
                         <div>
@@ -437,7 +437,7 @@ const Goals: React.FC<GoalsProps> = ({ goals, transactions, uid, loading }) => {
       {/* Modal Criar Meta */}
       {showAddForm && (
         <div className="fixed inset-0 z-[100] bg-black/40 backdrop-blur-md flex items-center justify-center p-6">
-          <div className="bg-white w-full max-w-md rounded-[3.5rem] p-10 shadow-2xl relative animate-fade max-h-[90vh] overflow-y-auto no-scrollbar">
+          <div className="bg-white w-full max-w-md rounded-[3.5rem] p-10 shadow-2xl relative animate-fade max-h-[90vh] overflow-y-auto pr-1">
             <button onClick={() => { setShowAddForm(false); setEditingGoalId(null); }} className="absolute top-10 right-10 text-[var(--text-muted)] font-black text-xl">✕</button>
             <h3 className="text-2xl font-black text-[var(--text-primary)] uppercase italic mb-8 tracking-tighter">
               {editingGoalId ? 'Editar Objetivo' : 'Novo Objetivo'}

@@ -461,14 +461,14 @@ const CreditCard: React.FC<CreditCardProps> = ({ transactions, uid, cards, loadi
       {/* Modal Extrato Detalhado */}
       {showExtrato && (
         <div className="fixed inset-0 z-[100] bg-black/40 backdrop-blur-md flex items-center justify-center p-6">
-          <div className="bg-[var(--bg-body)] w-full max-w-md rounded-[3.5rem] p-8 shadow-2xl animate-fade max-h-[85vh] flex flex-col relative overflow-hidden">
+          <div className="bg-[var(--bg-body)] w-full max-w-md rounded-[3.5rem] p-8 shadow-2xl animate-fade max-h-[85vh] flex flex-col relative">
             <button onClick={() => setShowExtrato(null)} className="absolute top-8 right-8 text-[var(--text-muted)] font-black text-xl z-10">✕</button>
             <h3 className="text-xl font-black text-[var(--text-primary)] uppercase italic mb-8 flex items-center gap-3 tracking-tighter">
               <span className="w-8 h-8 bg-[var(--text-primary)] text-white flex items-center justify-center rounded-xl text-xs not-italic">GB</span>
               Extrato do Ciclo
             </h3>
             
-            <div className="flex-1 overflow-y-auto space-y-3 no-scrollbar pr-1">
+            <div className="flex-1 overflow-y-auto space-y-3 pr-1">
               {cardAnalysis.find(c => c.id === showExtrato)?.expenses.length === 0 ? (
                 <div className="text-center py-20 opacity-30 italic text-xs font-bold uppercase tracking-widest">Nenhum gasto registrado</div>
               ) : (

@@ -262,7 +262,7 @@ const ChatInterface: React.FC<ChatProps> = ({ user, messages, setMessages, trans
       {/* Mensagens */}
       <div 
         ref={scrollRef} 
-        className="flex-1 min-h-0 overflow-y-auto px-4 py-4 space-y-3 overscroll-contain no-scrollbar relative z-10"
+        className="flex-1 min-h-0 overflow-y-auto px-4 py-4 space-y-3 overscroll-contain relative z-10"
         style={{ scrollBehavior: 'smooth' }}
       >
         {messages.length === 0 && !isLoading && (

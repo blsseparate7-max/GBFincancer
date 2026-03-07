@@ -233,7 +233,7 @@ const Extrato: React.FC<ExtratoProps> = ({ uid, cards, categories: userCategorie
   }
 
   return (
-    <div className="flex-1 flex flex-col h-full bg-[var(--bg-body)] overflow-hidden">
+    <div className="flex-1 flex flex-col h-full bg-[var(--bg-body)]">
       {/* Header / Filters */}
       <div className="p-6 space-y-4 bg-white/5 border-b border-white/10">
         <div className="flex justify-between items-end">
@@ -354,7 +354,7 @@ const Extrato: React.FC<ExtratoProps> = ({ uid, cards, categories: userCategorie
     </div>
 
       {/* List */}
-      <div className="flex-1 overflow-y-auto no-scrollbar p-6 space-y-3">
+      <div className="flex-1 overflow-y-auto p-6 space-y-3">
         {loading ? (
           <div className="flex items-center justify-center py-20">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[var(--green-whatsapp)]"></div>

@@ -10,6 +10,7 @@ import {
 } from 'firebase/auth';
 import { doc, setDoc, getDoc } from 'firebase/firestore';
 import { UserSession } from '../types';
+import LegalModal from './LegalModal';
 
 interface AuthProps {
   onLogin: (session: UserSession) => void;
@@ -28,6 +29,7 @@ const Auth: React.FC<AuthProps> = ({ onLogin }) => {
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [legalView, setLegalView] = useState<'terms' | 'privacy' | 'none'>('none');
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -133,7 +135,7 @@ const Auth: React.FC<AuthProps> = ({ onLogin }) => {
   };
 
   return (
-    <div className="min-h-screen w-full flex flex-col items-center justify-center p-6 bg-[#0B141A] relative overflow-hidden">
+    <div className="min-h-dvh w-full flex flex-col items-center justify-center p-6 bg-[#0B141A] relative overflow-y-auto py-12">
       <div className="absolute inset-0 whatsapp-pattern opacity-[0.03] pointer-events-none"></div>
 
       <div className="w-full max-w-[420px] relative z-10 animate-fade">
@@ -262,16 +264,28 @@ const Auth: React.FC<AuthProps> = ({ onLogin }) => {
               </div>
             )}
 
-            {view === 'login' && (
+            {view === 'forgot' ? (
               <div className="text-right">
                 <button 
                   type="button"
-                  onClick={() => setView('forgot')}
+                  onClick={() => setView('login')}
                   className="text-xs font-bold text-[#00A884] hover:text-[#00C99D] transition-colors uppercase tracking-widest"
                 >
-                  Esqueci minha senha
+                  Voltar para o login
                 </button>
               </div>
+            ) : (
+              view === 'login' && (
+                <div className="text-right">
+                  <button 
+                    type="button"
+                    onClick={() => setView('forgot')}
+                    className="text-xs font-bold text-[#00A884] hover:text-[#00C99D] transition-colors uppercase tracking-widest"
+                  >
+                    Esqueci minha senha
+                  </button>
+                </div>
+              )
             )}
 
             <button 
@@ -289,8 +303,13 @@ const Auth: React.FC<AuthProps> = ({ onLogin }) => {
 
           <footer className="mt-8 pt-6 border-t border-[#2A3942]/40 text-center">
             <button 
+              type="button"
               onClick={() => {
-                setView(view === 'login' ? 'signup' : 'login');
+                if (view === 'forgot') {
+                  setView('login');
+                } else {
+                  setView(view === 'login' ? 'signup' : 'login');
+                }
                 setError(null);
                 setMessage(null);
               }}
@@ -298,18 +317,30 @@ const Auth: React.FC<AuthProps> = ({ onLogin }) => {
             >
               {view === 'login' ? (
                 <>Não tem uma conta? <span className="text-[#00A884]">Criar conta</span></>
-              ) : (
+              ) : view === 'signup' ? (
                 <>Já possui uma conta? <span className="text-[#00A884]">Fazer login</span></>
+              ) : (
+                <>Lembrou a senha? <span className="text-[#00A884]">Voltar para login</span></>
               )}
             </button>
           </footer>
         </div>
 
-        <div className="mt-8 text-center flex items-center justify-center gap-2 opacity-40">
-          <svg className="w-4 h-4 text-[#8696A0]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
-          <p className="text-[10px] font-black text-[#8696A0] uppercase tracking-[0.2em]">Seus dados ficam protegidos.</p>
+        <div className="mt-8 text-center flex flex-col items-center justify-center gap-4">
+          <div className="flex items-center gap-2 opacity-40">
+            <svg className="w-4 h-4 text-[#8696A0]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
+            <p className="text-[10px] font-black text-[#8696A0] uppercase tracking-[0.2em]">Seus dados ficam protegidos.</p>
+          </div>
+          
+          <div className="flex items-center gap-3 text-[9px] font-black text-[#8696A0]/40 uppercase tracking-widest">
+            <button onClick={() => setLegalView('terms')} className="hover:text-[#00A884] transition-colors">Termos de Uso</button>
+            <span className="opacity-20">|</span>
+            <button onClick={() => setLegalView('privacy')} className="hover:text-[#00A884] transition-colors">Política de Privacidade</button>
+          </div>
         </div>
       </div>
+
+      <LegalModal type={legalView} onClose={() => setLegalView('none')} />
     </div>
   );
 };

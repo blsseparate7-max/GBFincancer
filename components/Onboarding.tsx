@@ -48,7 +48,7 @@ const Onboarding: React.FC<OnboardingProps> = ({ user, onComplete }) => {
   };
 
   return (
-    <div className="fixed inset-0 z-[5000] bg-[#f0f2f5] flex items-center justify-center p-4 sm:p-6 overflow-hidden animate-fade">
+    <div className="fixed inset-0 z-[5000] bg-[#f0f2f5] flex items-center justify-center p-4 sm:p-6 overflow-y-auto animate-fade">
       <div className="absolute inset-0 whatsapp-pattern opacity-10 pointer-events-none"></div>
       
       <div className="relative z-10 w-full max-w-md bg-white rounded-[2rem] shadow-2xl p-8 border border-[#d1d7db]">
@@ -126,7 +126,7 @@ const Onboarding: React.FC<OnboardingProps> = ({ user, onComplete }) => {
               </button>
             </div>
 
-            <div className="max-h-24 overflow-y-auto space-y-2 no-scrollbar px-1">
+            <div className="max-h-24 overflow-y-auto space-y-2 px-1">
               {bills.map((b, i) => (
                 <div key={i} className="flex justify-between items-center bg-gray-50 p-2 px-3 rounded-lg border border-gray-100 text-[11px] font-bold text-[#667781]">
                   <span>{b.description} (Dia {b.dueDay})</span>

@@ -36,7 +36,7 @@ const Reports: React.FC<ReportsProps> = ({ transactions }) => {
   }, [transactions]);
 
   return (
-    <div className="p-6 space-y-6 overflow-y-auto h-full no-scrollbar pb-32 bg-[#f8fafc] animate-fade">
+    <div className="p-6 space-y-6 overflow-y-auto h-full pb-32 bg-[#f8fafc] animate-fade">
       <header className="mb-2">
         <h2 className="text-[10px] font-black text-[#008069] uppercase tracking-[0.4em] mb-1">Auditoria Histórica</h2>
         <h1 className="text-3xl font-black text-[#111b21] uppercase italic tracking-tighter">Relatórios</h1>
