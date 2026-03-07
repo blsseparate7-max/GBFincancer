@@ -256,9 +256,9 @@ export const dispatchEvent = async (uid: string, event: FinanceEvent) => {
       }
 
       case 'DELETE_GOAL': {
-        const { id } = event.payload;
-        if (!id) throw new Error("ID is required for DELETE_GOAL");
-        await deleteDoc(doc(userRef, "goals", id));
+        const { goalId } = event.payload;
+        if (!goalId) throw new Error("Goal ID is required for DELETE_GOAL");
+        await deleteDoc(doc(userRef, "goals", goalId));
         break;
       }
 

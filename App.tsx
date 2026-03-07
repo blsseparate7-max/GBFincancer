@@ -16,6 +16,7 @@ import ProfileEdit from './components/ProfileEdit';
 import AdminPanel from './components/AdminPanel';
 import SetupWizard from './components/SetupWizard';
 import WelcomeOnboarding from './components/WelcomeOnboarding';
+import LGPDOnboarding from './components/LGPDOnboarding';
 import HealthScoreTab from './components/HealthScoreTab';
 import ImpactSimulator from './components/ImpactSimulator';
 import YearlySummary from './components/YearlySummary';
@@ -36,7 +37,7 @@ const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState('chat');
   const [sidebarExpanded, setSidebarExpanded] = useState(false); // Oculto por padrão
   const [isMobile, setIsMobile] = useState(window.innerWidth < 1024);
-  const [onboardingStep, setOnboardingStep] = useState<'none' | 'welcome' | 'setup'>('none');
+  const [onboardingStep, setOnboardingStep] = useState<'none' | 'welcome' | 'lgpd' | 'setup'>('none');
 
   useEffect(() => {
     const handleResize = () => {
@@ -61,6 +62,7 @@ const App: React.FC = () => {
             role: userData.role || 'USER',
             subscriptionStatus: userData.subscriptionStatus || 'ACTIVE',
             onboardingSeen: userData.onboardingSeen,
+            lgpdAccepted: userData.lgpdAccepted,
             status: userData.status || 'active',
             photoURL: userData.photoURL
           };
@@ -68,6 +70,8 @@ const App: React.FC = () => {
           
           if (!userData.onboardingSeen) {
             setOnboardingStep('welcome');
+          } else if (!userData.lgpdAccepted) {
+            setOnboardingStep('lgpd');
           }
         }
       } else {
@@ -155,26 +159,57 @@ const App: React.FC = () => {
   const [loadingCategories, setLoadingCategories] = useState(true);
 
   const handleOnboardingFinish = () => {
+    setOnboardingStep('lgpd');
+  };
+
+  const handleLGPDAccept = async () => {
+    if (!session?.uid) return;
+    const { syncUserData } = await import('./services/databaseService');
+    await syncUserData(session.uid, { 
+      lgpdAccepted: true,
+      lgpdAcceptedAt: new Date(),
+      lgpdVersion: "1.0"
+    });
+    setSession(prev => prev ? { ...prev, lgpdAccepted: true } : null);
     setOnboardingStep('setup');
   };
 
-  const handleSetupComplete = async (data: { income: number; bills: any[]; goals: any[] }) => {
+  const handleSetupComplete = async (data: { incomeProfile: any; bills: any[]; goals: any[] }) => {
     if (!session?.uid) return;
     
     const { dispatchEvent } = await import('./services/eventDispatcher');
     const { syncUserData } = await import('./services/databaseService');
 
-    // 1. Salvar Renda
-    if (data.income > 0) {
-      await dispatchEvent(session.uid, {
-        type: 'ADD_INCOME',
-        payload: { amount: data.income, description: 'Renda Inicial', category: 'Salário', date: new Date().toISOString() },
-        source: 'ui',
-        createdAt: new Date()
-      });
+    // 1. Salvar Perfil de Renda e Marcar Onboarding como visto
+    await syncUserData(session.uid, { 
+      incomeProfile: data.incomeProfile,
+      onboardingSeen: true 
+    });
+
+    // 2. Criar Lembretes para Fontes de Renda
+    if (data.incomeProfile?.sources) {
+      for (const source of data.incomeProfile.sources) {
+        if (source.amountExpected && source.frequency !== 'VARIABLE') {
+          const dueDay = source.dates && source.dates.length > 0 ? source.dates[0] : 1;
+          
+          await dispatchEvent(session.uid, {
+            type: 'CREATE_REMINDER',
+            payload: {
+              description: `Recebimento: ${source.description}`,
+              amount: source.amountExpected,
+              dueDay: dueDay,
+              category: 'Recebimento',
+              type: 'RECEIVE',
+              recurring: true
+            },
+            source: 'ui',
+            createdAt: new Date()
+          });
+        }
+      }
     }
 
-    // 2. Salvar Contas Fixas / Recebimentos
+    // 3. Salvar Contas Fixas
     for (const bill of data.bills) {
       await dispatchEvent(session.uid, {
         type: 'CREATE_REMINDER',
@@ -183,14 +218,15 @@ const App: React.FC = () => {
           amount: bill.amount, 
           dueDay: bill.dueDay, 
           category: bill.type === 'RECEIVE' ? 'Recebimento' : 'Contas Fixas',
-          type: bill.type || 'PAY'
+          type: bill.type || 'PAY',
+          recurring: true
         },
         source: 'ui',
         createdAt: new Date()
       });
     }
 
-    // 3. Salvar Metas
+    // 4. Salvar Metas
     if (data.goals && data.goals.length > 0) {
       for (const goal of data.goals) {
         await dispatchEvent(session.uid, {
@@ -210,11 +246,8 @@ const App: React.FC = () => {
         });
       }
     }
-
-    // 4. Marcar Onboarding como visto
-    await syncUserData(session.uid, { onboardingSeen: true });
     
-    setSession(prev => prev ? { ...prev, onboardingSeen: true } : null);
+    setSession(prev => prev ? { ...prev, onboardingSeen: true, incomeProfile: data.incomeProfile } : null);
     setOnboardingStep('none');
   };
 
@@ -224,6 +257,9 @@ const App: React.FC = () => {
   const renderContent = () => {
     if (onboardingStep === 'welcome') {
       return <WelcomeOnboarding userName={session.name} onFinish={handleOnboardingFinish} />;
+    }
+    if (onboardingStep === 'lgpd') {
+      return <LGPDOnboarding onAccept={handleLGPDAccept} />;
     }
     if (onboardingStep === 'setup') {
       return <SetupWizard user={session} onComplete={handleSetupComplete} />;

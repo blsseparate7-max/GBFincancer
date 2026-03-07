@@ -23,6 +23,7 @@ const Goals: React.FC<GoalsProps> = ({ goals, transactions, uid, loading }) => {
 
   const [showAporteModal, setShowAporteModal] = useState<string | null>(null);
   const [showGastoModal, setShowGastoModal] = useState<string | null>(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
   const [aporteAmount, setAporteAmount] = useState('');
   const [aporteNote, setAporteNote] = useState('');
   
@@ -196,6 +197,8 @@ const Goals: React.FC<GoalsProps> = ({ goals, transactions, uid, loading }) => {
       return;
     }
 
+    console.log("Processando gasto da meta:", { goalId: showGastoModal, val });
+
     const res = await dispatchEvent(uid, {
       type: 'SPEND_FROM_GOAL',
       payload: {
@@ -221,12 +224,12 @@ const Goals: React.FC<GoalsProps> = ({ goals, transactions, uid, loading }) => {
 
   const handleDelete = async (id: string) => {
     if (!id) return;
-    if (!window.confirm("Deseja realmente excluir esta meta?")) return;
     
     try {
+      console.log("Excluindo meta:", id);
       const res = await dispatchEvent(uid, {
         type: 'DELETE_GOAL',
-        payload: { id },
+        payload: { goalId: id },
         source: 'ui',
         createdAt: new Date()
       });
@@ -234,6 +237,7 @@ const Goals: React.FC<GoalsProps> = ({ goals, transactions, uid, loading }) => {
       if (!res.success) {
         throw new Error(res.error?.toString() || "Erro desconhecido");
       }
+      setShowDeleteConfirm(null);
     } catch (err: any) {
       console.error("Erro ao excluir meta:", err);
       alert(`Erro ao excluir meta: ${err.message || "Tente novamente."}`);
@@ -334,7 +338,7 @@ const Goals: React.FC<GoalsProps> = ({ goals, transactions, uid, loading }) => {
                     <span className="text-sm">✏️</span>
                   </button>
                   <button 
-                    onClick={(e) => { e.stopPropagation(); handleDelete(goal.id); }} 
+                    onClick={(e) => { e.stopPropagation(); setShowDeleteConfirm(goal.id); }} 
                     className="p-3 text-red-600 transition-all bg-red-50 hover:bg-red-100 rounded-2xl flex items-center justify-center shadow-sm active:scale-90"
                     title="Excluir Meta"
                   >
@@ -569,6 +573,36 @@ const Goals: React.FC<GoalsProps> = ({ goals, transactions, uid, loading }) => {
               </select>
               <button onClick={handleSpendFromGoal} className="w-full bg-rose-500 text-white py-6 rounded-[2rem] font-black text-[11px] uppercase shadow-xl shadow-rose-500/20 mt-4 active:scale-95 transition-all">
                 💸 Confirmar Gasto
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Confirmação de Exclusão */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 z-[100] bg-black/40 backdrop-blur-md flex items-center justify-center p-6">
+          <div className="bg-white w-full max-w-sm rounded-[3rem] p-10 shadow-2xl relative animate-fade text-center">
+            <div className="w-16 h-16 bg-rose-100 text-rose-500 rounded-full flex items-center justify-center mx-auto mb-6">
+              <span className="text-2xl">🗑️</span>
+            </div>
+            <h3 className="text-xl font-black text-[var(--text-primary)] uppercase italic mb-2 tracking-tighter">Excluir Meta?</h3>
+            <p className="text-xs text-[var(--text-muted)] font-bold mb-8">
+              Tem certeza que deseja excluir esta meta? Esta ação não pode ser desfeita.
+            </p>
+            
+            <div className="flex gap-3">
+              <button 
+                onClick={() => handleDelete(showDeleteConfirm)} 
+                className="flex-1 bg-rose-500 text-white py-4 rounded-2xl font-black text-[10px] uppercase shadow-xl shadow-rose-500/20 active:scale-95 transition-all"
+              >
+                Sim, Excluir
+              </button>
+              <button 
+                onClick={() => setShowDeleteConfirm(null)} 
+                className="flex-1 bg-gray-100 text-gray-500 py-4 rounded-2xl font-black text-[10px] uppercase active:scale-95 transition-all"
+              >
+                Cancelar
               </button>
             </div>
           </div>

@@ -134,6 +134,25 @@ export interface Bill {
   type?: 'PAY' | 'RECEIVE';
 }
 
+export type IncomeFrequency = 'MONTHLY' | 'BIWEEKLY' | 'WEEKLY' | 'DAILY' | 'VARIABLE';
+export type IncomeSourceType = 'SALARY' | 'VALE' | 'COMMISSION' | 'PRO_LABORE' | 'PIX_SALES' | 'DAILY' | 'OTHER';
+export type OccupationType = 'CLT' | 'ENTREPRENEUR' | 'AUTONOMOUS' | 'DAILY' | 'WEEKLY' | 'BIWEEKLY' | 'OTHER';
+
+export interface IncomeSource {
+  id: string;
+  type: IncomeSourceType;
+  frequency: IncomeFrequency;
+  dates: number[]; // Dias do mês (1-31) ou dias da semana (0-6)
+  amountExpected?: number;
+  description: string;
+}
+
+export interface IncomeProfile {
+  occupationType: OccupationType;
+  sources: IncomeSource[];
+  totalExpectedMonthly?: number;
+}
+
 export interface UserSession {
   uid: string;
   userId: string;
@@ -143,6 +162,10 @@ export interface UserSession {
   role: 'USER' | 'ADMIN';
   subscriptionStatus: 'ACTIVE' | 'EXPIRED';
   onboardingSeen?: boolean;
+  lgpdAccepted?: boolean;
+  lgpdAcceptedAt?: any;
+  lgpdVersion?: string;
+  incomeProfile?: IncomeProfile;
   status?: 'active' | 'blocked' | 'deleted';
   lastLogin?: any;
   createdAt?: any;
@@ -177,6 +200,10 @@ export interface CustomerData {
   role?: 'USER' | 'ADMIN';
   plan: SubscriptionPlan;
   onboardingSeen?: boolean;
+  lgpdAccepted?: boolean;
+  lgpdAcceptedAt?: any;
+  lgpdVersion?: string;
+  incomeProfile?: IncomeProfile;
   createdAt?: any;
   lastLogin?: any;
   localUpdatedAt?: string;
