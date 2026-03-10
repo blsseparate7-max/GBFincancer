@@ -121,13 +121,13 @@ const Dashboard: React.FC<DashProps> = ({ transactions, goals, limits, wallets, 
   if (loading) {
     return (
       <div className="p-6 space-y-8 animate-pulse">
-        <div className="h-20 bg-white/5 rounded-3xl"></div>
+        <div className="h-20 bg-[var(--surface)] rounded-3xl"></div>
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-          {[1,2,3,4].map(i => <div key={i} className="h-24 bg-white/5 rounded-3xl"></div>)}
+          {[1,2,3,4].map(i => <div key={i} className="h-24 bg-[var(--surface)] rounded-3xl"></div>)}
         </div>
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <div className="h-64 bg-white/5 rounded-[2rem]"></div>
-          <div className="h-64 bg-white/5 rounded-[2rem]"></div>
+          <div className="h-64 bg-[var(--surface)] rounded-[2rem]"></div>
+          <div className="h-64 bg-[var(--surface)] rounded-[2rem]"></div>
         </div>
       </div>
     );

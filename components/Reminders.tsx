@@ -1,16 +1,17 @@
 
 import React, { useState, useMemo } from 'react';
-import { Bill, PaymentMethod } from '../types';
+import { Bill, PaymentMethod, Wallet } from '../types';
 import { dispatchEvent } from '../services/eventDispatcher';
 import MoneyInput from './MoneyInput';
 
 interface RemindersProps {
   bills: Bill[];
+  wallets: Wallet[];
   uid: string;
   loading?: boolean;
 }
 
-const Reminders: React.FC<RemindersProps> = ({ bills, uid, loading }) => {
+const Reminders: React.FC<RemindersProps> = ({ bills, wallets, uid, loading }) => {
   const [activeTab, setActiveTab] = useState<'pending' | 'history'>('pending');
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingBill, setEditingBill] = useState<Bill | null>(null);
@@ -74,12 +75,16 @@ const Reminders: React.FC<RemindersProps> = ({ bills, uid, loading }) => {
     setIsLoading(false);
   };
 
-  const handlePayBill = async (method: PaymentMethod) => {
+  const handlePayBill = async (method: PaymentMethod, walletId?: string) => {
     if (!payingBillId) return;
     setIsLoading(true);
     await dispatchEvent(uid, {
       type: 'PAY_REMINDER',
-      payload: { billId: payingBillId, paymentMethod: method },
+      payload: { 
+        billId: payingBillId, 
+        paymentMethod: method,
+        sourceWalletId: walletId || null
+      },
       source: 'ui',
       createdAt: new Date()
     });
@@ -111,10 +116,10 @@ const Reminders: React.FC<RemindersProps> = ({ bills, uid, loading }) => {
   if (loading) {
     return (
       <div className="p-6 space-y-6 animate-pulse">
-        <div className="h-20 bg-white/50 rounded-3xl"></div>
-        <div className="h-12 bg-white/50 rounded-2xl"></div>
+        <div className="h-20 bg-[var(--surface)] rounded-3xl"></div>
+        <div className="h-12 bg-[var(--surface)] rounded-2xl"></div>
         <div className="space-y-3">
-          {[1,2,3].map(i => <div key={i} className="h-20 bg-white/50 rounded-3xl"></div>)}
+          {[1,2,3].map(i => <div key={i} className="h-20 bg-[var(--surface)] rounded-3xl"></div>)}
         </div>
       </div>
     );
@@ -136,16 +141,16 @@ const Reminders: React.FC<RemindersProps> = ({ bills, uid, loading }) => {
       </header>
 
       {/* Tabs */}
-      <div className="flex bg-white/50 p-1 rounded-2xl border border-[var(--border)]">
+      <div className="flex bg-[var(--surface)] p-1 rounded-2xl border border-[var(--border)]">
         <button 
           onClick={() => setActiveTab('pending')}
-          className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'pending' ? 'bg-white text-[var(--green-whatsapp)] shadow-sm' : 'text-[var(--text-muted)]'}`}
+          className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'pending' ? 'bg-[var(--bg-body)] text-[var(--green-whatsapp)] shadow-sm' : 'text-[var(--text-muted)]'}`}
         >
           Pendentes
         </button>
         <button 
           onClick={() => setActiveTab('history')}
-          className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'history' ? 'bg-white text-[var(--text-primary)] shadow-sm' : 'text-[var(--text-muted)]'}`}
+          className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'history' ? 'bg-[var(--bg-body)] text-[var(--text-primary)] shadow-sm' : 'text-[var(--text-muted)]'}`}
         >
           Histórico
         </button>
@@ -157,16 +162,16 @@ const Reminders: React.FC<RemindersProps> = ({ bills, uid, loading }) => {
           const isReceive = bill.type === 'RECEIVE';
           
           return (
-            <div key={bill.id} className={`group bg-white p-5 rounded-3xl border border-[var(--border)] flex justify-between items-center shadow-sm relative transition-all ${bill.isPaid ? 'opacity-70' : isLate ? 'border-l-4 border-l-red-500' : isReceive ? 'border-l-4 border-l-blue-500' : 'border-l-4 border-l-[var(--green-whatsapp)]'}`}>
+            <div key={bill.id} className={`group bg-[var(--surface)] p-5 rounded-3xl border border-[var(--border)] flex justify-between items-center shadow-sm relative transition-all ${bill.isPaid ? 'opacity-70' : isLate ? 'border-l-4 border-l-red-500' : isReceive ? 'border-l-4 border-l-blue-500' : 'border-l-4 border-l-[var(--green-whatsapp)]'}`}>
               <div>
                 <div className="flex items-center gap-2 mb-1">
                   <h4 className={`text-sm font-black ${isLate ? 'text-red-600' : 'text-[var(--text-primary)]'}`}>{bill.description}</h4>
-                  <span className={`text-[7px] font-black uppercase px-1.5 py-0.5 rounded-md ${isReceive ? 'bg-blue-50 text-blue-500' : 'bg-gray-50 text-gray-400'}`}>
+                  <span className={`text-[7px] font-black uppercase px-1.5 py-0.5 rounded-md ${isReceive ? 'bg-blue-500/10 text-blue-500' : 'bg-[var(--bg-body)] text-[var(--text-muted)]'}`}>
                     {isReceive ? 'A Receber' : 'A Pagar'}
                   </span>
                 </div>
                 <div className="flex gap-3 items-center">
-                  <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded-full ${bill.isPaid ? 'bg-gray-100 text-gray-500' : isLate ? 'bg-red-50 text-red-500' : isReceive ? 'bg-blue-50 text-blue-500' : 'bg-[#d9fdd3] text-[var(--green-whatsapp)]'}`}>
+                  <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded-full ${bill.isPaid ? 'bg-[var(--bg-body)] text-[var(--text-muted)]' : isLate ? 'bg-red-500/10 text-red-500' : isReceive ? 'bg-blue-500/10 text-blue-500' : 'bg-[var(--green-whatsapp)]/10 text-[var(--green-whatsapp)]'}`}>
                     {bill.isPaid ? (isReceive ? 'Recebido' : 'Pago') : isLate ? 'Atrasado' : 'Pendente'}
                   </span>
                   <span className="text-[10px] text-[var(--text-muted)] font-bold">
@@ -187,7 +192,7 @@ const Reminders: React.FC<RemindersProps> = ({ bills, uid, loading }) => {
                     </button>
                   )}
                   <div className="flex gap-1">
-                    <button onClick={() => handleEdit(bill)} className="opacity-0 group-hover:opacity-100 p-1.5 text-gray-400 hover:text-blue-500 transition-all">✏️</button>
+                    <button onClick={() => handleEdit(bill)} className="opacity-0 group-hover:opacity-100 p-1.5 text-[var(--text-muted)] hover:text-blue-500 transition-all">✏️</button>
                     <button onClick={() => handleDelete(bill.id)} className="opacity-0 group-hover:opacity-100 p-1.5 text-red-300 hover:text-red-500 transition-all">🗑️</button>
                   </div>
                 </div>
@@ -195,7 +200,7 @@ const Reminders: React.FC<RemindersProps> = ({ bills, uid, loading }) => {
             </div>
           );
         }) : (
-          <div className="text-center py-24 bg-white rounded-[3rem] border border-dashed border-[var(--border)] opacity-40">
+          <div className="text-center py-24 bg-[var(--surface)] rounded-[3rem] border border-dashed border-[var(--border)] opacity-40">
             <p className="text-4xl mb-4">📅</p>
             <p className="text-[10px] font-black uppercase tracking-widest">Tudo limpo por aqui</p>
           </div>
@@ -205,28 +210,37 @@ const Reminders: React.FC<RemindersProps> = ({ bills, uid, loading }) => {
       {/* Modal Pagamento */}
       {payingBillId && (
         <div className="fixed inset-0 z-[1000] bg-black/40 backdrop-blur-sm flex items-center justify-center p-6">
-          <div className="bg-white w-full max-w-sm rounded-[3rem] p-10 shadow-2xl relative animate-fade">
+          <div className="bg-[var(--surface)] w-full max-w-sm rounded-[3rem] p-10 shadow-2xl relative animate-fade">
             <button onClick={() => setPayingBillId(null)} className="absolute top-8 right-8 text-[var(--text-muted)] font-black text-xl">✕</button>
             <h3 className="text-xl font-black text-[var(--text-primary)] uppercase italic text-center mb-8">
-              {bills.find(b => b.id === payingBillId)?.type === 'RECEIVE' ? 'Confirmar Recebimento' : 'Confirmar Pagamento'}
+              {bills.find(b => b.id === payingBillId)?.type === 'RECEIVE' ? 'Onde entrou o dinheiro?' : 'De onde saiu o dinheiro?'}
             </h3>
             
-            <div className="grid grid-cols-1 gap-3">
-              <button 
-                onClick={() => handlePayBill('PIX')}
-                className={`w-full ${bills.find(b => b.id === payingBillId)?.type === 'RECEIVE' ? 'bg-blue-500' : 'bg-[var(--green-whatsapp)]'} text-white font-black py-4 rounded-2xl text-[11px] uppercase shadow-md flex items-center justify-center gap-3 active:scale-95 transition-all`}
-              >
-                <span>⚡</span> {bills.find(b => b.id === payingBillId)?.type === 'RECEIVE' ? 'Recebido em Conta' : 'PIX / Saldo em Conta'}
-              </button>
-              <button 
-                onClick={() => handlePayBill('CASH')}
-                className="w-full bg-[var(--text-primary)] text-white font-black py-4 rounded-2xl text-[11px] uppercase shadow-md flex items-center justify-center gap-3 active:scale-95 transition-all"
-              >
-                <span>💵</span> Dinheiro Vivo
-              </button>
+            <div className="grid grid-cols-2 gap-3">
+              {wallets.map(w => (
+                <button 
+                  key={w.id}
+                  onClick={() => handlePayBill('PIX', w.id)}
+                  className="bg-[var(--bg-body)] hover:bg-[var(--green-whatsapp)] hover:text-white border border-[var(--border)] rounded-2xl py-4 px-2 text-[10px] font-black uppercase transition-all active:scale-95 flex flex-col items-center gap-1 shadow-sm"
+                >
+                  <span className="text-2xl">{w.icon || '💰'}</span>
+                  <span className="truncate w-full text-center">{w.name}</span>
+                </button>
+              ))}
+              
+              {bills.find(b => b.id === payingBillId)?.type !== 'RECEIVE' && (
+                <button 
+                  onClick={() => handlePayBill('CARD')}
+                  className="bg-[var(--bg-body)] hover:bg-rose-500 hover:text-white border border-[var(--border)] rounded-2xl py-4 px-2 text-[10px] font-black uppercase transition-all active:scale-95 flex flex-col items-center gap-1 shadow-sm"
+                >
+                  <span className="text-2xl">💳</span>
+                  <span>Cartão</span>
+                </button>
+              )}
+
               <button 
                 onClick={() => setPayingBillId(null)}
-                className="w-full text-[10px] font-black text-gray-400 uppercase py-2"
+                className="col-span-2 w-full text-[10px] font-black text-[var(--text-muted)] uppercase py-4 mt-2"
               >
                 Cancelar
               </button>
@@ -238,7 +252,7 @@ const Reminders: React.FC<RemindersProps> = ({ bills, uid, loading }) => {
       {/* Modal Adicionar Conta */}
       {showAddForm && (
         <div className="fixed inset-0 z-[1000] bg-black/40 backdrop-blur-sm flex items-center justify-center p-6">
-          <div className="bg-white w-full max-w-sm rounded-[3rem] p-10 shadow-2xl relative animate-fade">
+          <div className="bg-[var(--surface)] w-full max-w-sm rounded-[3rem] p-10 shadow-2xl relative animate-fade">
             <button onClick={() => { setShowAddForm(false); setEditingBill(null); setDesc(''); setVal(''); }} className="absolute top-8 right-8 text-[var(--text-muted)] font-black text-xl">✕</button>
             <h3 className="text-xl font-black text-[var(--text-primary)] uppercase italic mb-8 text-center">{editingBill ? 'Editar Lembrete' : 'Novo Lembrete'}</h3>
             
@@ -247,13 +261,13 @@ const Reminders: React.FC<RemindersProps> = ({ bills, uid, loading }) => {
                 <div className="flex bg-[var(--bg-body)] p-1 rounded-2xl border border-[var(--border)] mb-4">
                   <button 
                     onClick={() => { setType('PAY'); setCat('Contas Fixas'); }}
-                    className={`flex-1 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${type === 'PAY' ? 'bg-white text-[var(--green-whatsapp)] shadow-sm' : 'text-[var(--text-muted)]'}`}
+                    className={`flex-1 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${type === 'PAY' ? 'bg-[var(--surface)] text-[var(--green-whatsapp)] shadow-sm' : 'text-[var(--text-muted)]'}`}
                   >
                     A Pagar
                   </button>
                   <button 
                     onClick={() => { setType('RECEIVE'); setCat('Recebimento'); }}
-                    className={`flex-1 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${type === 'RECEIVE' ? 'bg-white text-blue-500 shadow-sm' : 'text-[var(--text-muted)]'}`}
+                    className={`flex-1 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${type === 'RECEIVE' ? 'bg-[var(--surface)] text-blue-500 shadow-sm' : 'text-[var(--text-muted)]'}`}
                   >
                     A Receber
                   </button>
@@ -261,22 +275,22 @@ const Reminders: React.FC<RemindersProps> = ({ bills, uid, loading }) => {
               )}
 
               <div className="space-y-1">
-                <label className="text-[9px] font-black text-gray-400 uppercase ml-2 tracking-widest">Descrição</label>
-                <input className="w-full bg-[var(--bg-body)] rounded-2xl p-4 text-sm font-bold outline-none focus:border-[var(--green-whatsapp)] border border-transparent" placeholder={type === 'PAY' ? "Ex: Internet, Aluguel..." : "Ex: Salário, Freelance..."} value={desc} onChange={e => setDesc(e.target.value)} />
+                <label className="text-[9px] font-black text-[var(--text-muted)] uppercase ml-2 tracking-widest">Descrição</label>
+                <input className="w-full bg-[var(--bg-body)] rounded-2xl p-4 text-sm font-bold outline-none focus:border-[var(--green-whatsapp)] border border-transparent text-[var(--text-primary)]" placeholder={type === 'PAY' ? "Ex: Internet, Aluguel..." : "Ex: Salário, Freelance..."} value={desc} onChange={e => setDesc(e.target.value)} />
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
-                  <label className="text-[9px] font-black text-gray-400 uppercase ml-2 tracking-widest">Valor R$</label>
+                  <label className="text-[9px] font-black text-[var(--text-muted)] uppercase ml-2 tracking-widest">Valor R$</label>
                   <MoneyInput 
-                    className="w-full bg-[var(--bg-body)] rounded-2xl p-4 text-sm font-bold outline-none border border-transparent focus:border-[var(--green-whatsapp)]" 
+                    className="w-full bg-[var(--bg-body)] rounded-2xl p-4 text-sm font-bold outline-none border border-transparent focus:border-[var(--green-whatsapp)] text-[var(--text-primary)]" 
                     placeholder="R$ 0,00" 
                     value={Number(val) || 0} 
                     onChange={v => setVal(v.toString())} 
                   />
                 </div>
                 <div className="space-y-1">
-                  <label className="text-[9px] font-black text-gray-400 uppercase ml-2 tracking-widest">Dia Venc.</label>
-                  <select className="w-full bg-[var(--bg-body)] rounded-2xl p-4 text-sm font-bold outline-none" value={day} onChange={e => setDay(e.target.value)}>
+                  <label className="text-[9px] font-black text-[var(--text-muted)] uppercase ml-2 tracking-widest">Dia Venc.</label>
+                  <select className="w-full bg-[var(--bg-body)] rounded-2xl p-4 text-sm font-bold outline-none text-[var(--text-primary)]" value={day} onChange={e => setDay(e.target.value)}>
                     {Array.from({length: 31}, (_, i) => i + 1).map(d => (
                       <option key={d} value={d}>{d}</option>
                     ))}
@@ -284,8 +298,8 @@ const Reminders: React.FC<RemindersProps> = ({ bills, uid, loading }) => {
                 </div>
               </div>
               <div className="space-y-1">
-                <label className="text-[9px] font-black text-gray-400 uppercase ml-2 tracking-widest">Categoria</label>
-                <input className="w-full bg-[var(--bg-body)] rounded-2xl p-4 text-sm font-bold outline-none" value={cat} onChange={e => setCat(e.target.value)} />
+                <label className="text-[9px] font-black text-[var(--text-muted)] uppercase ml-2 tracking-widest">Categoria</label>
+                <input className="w-full bg-[var(--bg-body)] rounded-2xl p-4 text-sm font-bold outline-none text-[var(--text-primary)]" value={cat} onChange={e => setCat(e.target.value)} />
               </div>
               <button 
                 onClick={handleAddBill} 

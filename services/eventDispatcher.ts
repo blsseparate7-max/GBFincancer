@@ -21,16 +21,32 @@ export const dispatchEvent = async (uid: string, event: FinanceEvent) => {
 
     switch (event.type) {
       case 'ADD_EXPENSE': {
-        const { amount, category, description, paymentMethod, date } = event.payload;
+        const { amount, category, description, paymentMethod, date, cardId, sourceWalletId } = event.payload;
+        
+        if (paymentMethod === 'CARD') {
+          // Redireciona para lógica de cartão para garantir que o limite seja atualizado e apareça na fatura
+          return await dispatchEvent(uid, {
+            ...event,
+            type: 'ADD_CARD_CHARGE',
+            payload: { ...event.payload, cardId: cardId || 'default' }
+          });
+        }
+
         const normalizedCat = normalizeCategoryName(category);
         
-        // Transação de saída (Cash/Pix)
+        // Transação de saída (Cash/Pix/Wallet)
         await addDoc(collection(userRef, "transactions"), {
           amount, category: normalizedCat, description, paymentMethod: paymentMethod || 'PIX',
           type: 'EXPENSE',
           date: date || now.toISOString(),
+          sourceWalletId: sourceWalletId || null,
           createdAt: serverTimestamp()
         });
+
+        // Atualiza saldo da carteira se houver
+        if (sourceWalletId) {
+          await updateWalletBalance(uid, sourceWalletId, -amount);
+        }
 
         // Atualiza consumo de limite
         await updateLimitConsumption(uid, normalizedCat, amount);
@@ -38,22 +54,39 @@ export const dispatchEvent = async (uid: string, event: FinanceEvent) => {
       }
 
       case 'ADD_INCOME': {
+        const { amount, targetWalletId } = event.payload;
         await addDoc(collection(userRef, "transactions"), {
           ...event.payload,
           type: 'INCOME',
           createdAt: serverTimestamp()
         });
+
+        // Atualiza saldo da carteira se houver
+        if (targetWalletId) {
+          await updateWalletBalance(uid, targetWalletId, amount);
+        }
         break;
       }
 
       case 'ADD_CARD_CHARGE': {
-        const { amount, category, description, cardId, date } = event.payload;
+        let { amount, category, description, cardId, date, sourceWalletId } = event.payload;
         const normalizedCat = normalizeCategoryName(category);
         const chargeDate = date ? new Date(date) : now;
         
         // 1. Busca info do cartão para calcular o ciclo
-        const cardRef = doc(userRef, "cards", cardId || 'default');
-        const cardSnap = await getDoc(cardRef);
+        let cardRef = doc(userRef, "cards", cardId || 'default');
+        let cardSnap = await getDoc(cardRef);
+        
+        // Se não encontrou o cartão pelo ID, tenta pegar o primeiro disponível
+        if (!cardSnap.exists()) {
+          const cardsSnap = await getDocs(collection(userRef, "cards"));
+          if (!cardsSnap.empty) {
+            cardSnap = cardsSnap.docs[0];
+            cardId = cardSnap.id;
+            cardRef = doc(userRef, "cards", cardId);
+          }
+        }
+
         let invoiceCycle = '';
         
         if (cardSnap.exists()) {
@@ -72,17 +105,20 @@ export const dispatchEvent = async (uid: string, event: FinanceEvent) => {
           amount, category: normalizedCat, description, paymentMethod: 'CARD',
           type: 'EXPENSE',
           cardId: cardId || 'default',
+          sourceWalletId: sourceWalletId || null,
           date: chargeDate.toISOString(),
           invoiceCycle,
           createdAt: serverTimestamp()
         });
 
-        // 3. Aumenta a dívida no documento do cartão
-        await updateDoc(cardRef, {
-          usedAmount: increment(amount),
-          availableAmount: increment(-amount),
-          updatedAt: serverTimestamp()
-        });
+        // 3. Aumenta a dívida no documento do cartão se ele existir
+        if (cardSnap.exists()) {
+          await updateDoc(cardRef, {
+            usedAmount: increment(amount),
+            availableAmount: increment(-amount),
+            updatedAt: serverTimestamp()
+          });
+        }
 
         // 4. Atualiza limite de categoria
         await updateLimitConsumption(uid, normalizedCat, amount);
@@ -90,7 +126,7 @@ export const dispatchEvent = async (uid: string, event: FinanceEvent) => {
       }
 
       case 'PAY_CARD': {
-        const { cardId, amount, cycle } = event.payload;
+        const { cardId, amount, cycle, sourceWalletId } = event.payload;
         
         // 1. Registra a saída real de dinheiro do Dashboard
         await addDoc(collection(userRef, "transactions"), {
@@ -99,9 +135,15 @@ export const dispatchEvent = async (uid: string, event: FinanceEvent) => {
           category: 'Cartão de Crédito',
           type: 'EXPENSE',
           paymentMethod: 'PIX',
+          sourceWalletId: sourceWalletId || null,
           date: now.toISOString(),
           createdAt: serverTimestamp()
         });
+
+        // Atualiza saldo da carteira se houver
+        if (sourceWalletId) {
+          await updateWalletBalance(uid, sourceWalletId, -amount);
+        }
 
         // 2. Diminui a dívida do cartão
         const cardRef = doc(userRef, "cards", cardId);
@@ -162,7 +204,7 @@ export const dispatchEvent = async (uid: string, event: FinanceEvent) => {
       }
 
       case 'PAY_REMINDER': {
-        const { billId, paymentMethod } = event.payload;
+        const { billId, paymentMethod, sourceWalletId, cardId } = event.payload;
         const billRef = doc(userRef, "reminders", billId);
         const billSnap = await getDoc(billRef);
         
@@ -172,16 +214,38 @@ export const dispatchEvent = async (uid: string, event: FinanceEvent) => {
           
           await updateDoc(billRef, { isPaid: true, paidAt: now.toISOString() });
           
-          // Gera a transação real no Dashboard
-          await addDoc(collection(userRef, "transactions"), {
-            description: isReceive ? `REC: ${billData.description}` : `PGTO: ${billData.description}`,
-            amount: billData.amount,
-            category: billData.category || (isReceive ? 'Recebimento' : 'Contas'),
-            type: isReceive ? 'INCOME' : 'EXPENSE',
-            paymentMethod: paymentMethod || 'PIX',
-            date: billData.dueDate || now.toISOString(),
-            createdAt: serverTimestamp()
-          });
+          // Se for pagamento via cartão, redireciona para ADD_CARD_CHARGE
+          if (paymentMethod === 'CARD' && !isReceive) {
+            await dispatchEvent(uid, {
+              type: 'ADD_CARD_CHARGE',
+              payload: {
+                amount: billData.amount,
+                category: billData.category || 'Contas',
+                description: `PGTO: ${billData.description}`,
+                cardId: cardId || 'default',
+                date: now.toISOString()
+              },
+              source: 'ui',
+              createdAt: serverTimestamp()
+            });
+          } else {
+            // Gera a transação real no Dashboard
+            await addDoc(collection(userRef, "transactions"), {
+              description: isReceive ? `REC: ${billData.description}` : `PGTO: ${billData.description}`,
+              amount: billData.amount,
+              category: billData.category || (isReceive ? 'Recebimento' : 'Contas'),
+              type: isReceive ? 'INCOME' : 'EXPENSE',
+              paymentMethod: paymentMethod || 'PIX',
+              sourceWalletId: sourceWalletId || null,
+              date: billData.dueDate || now.toISOString(),
+              createdAt: serverTimestamp()
+            });
+
+            // Atualiza saldo da carteira se houver
+            if (sourceWalletId) {
+              await updateWalletBalance(uid, sourceWalletId, isReceive ? billData.amount : -billData.amount);
+            }
+          }
 
           // Se for recorrente, cria o do próximo mês
           if (billData.recurring) {
@@ -209,7 +273,7 @@ export const dispatchEvent = async (uid: string, event: FinanceEvent) => {
       }
 
       case 'ADD_TO_GOAL': {
-        let { goalId, amount, note, name } = event.payload;
+        let { goalId, amount, note, name, sourceWalletId } = event.payload;
         
         if (!goalId && name) {
           // Tenta encontrar por nome
@@ -229,17 +293,23 @@ export const dispatchEvent = async (uid: string, event: FinanceEvent) => {
           contributions: arrayUnion({
             id: Date.now().toString(),
             amount, note: note || "Aporte via Chat",
-            date: now.toISOString()
+            date: now.toISOString(),
+            sourceWalletId: sourceWalletId || null
           }),
           updatedAt: serverTimestamp()
         });
+
+        // Atualiza saldo da carteira se houver
+        if (sourceWalletId) {
+          await updateWalletBalance(uid, sourceWalletId, -amount);
+        }
         break;
       }
 
       case 'CREATE_GOAL': {
         await addDoc(collection(userRef, "goals"), {
           ...event.payload,
-          currentAmount: 0,
+          currentAmount: event.payload.currentAmount !== undefined ? event.payload.currentAmount : 0,
           createdAt: serverTimestamp()
         });
         break;
@@ -391,15 +461,36 @@ export const dispatchEvent = async (uid: string, event: FinanceEvent) => {
       }
 
       case 'DELETE_ITEM': {
-        const { id, collection: colName, oldData } = event.payload;
+        const { id, collection: colName } = event.payload;
+        let { oldData } = event.payload;
         if (!id || !colName) throw new Error("ID and collection are required for DELETE_ITEM");
         
-        await deleteDoc(doc(userRef, colName, id));
+        const itemRef = doc(userRef, colName, id);
+        
+        // Se não temos oldData, buscamos antes de deletar para poder estornar limites/cartões
+        if (!oldData) {
+          const snap = await getDoc(itemRef);
+          if (snap.exists()) {
+            oldData = snap.data();
+          }
+        }
+
+        await deleteDoc(itemRef);
 
         // Se deletou uma transação de despesa, estorna o limite
         if (colName === 'transactions' && oldData && oldData.type === 'EXPENSE') {
           const normalizedCat = normalizeCategoryName(oldData.category);
           await updateLimitConsumption(uid, normalizedCat, -Number(oldData.amount));
+
+          // Se for gasto no cartão, estorna o limite do cartão também
+          if (oldData.paymentMethod === 'CARD' && oldData.cardId) {
+            const cardRef = doc(userRef, "cards", oldData.cardId);
+            await updateDoc(cardRef, {
+              usedAmount: increment(-Number(oldData.amount)),
+              availableAmount: increment(Number(oldData.amount)),
+              updatedAt: serverTimestamp()
+            });
+          }
         }
         break;
       }
@@ -545,11 +636,61 @@ export const dispatchEvent = async (uid: string, event: FinanceEvent) => {
       }
 
       case 'UPDATE_CATEGORY': {
-        const { id, ...updates } = event.payload;
+        const { id, name: newName, oldName } = event.payload;
         await updateDoc(doc(userRef, "categories", id), {
-          ...updates,
+          name: newName,
           updatedAt: serverTimestamp()
         });
+
+        // Se mudou o nome, atualiza as transações vinculadas e o limite
+        if (oldName && oldName !== newName) {
+          // 1. Atualiza transações
+          const q = query(collection(userRef, "transactions"), where("category", "==", oldName));
+          const snap = await getDocs(q);
+          for (const d of snap.docs) {
+            await updateDoc(doc(userRef, "transactions", d.id), { category: newName });
+          }
+
+          // 2. Migra limite se existir
+          const oldLimitId = oldName.toLowerCase().trim().replace(/\s+/g, '_');
+          const newLimitId = newName.toLowerCase().trim().replace(/\s+/g, '_');
+          const oldLimitRef = doc(userRef, "limits", oldLimitId);
+          const oldLimitSnap = await getDoc(oldLimitRef);
+          
+          if (oldLimitSnap.exists()) {
+            const limitData = oldLimitSnap.data();
+            await setDoc(doc(userRef, "limits", newLimitId), {
+              ...limitData,
+              category: newName,
+              updatedAt: serverTimestamp()
+            });
+            await deleteDoc(oldLimitRef);
+          }
+        }
+        break;
+      }
+
+      case 'MOVE_TRANSACTION_CATEGORY': {
+        const { transactionId, newCategory } = event.payload;
+        const transRef = doc(userRef, "transactions", transactionId);
+        const transSnap = await getDoc(transRef);
+        
+        if (transSnap.exists()) {
+          const oldData = transSnap.data();
+          const oldCat = oldData.category;
+          const amount = oldData.amount;
+          
+          await updateDoc(transRef, {
+            category: newCategory,
+            updatedAt: serverTimestamp()
+          });
+
+          // Ajusta limites
+          if (oldData.type === 'EXPENSE') {
+            await updateLimitConsumption(uid, oldCat, -amount);
+            await updateLimitConsumption(uid, newCategory, amount);
+          }
+        }
         break;
       }
 
@@ -557,12 +698,16 @@ export const dispatchEvent = async (uid: string, event: FinanceEvent) => {
         const { id, name } = event.payload;
         await deleteDoc(doc(userRef, "categories", id));
         
-        // Mover transações antigas para "Outros"
+        // 1. Mover transações antigas para "Outros"
         const q = query(collection(userRef, "transactions"), where("category", "==", name));
         const snap = await getDocs(q);
         for (const d of snap.docs) {
           await updateDoc(doc(userRef, "transactions", d.id), { category: "Outros" });
         }
+
+        // 2. Deleta limite se existir
+        const limitId = name.toLowerCase().trim().replace(/\s+/g, '_');
+        await deleteDoc(doc(userRef, "limits", limitId));
         break;
       }
     }
@@ -581,6 +726,17 @@ async function updateLimitConsumption(uid: string, category: string, amount: num
   if (snap.exists()) {
     await updateDoc(limitRef, {
       spent: increment(amount),
+      updatedAt: serverTimestamp()
+    });
+  }
+}
+
+async function updateWalletBalance(uid: string, walletId: string, amount: number) {
+  const walletRef = doc(db, "users", uid, "wallets", walletId);
+  const snap = await getDoc(walletRef);
+  if (snap.exists()) {
+    await updateDoc(walletRef, {
+      balance: increment(amount),
       updatedAt: serverTimestamp()
     });
   }

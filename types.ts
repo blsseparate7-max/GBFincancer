@@ -8,6 +8,7 @@ export interface Contribution {
   date: string;
   amount: number;
   note?: string;
+  sourceWalletId?: string;
 }
 
 export interface SavingGoal {
@@ -21,6 +22,7 @@ export interface SavingGoal {
   icon?: string;
   contributions?: Contribution[];
   type?: string;
+  level?: number;
   deadlineMonths?: number;
   updatedAt?: any;
   createdAt?: any;
@@ -36,6 +38,8 @@ export interface Transaction {
   date: string;
   createdAt: any;
   cardId?: string;
+  sourceWalletId?: string;
+  targetWalletId?: string;
   isPaid?: boolean;
   invoiceCycle?: string;
 }
@@ -99,7 +103,8 @@ export type EventType =
   | 'TRANSFER_WALLET'
   | 'CREATE_CATEGORY'
   | 'UPDATE_CATEGORY'
-  | 'DELETE_CATEGORY';
+  | 'DELETE_CATEGORY'
+  | 'MOVE_TRANSACTION_CATEGORY';
 
 export interface FinanceEvent {
   type: EventType;
@@ -153,6 +158,23 @@ export interface IncomeProfile {
   totalExpectedMonthly?: number;
 }
 
+export interface UserOnboarding {
+  chat?: boolean;
+  dash?: boolean;
+  goals?: boolean;
+  cc?: boolean;
+  reminders?: boolean;
+  wallets?: boolean;
+  insights?: boolean;
+  score?: boolean;
+  stress?: boolean;
+  messages?: boolean;
+  resumo?: boolean;
+  extrato?: boolean;
+  categories?: boolean;
+  [key: string]: boolean | undefined;
+}
+
 export interface UserSession {
   uid: string;
   userId: string;
@@ -166,6 +188,7 @@ export interface UserSession {
   lgpdAcceptedAt?: any;
   lgpdVersion?: string;
   incomeProfile?: IncomeProfile;
+  suggestedGoals?: any[];
   status?: 'active' | 'blocked' | 'deleted';
   lastLogin?: any;
   createdAt?: any;
@@ -204,6 +227,7 @@ export interface CustomerData {
   lgpdAcceptedAt?: any;
   lgpdVersion?: string;
   incomeProfile?: IncomeProfile;
+  suggestedGoals?: any[];
   createdAt?: any;
   lastLogin?: any;
   localUpdatedAt?: string;
@@ -241,6 +265,16 @@ export interface WeeklySummary {
   expense: number;
   balance: number;
   topCategories: { category: string; amount: number }[];
+  generatedAt: string;
+}
+
+export interface MonthlySummary {
+  month: number;
+  year: number;
+  income: number;
+  expense: number;
+  balance: number;
+  categories: { category: string; amount: number; percentage: number }[];
   generatedAt: string;
 }
 

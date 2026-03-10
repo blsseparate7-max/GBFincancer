@@ -18,6 +18,7 @@ const WalletTab: React.FC<WalletTabProps> = ({ uid, freeBalance, goals, wallets:
   const [transfers, setTransfers] = useState<WalletTransfer[]>([]);
   const [isAdding, setIsAdding] = useState(false);
   const [isTransferring, setIsTransferring] = useState(false);
+  const [editingWallet, setEditingWallet] = useState<Wallet | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
   // Form states
@@ -63,6 +64,25 @@ const WalletTab: React.FC<WalletTabProps> = ({ uid, freeBalance, goals, wallets:
     setIsLoading(false);
   };
 
+  const handleUpdateWallet = async () => {
+    if (!editingWallet || !name) return;
+    setIsLoading(true);
+    await dispatchEvent(uid, {
+      type: 'UPDATE_WALLET',
+      payload: { 
+        id: editingWallet.id, 
+        name, 
+        type, 
+        balance: Number(balance), 
+        color 
+      },
+      source: 'ui',
+      createdAt: new Date()
+    });
+    setEditingWallet(null);
+    setIsLoading(false);
+  };
+
   const handleTransfer = async () => {
     if (!fromId || !toId || !transferAmount || fromId === toId) return;
     const amount = Number(transferAmount);
@@ -83,22 +103,36 @@ const WalletTab: React.FC<WalletTabProps> = ({ uid, freeBalance, goals, wallets:
     setIsLoading(false);
   };
 
-  const handleDeleteWallet = async (id: string) => {
-    if (!window.confirm("Excluir esta carteira? O saldo será perdido no controle interno.")) return;
+  const handleDeleteWallet = async (wallet: Wallet) => {
+    const hasBalance = (wallet.balance || 0) > 0;
+    const msg = hasBalance 
+      ? `Esta carteira possui saldo (R$ ${wallet.balance.toFixed(2)}). Deseja transferir o saldo antes de excluir? Se excluir agora, o saldo será perdido no controle interno.`
+      : "Excluir esta carteira?";
+    
+    if (!window.confirm(msg)) return;
+    
     await dispatchEvent(uid, {
       type: 'DELETE_WALLET',
-      payload: { id },
+      payload: { id: wallet.id },
       source: 'ui',
       createdAt: new Date()
     });
   };
 
+  const openEdit = (wallet: Wallet) => {
+    setEditingWallet(wallet);
+    setName(wallet.name);
+    setType(wallet.type);
+    setBalance(wallet.balance.toString());
+    setColor(wallet.color || '#00a884');
+  };
+
   if (loading) {
     return (
       <div className="p-4 lg:p-8 space-y-8 animate-pulse max-w-5xl mx-auto">
-        <div className="h-40 bg-[#111b21] rounded-[2rem]"></div>
+        <div className="h-40 bg-[var(--surface)] rounded-[2rem]"></div>
         <div className="grid grid-cols-3 gap-4">
-          {[1,2,3].map(i => <div key={i} className="h-32 bg-[#111b21] rounded-3xl"></div>)}
+          {[1,2,3].map(i => <div key={i} className="h-32 bg-[var(--surface)] rounded-3xl"></div>)}
         </div>
       </div>
     );
@@ -107,19 +141,19 @@ const WalletTab: React.FC<WalletTabProps> = ({ uid, freeBalance, goals, wallets:
   return (
     <div className="p-4 lg:p-8 space-y-8 animate-fade max-w-5xl mx-auto pb-32">
       {/* Header / Stats */}
-      <div className="bg-[#111b21] rounded-[2rem] p-6 border border-white/5 shadow-2xl">
+      <div className="bg-[var(--surface)] rounded-[2rem] p-6 border border-[var(--border)] shadow-2xl">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <div className="space-y-1">
-            <p className="text-[10px] font-black text-[#8696a0] uppercase tracking-widest">Saldo Livre (Ref)</p>
-            <h3 className="text-2xl font-black text-white">R$ {freeBalance.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</h3>
+            <p className="text-[10px] font-black text-[var(--text-muted)] uppercase tracking-widest">Saldo Livre (Ref)</p>
+            <h3 className="text-2xl font-black text-[var(--text-primary)]">R$ {freeBalance.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</h3>
           </div>
           <div className="space-y-1">
-            <p className="text-[10px] font-black text-[#8696a0] uppercase tracking-widest">Total Alocado</p>
-            <h3 className="text-2xl font-black text-[#00a884]">R$ {totalInWallets.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</h3>
+            <p className="text-[10px] font-black text-[var(--text-muted)] uppercase tracking-widest">Total Alocado</p>
+            <h3 className="text-2xl font-black text-[var(--green-whatsapp)]">R$ {totalInWallets.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</h3>
           </div>
           <div className="space-y-1">
-            <p className="text-[10px] font-black text-[#8696a0] uppercase tracking-widest">Diferença</p>
-            <h3 className={`text-2xl font-black ${difference === 0 ? 'text-[#8696a0]' : difference > 0 ? 'text-amber-500' : 'text-rose-500'}`}>
+            <p className="text-[10px] font-black text-[var(--text-muted)] uppercase tracking-widest">Diferença</p>
+            <h3 className={`text-2xl font-black ${difference === 0 ? 'text-[var(--text-muted)]' : difference > 0 ? 'text-amber-500' : 'text-rose-500'}`}>
               R$ {difference.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
             </h3>
           </div>
@@ -131,14 +165,14 @@ const WalletTab: React.FC<WalletTabProps> = ({ uid, freeBalance, goals, wallets:
           </div>
         )}
 
-        <div className="mt-6 pt-6 border-t border-white/5 flex items-center justify-between">
+        <div className="mt-6 pt-6 border-t border-[var(--border)] flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <span className="text-xs font-bold text-[#8696a0]">Guardado em Metas:</span>
-            <span className="text-xs font-black text-[#00a884]">R$ {totalSavedInGoals.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+            <span className="text-xs font-bold text-[var(--text-muted)]">Guardado em Metas:</span>
+            <span className="text-xs font-black text-[var(--green-whatsapp)]">R$ {totalSavedInGoals.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
           </div>
           <div className="flex gap-2">
-            <button onClick={() => setIsAdding(true)} className="bg-[#00a884] text-white px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest active:scale-95 transition-all">Nova Carteira</button>
-            <button onClick={() => setIsTransferring(true)} className="bg-[#2a3942] text-white px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest active:scale-95 transition-all">Transferir</button>
+            <button onClick={() => setIsAdding(true)} className="bg-[var(--green-whatsapp)] text-white px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest active:scale-95 transition-all">Nova Carteira</button>
+            <button onClick={() => setIsTransferring(true)} className="bg-[var(--bg-body)] text-[var(--text-primary)] border border-[var(--border)] px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest active:scale-95 transition-all">Transferir</button>
           </div>
         </div>
       </div>
@@ -146,27 +180,30 @@ const WalletTab: React.FC<WalletTabProps> = ({ uid, freeBalance, goals, wallets:
       {/* Wallets Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {wallets.map(wallet => (
-          <div key={wallet.id} className="bg-[#111b21] p-5 rounded-3xl border border-white/5 hover:border-[#00a884]/30 transition-all group relative overflow-hidden">
+          <div key={wallet.id} className="bg-[var(--surface)] p-5 rounded-3xl border border-[var(--border)] hover:border-[var(--green-whatsapp)]/30 transition-all group relative overflow-hidden">
             <div className="absolute top-0 left-0 w-1 h-full" style={{ backgroundColor: wallet.color || '#00a884' }} />
             
             <div className="flex justify-between items-start mb-4">
               <div>
-                <p className="text-[9px] font-black text-[#8696a0] uppercase tracking-widest mb-1">{wallet.type}</p>
-                <h4 className="text-lg font-black text-white">{wallet.name}</h4>
+                <p className="text-[9px] font-black text-[var(--text-muted)] uppercase tracking-widest mb-1">{wallet.type}</p>
+                <h4 className="text-lg font-black text-[var(--text-primary)]">{wallet.name}</h4>
               </div>
-              <button onClick={() => handleDeleteWallet(wallet.id)} className="opacity-0 group-hover:opacity-100 p-2 text-rose-500 hover:bg-rose-500/10 rounded-lg transition-all">🗑️</button>
+              <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-all">
+                <button onClick={() => openEdit(wallet)} className="p-2 text-[var(--green-whatsapp)] hover:bg-[var(--green-whatsapp)]/10 rounded-lg transition-all">✏️</button>
+                <button onClick={() => handleDeleteWallet(wallet)} className="p-2 text-rose-500 hover:bg-rose-500/10 rounded-lg transition-all">🗑️</button>
+              </div>
             </div>
 
             <div className="space-y-1">
-              <p className="text-2xl font-black text-white">R$ {wallet.balance.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+              <p className="text-2xl font-black text-[var(--text-primary)]">R$ {wallet.balance.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
               <div className="flex items-center gap-2">
-                <div className="flex-1 h-1 bg-white/5 rounded-full overflow-hidden">
+                <div className="flex-1 h-1 bg-[var(--bg-body)] rounded-full overflow-hidden">
                   <div 
-                    className="h-full bg-[#00a884]" 
+                    className="h-full bg-[var(--green-whatsapp)]" 
                     style={{ width: `${totalInWallets > 0 ? (wallet.balance / totalInWallets) * 100 : 0}%` }} 
                   />
                 </div>
-                <span className="text-[10px] font-black text-[#667781]">
+                <span className="text-[10px] font-black text-[var(--text-muted)]">
                   {totalInWallets > 0 ? ((wallet.balance / totalInWallets) * 100).toFixed(0) : 0}%
                 </span>
               </div>
@@ -177,27 +214,27 @@ const WalletTab: React.FC<WalletTabProps> = ({ uid, freeBalance, goals, wallets:
 
       {/* Recent Transfers */}
       <div className="space-y-4">
-        <h3 className="text-[10px] font-black text-[#8696a0] uppercase tracking-widest italic">Movimentações Internas</h3>
-        <div className="bg-[#111b21] rounded-3xl border border-white/5 overflow-hidden">
+        <h3 className="text-[10px] font-black text-[var(--text-muted)] uppercase tracking-widest italic">Movimentações Internas</h3>
+        <div className="bg-[var(--surface)] rounded-3xl border border-[var(--border)] overflow-hidden">
           {transfers.length === 0 ? (
-            <p className="p-8 text-center text-[#8696a0] text-xs italic">Nenhuma transferência realizada.</p>
+            <p className="p-8 text-center text-[var(--text-muted)] text-xs italic">Nenhuma transferência realizada.</p>
           ) : (
             transfers.slice(0, 10).map(t => {
               const from = wallets.find(w => w.id === t.fromWalletId);
               const to = wallets.find(w => w.id === t.toWalletId);
               return (
-                <div key={t.id} className="p-4 border-b border-white/5 flex justify-between items-center text-[11px]">
+                <div key={t.id} className="p-4 border-b border-[var(--border)] flex justify-between items-center text-[11px]">
                   <div className="flex gap-4 items-center">
                     <div className="flex items-center gap-2">
-                      <span className="font-bold text-white">{from?.name || 'Excluída'}</span>
-                      <span className="text-[#00a884]">➜</span>
-                      <span className="font-bold text-white">{to?.name || 'Excluída'}</span>
+                      <span className="font-bold text-[var(--text-primary)]">{from?.name || 'Excluída'}</span>
+                      <span className="text-[var(--green-whatsapp)]">➜</span>
+                      <span className="font-bold text-[var(--text-primary)]">{to?.name || 'Excluída'}</span>
                     </div>
-                    {t.note && <span className="text-[#667781] italic">({t.note})</span>}
+                    {t.note && <span className="text-[var(--text-muted)] italic">({t.note})</span>}
                   </div>
                   <div className="text-right">
-                    <p className="font-black text-white">R$ {t.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
-                    <p className="text-[9px] text-[#667781]">{new Date(t.date).toLocaleDateString()}</p>
+                    <p className="font-black text-[var(--text-primary)]">R$ {t.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                    <p className="text-[9px] text-[var(--text-muted)]">{new Date(t.date).toLocaleDateString()}</p>
                   </div>
                 </div>
               );
@@ -209,22 +246,22 @@ const WalletTab: React.FC<WalletTabProps> = ({ uid, freeBalance, goals, wallets:
       {/* Modals */}
       {isAdding && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[300] flex items-center justify-center p-4 animate-fade">
-          <div className="bg-[#111b21] w-full max-w-md rounded-[2.5rem] border border-white/10 p-8 space-y-6 shadow-2xl">
+          <div className="bg-[var(--surface)] w-full max-w-md rounded-[2.5rem] border border-[var(--border)] p-8 space-y-6 shadow-2xl">
             <header className="text-center">
-              <h3 className="text-xl font-black italic text-[#00a884] uppercase tracking-tighter">Nova Carteira</h3>
-              <p className="text-[10px] text-[#8696a0] font-bold uppercase tracking-widest mt-1">Onde está seu dinheiro?</p>
+              <h3 className="text-xl font-black italic text-[var(--green-whatsapp)] uppercase tracking-tighter">Nova Carteira</h3>
+              <p className="text-[10px] text-[var(--text-muted)] font-bold uppercase tracking-widest mt-1">Onde está seu dinheiro?</p>
             </header>
 
             <div className="space-y-4">
               <div className="space-y-1">
-                <label className="text-[9px] font-black text-[#8696a0] uppercase ml-2">Nome da Conta</label>
-                <input className="w-full bg-[#202c33] rounded-2xl p-4 text-sm font-bold outline-none border border-transparent focus:border-[#00a884]" placeholder="Ex: Nubank, Dinheiro Físico..." value={name} onChange={e => setName(e.target.value)} />
+                <label className="text-[9px] font-black text-[var(--text-muted)] uppercase ml-2">Nome da Conta</label>
+                <input className="w-full bg-[var(--bg-body)] rounded-2xl p-4 text-sm font-bold outline-none border border-transparent focus:border-[var(--green-whatsapp)] text-[var(--text-primary)]" placeholder="Ex: Nubank, Dinheiro Físico..." value={name} onChange={e => setName(e.target.value)} />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1">
-                  <label className="text-[9px] font-black text-[#8696a0] uppercase ml-2">Tipo</label>
-                  <select className="w-full bg-[#202c33] rounded-2xl p-4 text-sm font-bold outline-none appearance-none text-white" value={type} onChange={e => setType(e.target.value as WalletType)}>
-                    <option value="CONTA">Conta Corrente</option>
+                  <label className="text-[9px] font-black text-[var(--text-muted)] uppercase ml-2">Tipo</label>
+                  <select className="w-full bg-[var(--bg-body)] rounded-2xl p-4 text-sm font-bold outline-none appearance-none text-[var(--text-primary)]" value={type} onChange={e => setType(e.target.value as WalletType)}>
+                    <option value="CONTA">Banco / Conta</option>
                     <option value="CARTEIRA">Dinheiro Vivo</option>
                     <option value="POUPANÇA">Poupança</option>
                     <option value="INVESTIMENTO">Investimento</option>
@@ -232,9 +269,9 @@ const WalletTab: React.FC<WalletTabProps> = ({ uid, freeBalance, goals, wallets:
                   </select>
                 </div>
                 <div className="space-y-1">
-                  <label className="text-[9px] font-black text-[#8696a0] uppercase ml-2">Saldo Inicial</label>
+                  <label className="text-[9px] font-black text-[var(--text-muted)] uppercase ml-2">Saldo Inicial</label>
                   <MoneyInput 
-                    className="w-full bg-[#202c33] rounded-2xl p-4 text-sm font-bold outline-none border border-transparent focus:border-[#00a884] text-white" 
+                    className="w-full bg-[var(--bg-body)] rounded-2xl p-4 text-sm font-bold outline-none border border-transparent focus:border-[var(--green-whatsapp)] text-[var(--text-primary)]" 
                     placeholder="R$ 0,00" 
                     value={Number(balance) || 0} 
                     onChange={val => setBalance(val.toString())} 
@@ -242,7 +279,7 @@ const WalletTab: React.FC<WalletTabProps> = ({ uid, freeBalance, goals, wallets:
                 </div>
               </div>
               <div className="space-y-1">
-                <label className="text-[9px] font-black text-[#8696a0] uppercase ml-2">Cor de Identificação</label>
+                <label className="text-[9px] font-black text-[var(--text-muted)] uppercase ml-2">Cor de Identificação</label>
                 <div className="flex gap-2">
                   {['#00a884', '#128c7e', '#34b7f1', '#ffbc2c', '#ea0038', '#a62c67'].map(c => (
                     <button key={c} onClick={() => setColor(c)} className={`w-8 h-8 rounded-full border-2 ${color === c ? 'border-white scale-110' : 'border-transparent opacity-50'}`} style={{ backgroundColor: c }} />
@@ -252,9 +289,64 @@ const WalletTab: React.FC<WalletTabProps> = ({ uid, freeBalance, goals, wallets:
             </div>
 
             <div className="flex gap-3 pt-4">
-              <button onClick={() => setIsAdding(false)} className="flex-1 py-4 rounded-2xl font-black text-[10px] uppercase text-[#8696a0] hover:bg-white/5 transition-all">Cancelar</button>
-              <button onClick={handleCreateWallet} disabled={isLoading} className="flex-1 bg-[#00a884] text-white py-4 rounded-2xl font-black text-[10px] uppercase shadow-xl active:scale-95 transition-all">
+              <button onClick={() => setIsAdding(false)} className="flex-1 py-4 rounded-2xl font-black text-[10px] uppercase text-[var(--text-muted)] hover:bg-white/5 transition-all">Cancelar</button>
+              <button onClick={handleCreateWallet} disabled={isLoading} className="flex-1 bg-[var(--green-whatsapp)] text-white py-4 rounded-2xl font-black text-[10px] uppercase shadow-xl active:scale-95 transition-all">
                 {isLoading ? 'Salvando...' : 'Criar Carteira'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Wallet Modal */}
+      {editingWallet && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[300] flex items-center justify-center p-4 animate-fade">
+          <div className="bg-[var(--surface)] w-full max-w-md rounded-[2.5rem] border border-[var(--border)] p-8 space-y-6 shadow-2xl">
+            <header className="text-center">
+              <h3 className="text-xl font-black italic text-[var(--green-whatsapp)] uppercase tracking-tighter">Editar Carteira</h3>
+              <p className="text-[10px] text-[var(--text-muted)] font-bold uppercase tracking-widest mt-1">Atualize os dados da sua conta</p>
+            </header>
+
+            <div className="space-y-4">
+              <div className="space-y-1">
+                <label className="text-[9px] font-black text-[var(--text-muted)] uppercase ml-2">Nome da Conta</label>
+                <input className="w-full bg-[var(--bg-body)] rounded-2xl p-4 text-sm font-bold outline-none border border-transparent focus:border-[var(--green-whatsapp)] text-[var(--text-primary)]" placeholder="Ex: Nubank, Dinheiro Físico..." value={name} onChange={e => setName(e.target.value)} />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="text-[9px] font-black text-[var(--text-muted)] uppercase ml-2">Tipo</label>
+                  <select className="w-full bg-[var(--bg-body)] rounded-2xl p-4 text-sm font-bold outline-none appearance-none text-[var(--text-primary)]" value={type} onChange={e => setType(e.target.value as WalletType)}>
+                    <option value="CONTA">Banco / Conta</option>
+                    <option value="CARTEIRA">Dinheiro Vivo</option>
+                    <option value="POUPANÇA">Poupança</option>
+                    <option value="INVESTIMENTO">Investimento</option>
+                    <option value="OUTRO">Outro</option>
+                  </select>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[9px] font-black text-[var(--text-muted)] uppercase ml-2">Saldo Atual</label>
+                  <MoneyInput 
+                    className="w-full bg-[var(--bg-body)] rounded-2xl p-4 text-sm font-bold outline-none border border-transparent focus:border-[var(--green-whatsapp)] text-[var(--text-primary)]" 
+                    placeholder="R$ 0,00" 
+                    value={Number(balance) || 0} 
+                    onChange={val => setBalance(val.toString())} 
+                  />
+                </div>
+              </div>
+              <div className="space-y-1">
+                <label className="text-[9px] font-black text-[var(--text-muted)] uppercase ml-2">Cor de Identificação</label>
+                <div className="flex gap-2">
+                  {['#00a884', '#128c7e', '#34b7f1', '#ffbc2c', '#ea0038', '#a62c67'].map(c => (
+                    <button key={c} onClick={() => setColor(c)} className={`w-8 h-8 rounded-full border-2 ${color === c ? 'border-white scale-110' : 'border-transparent opacity-50'}`} style={{ backgroundColor: c }} />
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex gap-3 pt-4">
+              <button onClick={() => setEditingWallet(null)} className="flex-1 py-4 rounded-2xl font-black text-[10px] uppercase text-[var(--text-muted)] hover:bg-white/5 transition-all">Cancelar</button>
+              <button onClick={handleUpdateWallet} disabled={isLoading} className="flex-1 bg-[var(--green-whatsapp)] text-white py-4 rounded-2xl font-black text-[10px] uppercase shadow-xl active:scale-95 transition-all">
+                {isLoading ? 'Salvando...' : 'Salvar Alterações'}
               </button>
             </div>
           </div>
@@ -263,47 +355,47 @@ const WalletTab: React.FC<WalletTabProps> = ({ uid, freeBalance, goals, wallets:
 
       {isTransferring && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[300] flex items-center justify-center p-4 animate-fade">
-          <div className="bg-[#111b21] w-full max-w-md rounded-[2.5rem] border border-white/10 p-8 space-y-6 shadow-2xl">
+          <div className="bg-[var(--surface)] w-full max-w-md rounded-[2.5rem] border border-[var(--border)] p-8 space-y-6 shadow-2xl">
             <header className="text-center">
-              <h3 className="text-xl font-black italic text-[#00a884] uppercase tracking-tighter">Transferência Interna</h3>
-              <p className="text-[10px] text-[#8696a0] font-bold uppercase tracking-widest mt-1">Mover saldo entre contas</p>
+              <h3 className="text-xl font-black italic text-[var(--green-whatsapp)] uppercase tracking-tighter">Transferência Interna</h3>
+              <p className="text-[10px] text-[var(--text-muted)] font-bold uppercase tracking-widest mt-1">Mover saldo entre contas</p>
             </header>
 
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1">
-                  <label className="text-[9px] font-black text-[#8696a0] uppercase ml-2">Origem</label>
-                  <select className="w-full bg-[#202c33] rounded-2xl p-4 text-sm font-bold outline-none appearance-none text-white" value={fromId} onChange={e => setFromId(e.target.value)}>
+                  <label className="text-[9px] font-black text-[var(--text-muted)] uppercase ml-2">Origem</label>
+                  <select className="w-full bg-[var(--bg-body)] rounded-2xl p-4 text-sm font-bold outline-none appearance-none text-[var(--text-primary)]" value={fromId} onChange={e => setFromId(e.target.value)}>
                     <option value="">Selecione...</option>
                     {wallets.map(w => <option key={w.id} value={w.id}>{w.name} (R$ {w.balance})</option>)}
                   </select>
                 </div>
                 <div className="space-y-1">
-                  <label className="text-[9px] font-black text-[#8696a0] uppercase ml-2">Destino</label>
-                  <select className="w-full bg-[#202c33] rounded-2xl p-4 text-sm font-bold outline-none appearance-none text-white" value={toId} onChange={e => setToId(e.target.value)}>
+                  <label className="text-[9px] font-black text-[var(--text-muted)] uppercase ml-2">Destino</label>
+                  <select className="w-full bg-[var(--bg-body)] rounded-2xl p-4 text-sm font-bold outline-none appearance-none text-[var(--text-primary)]" value={toId} onChange={e => setToId(e.target.value)}>
                     <option value="">Selecione...</option>
                     {wallets.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
                   </select>
                 </div>
               </div>
               <div className="space-y-1">
-                <label className="text-[9px] font-black text-[#8696a0] uppercase ml-2">Valor</label>
+                <label className="text-[9px] font-black text-[var(--text-muted)] uppercase ml-2">Valor</label>
                 <MoneyInput 
-                  className="w-full bg-[#202c33] rounded-2xl p-4 text-sm font-bold outline-none border border-transparent focus:border-[#00a884] text-white" 
+                  className="w-full bg-[var(--bg-body)] rounded-2xl p-4 text-sm font-bold outline-none border border-transparent focus:border-[var(--green-whatsapp)] text-[var(--text-primary)]" 
                   placeholder="R$ 0,00" 
                   value={Number(transferAmount) || 0} 
                   onChange={val => setTransferAmount(val.toString())} 
                 />
               </div>
               <div className="space-y-1">
-                <label className="text-[9px] font-black text-[#8696a0] uppercase ml-2">Observação (Opcional)</label>
-                <input className="w-full bg-[#202c33] rounded-2xl p-4 text-sm font-bold outline-none border border-transparent focus:border-[#00a884]" placeholder="Ex: Saque para gastos..." value={transferNote} onChange={e => setTransferNote(e.target.value)} />
+                <label className="text-[9px] font-black text-[var(--text-muted)] uppercase ml-2">Observação (Opcional)</label>
+                <input className="w-full bg-[var(--bg-body)] rounded-2xl p-4 text-sm font-bold outline-none border border-transparent focus:border-[var(--green-whatsapp)] text-[var(--text-primary)]" placeholder="Ex: Saque para gastos..." value={transferNote} onChange={e => setTransferNote(e.target.value)} />
               </div>
             </div>
 
             <div className="flex gap-3 pt-4">
-              <button onClick={() => setIsTransferring(false)} className="flex-1 py-4 rounded-2xl font-black text-[10px] uppercase text-[#8696a0] hover:bg-white/5 transition-all">Cancelar</button>
-              <button onClick={handleTransfer} disabled={isLoading} className="flex-1 bg-[#00a884] text-white py-4 rounded-2xl font-black text-[10px] uppercase shadow-xl active:scale-95 transition-all">
+              <button onClick={() => setIsTransferring(false)} className="flex-1 py-4 rounded-2xl font-black text-[10px] uppercase text-[var(--text-muted)] hover:bg-white/5 transition-all">Cancelar</button>
+              <button onClick={handleTransfer} disabled={isLoading} className="flex-1 bg-[var(--green-whatsapp)] text-white py-4 rounded-2xl font-black text-[10px] uppercase shadow-xl active:scale-95 transition-all">
                 {isLoading ? 'Processando...' : 'Confirmar'}
               </button>
             </div>

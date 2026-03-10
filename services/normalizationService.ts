@@ -104,6 +104,7 @@ export const normalizeGoal = (docSnap: any, uid?: string): SavingGoal => {
     category: data.category || 'Outros',
     priority: data.priority || 'Média',
     deadlineMonths: data.deadlineMonths || 12,
+    level: data.level || 1,
     updatedAt: data.updatedAt || null,
     createdAt: data.createdAt || null,
     contributions: data.contributions || []

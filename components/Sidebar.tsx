@@ -12,21 +12,51 @@ interface SidebarProps {
 const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, expanded, setExpanded, role, onClose }) => {
   const isAdmin = role === 'ADMIN';
 
-  const items = [
-    { id: 'chat', label: 'Mentor IA', icon: '💬' },
-    { id: 'extrato', label: 'Extrato', icon: '📝' },
-    { id: 'categories', label: 'Categorias', icon: '🏷️' },
-    { id: 'insights', label: 'Insights', icon: '💡' },
-    { id: 'dash', label: 'Dashboard', icon: '📊' },
-    { id: 'wallets', label: 'Carteira', icon: '👛' },
-    { id: 'goals', label: 'Metas', icon: '🎯' },
-    { id: 'cc', label: 'Cartão de Crédito', icon: '💳' },
-    { id: 'reminders', label: 'Lembretes', icon: '⏰' },
-    { id: 'resumo', label: 'Resumo Anual', icon: '📅' },
-    { id: 'score', label: 'Health Score', icon: '📈' },
-    { id: 'stress', label: 'Stress Test', icon: '🧠' },
-    { id: 'profile', label: 'Meu Perfil', icon: '👤' },
-    { id: 'config', label: 'Ajustes IA', icon: '⚙️' },
+  const groups = [
+    {
+      label: 'Área principal',
+      items: [
+        { id: 'chat', label: 'Mentor IA', icon: '💬' },
+        { id: 'dash', label: 'Dashboard', icon: '📊' },
+      ]
+    },
+    {
+      label: 'Planejamento financeiro',
+      items: [
+        { id: 'goals', label: 'Metas', icon: '🎯' },
+        { id: 'reminders', label: 'Lembretes', icon: '⏰' },
+      ]
+    },
+    {
+      label: 'Controle do dinheiro',
+      items: [
+        { id: 'wallets', label: 'Carteiras', icon: '👛' },
+        { id: 'cc', label: 'Cartão de Crédito', icon: '💳' },
+      ]
+    },
+    {
+      label: 'Indicadores financeiros',
+      items: [
+        { id: 'score', label: 'Score Financeiro', icon: '📈' },
+        { id: 'stress', label: 'Stress Test', icon: '🧠' },
+        { id: 'insights', label: 'Caminho Financeiro', icon: '🧭' },
+      ]
+    },
+    {
+      label: 'Análises',
+      items: [
+        { id: 'resumo', label: 'Resumo Anual', icon: '📅' },
+        { id: 'extrato', label: 'Extrato', icon: '📝' },
+        { id: 'categories', label: 'Categorias', icon: '🏷️' },
+      ]
+    },
+    {
+      label: 'Configurações do usuário',
+      items: [
+        { id: 'profile', label: 'Meu Perfil', icon: '👤' },
+        { id: 'config', label: 'Ajustes IA', icon: '⚙️' },
+      ]
+    }
   ];
 
   return (
@@ -45,26 +75,35 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, expanded, se
         </button>
       </div>
 
-      <nav className="flex-1 overflow-y-auto p-3 space-y-1">
+      <nav className="flex-1 overflow-y-auto p-3 space-y-6">
         {isAdmin && (
           <button
             onClick={() => { setActiveTab('admin'); if(onClose) onClose(); }}
-            className={`w-full flex items-center gap-4 p-3 rounded-xl transition-all mb-4 border-2 ${activeTab === 'admin' ? 'bg-[var(--green-whatsapp-dark)] text-white border-[var(--green-whatsapp-dark)]' : 'border-[var(--green-whatsapp-dark)]/20 text-[var(--green-whatsapp)] hover:bg-black/5'}`}
+            className={`w-full flex items-center gap-4 p-3 rounded-xl transition-all border-2 ${activeTab === 'admin' ? 'bg-[var(--green-whatsapp-dark)] text-white border-[var(--green-whatsapp-dark)]' : 'border-[var(--green-whatsapp-dark)]/20 text-[var(--green-whatsapp)] hover:bg-black/5'}`}
           >
             <span className="text-xl min-w-[24px] text-center">👑</span>
             {expanded && <span className="text-[11px] font-black uppercase whitespace-nowrap tracking-widest">Gestão CEO</span>}
           </button>
         )}
 
-        {items.map(item => (
-          <button
-            key={item.id}
-            onClick={() => { setActiveTab(item.id); if(onClose) onClose(); }}
-            className={`w-full flex items-center gap-4 p-3.5 rounded-2xl transition-all ${activeTab === item.id ? 'bg-[var(--border)] text-[var(--green-whatsapp)] shadow-lg border border-[var(--border)]' : 'text-[var(--text-muted)] hover:bg-black/5 hover:text-[var(--text-primary)]'}`}
-          >
-            <span className={`text-xl min-w-[24px] text-center transition-transform ${activeTab === item.id ? 'scale-110 opacity-100' : 'opacity-60'}`}>{item.icon}</span>
-            {expanded && <span className="text-[13px] font-bold whitespace-nowrap tracking-tight">{item.label}</span>}
-          </button>
+        {groups.map((group, gIdx) => (
+          <div key={gIdx} className="space-y-1">
+            {expanded && (
+              <h3 className="px-4 text-[9px] font-black uppercase tracking-[0.2em] text-[var(--text-muted)] mb-2 opacity-50">
+                {group.label}
+              </h3>
+            )}
+            {group.items.map(item => (
+              <button
+                key={item.id}
+                onClick={() => { setActiveTab(item.id); if(onClose) onClose(); }}
+                className={`w-full flex items-center gap-4 p-3.5 rounded-2xl transition-all ${activeTab === item.id ? 'bg-[var(--border)] text-[var(--green-whatsapp)] shadow-lg border border-[var(--border)]' : 'text-[var(--text-muted)] hover:bg-black/5 hover:text-[var(--text-primary)]'}`}
+              >
+                <span className={`text-xl min-w-[24px] text-center transition-transform ${activeTab === item.id ? 'scale-110 opacity-100' : 'opacity-60'}`}>{item.icon}</span>
+                {expanded && <span className="text-[13px] font-bold whitespace-nowrap tracking-tight">{item.label}</span>}
+              </button>
+            ))}
+          </div>
         ))}
       </nav>
       

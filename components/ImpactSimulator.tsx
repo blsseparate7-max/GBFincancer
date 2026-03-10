@@ -35,7 +35,7 @@ const ImpactSimulator: React.FC<ImpactSimulatorProps> = ({ transactions = [] }) 
         <h1 className="text-3xl font-black text-[var(--text-primary)] uppercase italic tracking-tighter">Stress Test</h1>
       </header>
 
-      <div className="bg-white p-8 rounded-[2rem] border border-[var(--border)] shadow-sm">
+      <div className="bg-[var(--surface)] p-8 rounded-[2rem] border border-[var(--border)] shadow-sm">
         <h4 className="text-[10px] font-black text-[var(--text-muted)] uppercase tracking-widest mb-4">Simular Compra Inesperada</h4>
         <div className="relative mb-4">
            <span className="absolute left-6 top-1/2 -translate-y-1/2 text-[var(--text-muted)] font-black">R$</span>
@@ -49,7 +49,7 @@ const ImpactSimulator: React.FC<ImpactSimulatorProps> = ({ transactions = [] }) 
         <p className="text-[10px] text-[var(--text-muted)] font-bold text-center uppercase tracking-widest italic">O GB avalia o risco com base na sua sobra de R$ {stats.sobra.toFixed(2)}</p>
       </div>
 
-      <div className="bg-white p-10 rounded-3xl border border-[var(--border)] text-center shadow-lg">
+      <div className="bg-[var(--surface)] p-10 rounded-3xl border border-[var(--border)] text-center shadow-lg">
         <p className="text-[9px] font-black text-[var(--text-muted)] uppercase mb-1">Nível de Estresse Financeiro</p>
         <h3 className="text-3xl font-black uppercase italic tracking-tighter mb-4" style={{ color: stressLevel.color }}>{stressLevel.level}</h3>
         <p className="text-sm font-medium text-[var(--text-muted)] leading-relaxed px-6 italic">{stressLevel.desc}</p>

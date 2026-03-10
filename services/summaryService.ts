@@ -45,6 +45,52 @@ export const calculateWeeklySummary = (transactions: Transaction[]): WeeklySumma
   };
 };
 
+export const calculateMonthlySummary = (transactions: Transaction[]) => {
+  const now = new Date();
+  const currentMonth = now.getMonth();
+  const currentYear = now.getFullYear();
+
+  const monthTransactions = transactions.filter(t => {
+    const tDate = new Date(t.date);
+    return tDate.getMonth() === currentMonth && tDate.getFullYear() === currentYear;
+  });
+
+  const income = monthTransactions
+    .filter(t => t.type === 'INCOME')
+    .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+
+  const expense = monthTransactions
+    .filter(t => t.type === 'EXPENSE')
+    .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+
+  const balance = income - expense;
+
+  const categoryMap: Record<string, number> = {};
+  monthTransactions
+    .filter(t => t.type === 'EXPENSE')
+    .forEach(t => {
+      categoryMap[t.category] = (categoryMap[t.category] || 0) + (Number(t.amount) || 0);
+    });
+
+  const categories = Object.entries(categoryMap)
+    .map(([category, amount]) => ({ 
+      category, 
+      amount, 
+      percentage: expense > 0 ? (amount / expense) * 100 : 0 
+    }))
+    .sort((a, b) => b.amount - a.amount);
+
+  return {
+    month: currentMonth,
+    year: currentYear,
+    income,
+    expense,
+    balance,
+    categories,
+    generatedAt: now.toISOString()
+  };
+};
+
 export const formatCurrency = (value: number) => {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
 };

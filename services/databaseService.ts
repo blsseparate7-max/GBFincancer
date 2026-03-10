@@ -1,7 +1,8 @@
 
 import { db, isFirebaseConfigured } from "./firebaseConfig";
-import { doc, setDoc, getDoc, getDocs, collection, serverTimestamp, query, orderBy, deleteDoc } from "firebase/firestore";
-import { CustomerData } from "../types";
+import { doc, setDoc, getDoc, getDocs, collection, serverTimestamp, query, orderBy, deleteDoc, limit } from "firebase/firestore";
+import { CustomerData, Transaction, SavingGoal, Bill, CategoryLimit, CreditCardInfo, Wallet, UserCategory } from "../types";
+import { normalizeCard, normalizeGoal, normalizeReminder, normalizeLimit, normalizeWallet, normalizeUserCategory, normalizeTransaction } from "./normalizationService";
 
 // Agora usamos 'users' para manter consistência com o restante do app
 const MAIN_COLLECTION = "users";
@@ -92,5 +93,49 @@ export const fetchAllCustomers = async (): Promise<CustomerData[]> => {
   } catch (error) {
     console.error("Erro ao buscar clientes:", error);
     return [];
+  }
+};
+
+/**
+ * Busca o contexto completo e atualizado do Firestore para o Chat.
+ * Garante que a IA sempre tenha a "Fonte da Verdade" mais recente.
+ */
+export const fetchChatContext = async (uid: string) => {
+  if (!uid || !isFirebaseConfigured() || !db) return null;
+
+  try {
+    const userRef = doc(db, MAIN_COLLECTION, uid);
+    
+    // Buscas paralelas para performance
+    const [
+      transSnap,
+      goalsSnap,
+      remindersSnap,
+      limitsSnap,
+      cardsSnap,
+      walletsSnap,
+      catsSnap
+    ] = await Promise.all([
+      getDocs(query(collection(userRef, "transactions"), orderBy("date", "desc"), limit(50))),
+      getDocs(collection(userRef, "goals")),
+      getDocs(collection(userRef, "reminders")),
+      getDocs(collection(userRef, "limits")),
+      getDocs(collection(userRef, "cards")),
+      getDocs(collection(userRef, "wallets")),
+      getDocs(collection(userRef, "categories"))
+    ]);
+
+    return {
+      transactions: transSnap.docs.map(d => normalizeTransaction(d)),
+      goals: goalsSnap.docs.map(d => normalizeGoal(d, uid)),
+      reminders: remindersSnap.docs.map(d => normalizeReminder(d)),
+      limits: limitsSnap.docs.map(d => normalizeLimit(d)),
+      cards: cardsSnap.docs.map(d => normalizeCard(d, uid)),
+      wallets: walletsSnap.docs.map(d => normalizeWallet(d, uid)),
+      categories: catsSnap.docs.map(d => normalizeUserCategory(d))
+    };
+  } catch (error) {
+    console.error("GB: Erro ao buscar contexto do chat:", error);
+    return null;
   }
 };

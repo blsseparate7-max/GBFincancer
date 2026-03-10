@@ -1,17 +1,20 @@
 
-import React, { useState, useMemo } from 'react';
-import { SavingGoal, Transaction, Contribution } from '../types';
+import React, { useState, useMemo, useEffect } from 'react';
+import { SavingGoal, Transaction, Contribution, UserSession, Wallet } from '../types';
 import { dispatchEvent } from '../services/eventDispatcher';
 import MoneyInput from './MoneyInput';
+import { syncUserData } from '../services/databaseService';
 
 interface GoalsProps {
   goals: SavingGoal[];
   transactions: Transaction[];
+  wallets: Wallet[];
   uid: string;
+  user: UserSession;
   loading?: boolean;
 }
 
-const Goals: React.FC<GoalsProps> = ({ goals, transactions, uid, loading }) => {
+const Goals: React.FC<GoalsProps> = ({ goals, transactions, wallets, uid, user, loading }) => {
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingGoalId, setEditingGoalId] = useState<string | null>(null);
   const [newGoalName, setNewGoalName] = useState('');
@@ -20,18 +23,22 @@ const Goals: React.FC<GoalsProps> = ({ goals, transactions, uid, loading }) => {
   const [newGoalCategory, setNewGoalCategory] = useState<SavingGoal['category']>('Outros');
   const [newGoalPriority, setNewGoalPriority] = useState<SavingGoal['priority']>('Média');
   const [newGoalIcon, setNewGoalIcon] = useState('💰');
+  const [newGoalLevel, setNewGoalLevel] = useState(1);
+  const [newGoalBaseValue, setNewGoalBaseValue] = useState<number | undefined>(undefined);
 
   const [showAporteModal, setShowAporteModal] = useState<string | null>(null);
   const [showGastoModal, setShowGastoModal] = useState<string | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
   const [aporteAmount, setAporteAmount] = useState('');
   const [aporteNote, setAporteNote] = useState('');
+  const [selectedWalletId, setSelectedWalletId] = useState<string | null>(null);
   
   const [gastoAmount, setGastoAmount] = useState('');
   const [gastoDesc, setGastoDesc] = useState('');
   const [gastoCat, setGastoCat] = useState('Lazer');
   
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [completedGoal, setCompletedGoal] = useState<SavingGoal | null>(null);
 
   const categories = ['Viagem', 'Carro', 'Casa', 'Reserva', 'Educação', 'Lazer', 'Outros'];
   const priorities = ['Baixa', 'Média', 'Alta'];
@@ -71,6 +78,7 @@ const Goals: React.FC<GoalsProps> = ({ goals, transactions, uid, loading }) => {
           category: newGoalCategory,
           priority: newGoalPriority,
           icon: newGoalIcon,
+          level: newGoalLevel
         },
         source: 'ui',
         createdAt: new Date()
@@ -86,11 +94,20 @@ const Goals: React.FC<GoalsProps> = ({ goals, transactions, uid, loading }) => {
           category: newGoalCategory,
           priority: newGoalPriority,
           icon: newGoalIcon,
+          level: newGoalLevel,
           contributions: []
         },
         source: 'ui',
         createdAt: new Date()
       });
+
+      // Se foi criada a partir de uma sugestão, remover das sugestões
+      if (user.suggestedGoals) {
+        const remainingSuggestions = user.suggestedGoals.filter(sg => sg.name !== newGoalName);
+        if (remainingSuggestions.length !== user.suggestedGoals.length) {
+          await syncUserData(uid, { suggestedGoals: remainingSuggestions });
+        }
+      }
     }
 
     setNewGoalName('');
@@ -99,8 +116,35 @@ const Goals: React.FC<GoalsProps> = ({ goals, transactions, uid, loading }) => {
     setNewGoalCategory('Outros');
     setNewGoalPriority('Média');
     setNewGoalIcon('💰');
+    setNewGoalLevel(1);
     setShowAddForm(false);
     setEditingGoalId(null);
+  };
+
+  const handleUseSuggestion = (suggestion: any) => {
+    setNewGoalName(suggestion.name);
+    setNewGoalTarget(suggestion.targetAmount.toString());
+    setNewGoalLocation(suggestion.location);
+    setNewGoalCategory(suggestion.category || 'Outros');
+    setNewGoalPriority(suggestion.priority || 'Média');
+    setNewGoalIcon(suggestion.icon || '💰');
+    setNewGoalLevel(suggestion.level || 1);
+    setShowAddForm(true);
+  };
+
+  const handleNextLevel = (goal: SavingGoal) => {
+    const nextLevel = (goal.level || 1) + 1;
+    const nextTarget = goal.targetAmount * 1.30;
+    
+    setNewGoalName(goal.name);
+    setNewGoalTarget(nextTarget.toFixed(2));
+    setNewGoalLocation(goal.location);
+    setNewGoalCategory(goal.category || 'Outros');
+    setNewGoalPriority(goal.priority || 'Média');
+    setNewGoalIcon(goal.icon || '💰');
+    setNewGoalLevel(nextLevel);
+    setCompletedGoal(null);
+    setShowAddForm(true);
   };
 
   const handleEdit = (goal: SavingGoal) => {
@@ -111,6 +155,7 @@ const Goals: React.FC<GoalsProps> = ({ goals, transactions, uid, loading }) => {
     setNewGoalCategory(goal.category || 'Outros');
     setNewGoalPriority(goal.priority || 'Média');
     setNewGoalIcon(goal.icon || '💰');
+    setNewGoalLevel(goal.level || 1);
     setShowAddForm(true);
   };
 
@@ -140,8 +185,14 @@ const Goals: React.FC<GoalsProps> = ({ goals, transactions, uid, loading }) => {
     const val = parseFloat(aporteAmount);
     if (!showAporteModal || isNaN(val) || val <= 0) return;
 
-    if (val > saldoLivre) {
-      alert(`Saldo Livre insuficiente! Você tem ${format(saldoLivre)} disponível.`);
+    if (!selectedWalletId) {
+      alert("Por favor, selecione de onde sairá o dinheiro.");
+      return;
+    }
+
+    const wallet = wallets.find(w => w.id === selectedWalletId);
+    if (wallet && val > wallet.balance) {
+      alert(`Saldo insuficiente na carteira ${wallet.name}! Você tem ${format(wallet.balance)} disponível.`);
       return;
     }
     
@@ -151,6 +202,7 @@ const Goals: React.FC<GoalsProps> = ({ goals, transactions, uid, loading }) => {
         goalId: showAporteModal,
         amount: val,
         note: aporteNote,
+        sourceWalletId: selectedWalletId,
         date: new Date().toISOString()
       },
       source: 'ui',
@@ -158,31 +210,26 @@ const Goals: React.FC<GoalsProps> = ({ goals, transactions, uid, loading }) => {
     });
 
     if (res.success) {
+      // Verificar se a meta foi concluída
+      const goal = goals.find(g => g.id === showAporteModal);
+      if (goal && (goal.currentAmount + val) >= goal.targetAmount) {
+        setCompletedGoal({ ...goal, currentAmount: goal.currentAmount + val });
+      } else {
+        setSuccessMessage(`Parabéns! Você guardou ${format(val)} na meta.`);
+        setTimeout(() => setSuccessMessage(null), 5000);
+      }
+      
       setAporteAmount('');
       setAporteNote('');
+      setSelectedWalletId(null);
       setShowAporteModal(null);
     }
   };
 
-  const handleQuickAporte = async (goalId: string, amount: number) => {
-    if (amount <= 0) return;
-    
-    const res = await dispatchEvent(uid, {
-      type: 'ADD_TO_GOAL',
-      payload: {
-        goalId,
-        amount,
-        note: 'Aporte sugerido pelo sistema',
-        date: new Date().toISOString()
-      },
-      source: 'ui',
-      createdAt: new Date()
-    });
-
-    if (res.success) {
-      setSuccessMessage(`Parabéns! Você guardou ${format(amount)} na meta.`);
-      setTimeout(() => setSuccessMessage(null), 5000);
-    }
+  const handleQuickAporte = (goalId: string, amount: number) => {
+    setAporteAmount(amount.toString());
+    setAporteNote('Aporte sugerido pelo sistema');
+    setShowAporteModal(goalId);
   };
 
   const handleSpendFromGoal = async () => {
@@ -270,28 +317,101 @@ const Goals: React.FC<GoalsProps> = ({ goals, transactions, uid, loading }) => {
         </div>
       )}
 
+      {completedGoal && (
+        <div className="bg-[#111B21] border-2 border-[var(--green-whatsapp)] p-8 rounded-[3rem] text-center space-y-6 shadow-2xl animate-in zoom-in-95 duration-500 relative overflow-hidden">
+          <div className="absolute top-0 left-0 w-full h-1 bg-[var(--green-whatsapp)]"></div>
+          <div className="text-5xl">🎉</div>
+          <div className="space-y-2">
+            <h3 className="text-2xl font-black text-white uppercase italic tracking-tighter">Parabéns! Você concluiu sua meta.</h3>
+            <p className="text-xs text-[#8696A0] font-bold uppercase">A meta "{completedGoal.name}" foi alcançada com sucesso!</p>
+          </div>
+          
+          <div className="bg-white/5 p-6 rounded-3xl space-y-4">
+            <p className="text-[10px] text-[#00A884] font-black uppercase tracking-widest">Próximo Nível Sugerido</p>
+            <div className="flex justify-between items-center">
+              <span className="text-sm font-bold text-white uppercase tracking-tighter">Meta Nível {(completedGoal.level || 1) + 1}</span>
+              <span className="text-xl font-black text-[var(--green-whatsapp)]">{format(completedGoal.targetAmount * 1.30)}</span>
+            </div>
+            <p className="text-[9px] text-[#8696A0] italic">O sistema sugere metas de +30% para manter seu crescimento financeiro constante e realista.</p>
+          </div>
+
+          <div className="flex gap-3">
+            <button 
+              onClick={() => handleNextLevel(completedGoal)}
+              className="flex-1 bg-[var(--green-whatsapp)] text-white py-4 rounded-2xl font-black text-[10px] uppercase shadow-xl active:scale-95 transition-all"
+            >
+              Criar Próxima Meta
+            </button>
+            <button 
+              onClick={() => setCompletedGoal(null)}
+              className="flex-1 bg-white/5 text-[#8696A0] py-4 rounded-2xl font-black text-[10px] uppercase active:scale-95 transition-all"
+            >
+              Agora não
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="grid grid-cols-2 gap-4">
-        <div className="bg-white p-6 rounded-3xl border border-[var(--border)] shadow-sm">
+        <div className="bg-[var(--surface)] p-6 rounded-3xl border border-[var(--border)] shadow-sm">
           <p className="text-[9px] font-black text-[var(--text-muted)] uppercase mb-1">Total em Cofres</p>
           <h4 className="text-xl font-black text-[var(--green-whatsapp)]">{format(goals.reduce((s, g) => s + (Number(g.currentAmount) || 0), 0))}</h4>
         </div>
-        <div className="bg-white p-6 rounded-3xl border border-[var(--border)] shadow-sm">
+        <div className="bg-[var(--surface)] p-6 rounded-3xl border border-[var(--border)] shadow-sm">
           <p className="text-[9px] font-black text-[var(--text-muted)] uppercase mb-1">Meta Acumulada</p>
           <h4 className="text-xl font-black text-[var(--text-primary)]">{format(goals.reduce((s, g) => s + (Number(g.targetAmount) || 0), 0))}</h4>
         </div>
       </div>
 
-      <div className="bg-amber-100 p-5 rounded-3xl border border-amber-200 flex items-start gap-4">
+      <div className="bg-amber-500/10 p-5 rounded-3xl border border-amber-500/20 flex items-start gap-4">
         <span className="text-2xl">💡</span>
         <div>
           <p className="text-[11px] text-[var(--text-primary)] font-bold leading-tight uppercase mb-1">
             Dica: O valor aportado sai do seu "Saldo Livre" do Dashboard e fica reservado no cofre escolhido.
           </p>
-          <p className="text-[9px] text-amber-700 font-black uppercase">
-            Sua capacidade de poupança ideal: <span className="text-amber-900">{format(capacidadeGuardar)}/mês</span> (30% da sobra)
+          <p className="text-[9px] text-amber-500 font-black uppercase">
+            Sua capacidade de poupança ideal: <span className="text-amber-600">{format(capacidadeGuardar)}/mês</span> (30% da sobra)
           </p>
         </div>
       </div>
+
+      {/* Sugestões de Metas */}
+      {user.suggestedGoals && user.suggestedGoals.length > 0 && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between px-1">
+            <h3 className="text-[10px] font-black text-[var(--text-muted)] uppercase tracking-widest">Sugestões de Metas</h3>
+            <span className="text-[8px] font-black text-[#00A884] bg-[#00A884]/10 px-2 py-1 rounded-full uppercase">IA Ativa</span>
+          </div>
+          
+          <div className="bg-[var(--surface)] p-6 rounded-[2.5rem] border border-[var(--green-whatsapp)]/20 space-y-6">
+            <div className="space-y-2">
+              <p className="text-[11px] text-[var(--text-primary)] font-bold leading-relaxed">
+                "O sistema sugere metas de <span className="text-[var(--green-whatsapp)]">30% do valor informado</span> porque isso torna o objetivo mais realista, alcançável e útil como passo prático de crescimento financeiro."
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 gap-3">
+              {user.suggestedGoals.map((sg, idx) => (
+                <div key={idx} className="bg-white/5 p-4 rounded-2xl border border-white/5 flex justify-between items-center group hover:border-[#00A884]/30 transition-all">
+                  <div className="flex items-center gap-3">
+                    <span className="text-2xl">{sg.icon || '💰'}</span>
+                    <div>
+                      <h4 className="text-xs font-black text-white uppercase tracking-tighter">{sg.name}</h4>
+                      <p className="text-[9px] text-[#8696A0] font-bold uppercase">Meta Nível 1 • {format(sg.targetAmount)}</p>
+                    </div>
+                  </div>
+                  <button 
+                    onClick={() => handleUseSuggestion(sg)}
+                    className="bg-[#00A884] text-white px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest active:scale-95 transition-all"
+                  >
+                    Usar Sugestão
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="flex justify-between items-center px-1">
         <h3 className="text-[10px] font-black text-[var(--text-muted)] uppercase tracking-widest">Seus Objetivos</h3>
@@ -306,7 +426,7 @@ const Goals: React.FC<GoalsProps> = ({ goals, transactions, uid, loading }) => {
           const estDate = calculateEstimatedDate(goal);
           
           return (
-            <div key={goal.id} className="bg-white p-8 rounded-[3rem] border border-[var(--border)] shadow-sm relative group overflow-hidden">
+            <div key={goal.id} className="bg-[var(--surface)] p-8 rounded-[3rem] border border-[var(--border)] shadow-sm relative group overflow-hidden">
               {/* Badge de Prioridade */}
               {goal.priority && (
                 <div className={`absolute top-0 right-12 px-4 py-1.5 rounded-b-2xl text-[8px] font-black uppercase tracking-widest text-white ${
@@ -325,6 +445,7 @@ const Goals: React.FC<GoalsProps> = ({ goals, transactions, uid, loading }) => {
                     <h4 className="text-2xl font-black text-[var(--text-primary)] uppercase italic tracking-tighter leading-none">{goal.name}</h4>
                     <div className="flex gap-2 mt-2">
                       <span className="text-[9px] bg-[var(--bg-body)] px-2 py-0.5 rounded-full text-[var(--text-muted)] font-black uppercase tracking-tighter">📍 {goal.location}</span>
+                      <span className="text-[9px] bg-amber-500/10 px-2 py-0.5 rounded-full text-amber-600 font-black uppercase tracking-tighter">⭐ Nível {goal.level || 1}</span>
                       {goal.category && <span className="text-[9px] bg-[var(--green-whatsapp)]/10 px-2 py-0.5 rounded-full text-[var(--green-whatsapp)] font-black uppercase tracking-tighter">🏷️ {goal.category}</span>}
                     </div>
                   </div>
@@ -414,11 +535,11 @@ const Goals: React.FC<GoalsProps> = ({ goals, transactions, uid, loading }) => {
               </div>
 
               {goal.contributions && goal.contributions.length > 0 && (
-                <div className="pt-6 border-t border-gray-50">
+                <div className="pt-6 border-t border-[var(--border)]/30">
                   <p className="text-[9px] font-black text-[var(--text-muted)] uppercase mb-3 tracking-widest">Histórico Recente</p>
                   <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
                     {goal.contributions.slice().reverse().map((c: Contribution) => (
-                      <div key={c.id} className="flex justify-between items-center bg-[var(--bg-body)] p-4 rounded-2xl border border-black/5">
+                      <div key={c.id} className="flex justify-between items-center bg-[var(--bg-body)] p-4 rounded-2xl border border-[var(--border)]/30">
                         <div>
                           <p className="text-xs font-black text-[var(--text-primary)]">{format(c.amount)}</p>
                           <p className="text-[8px] text-[var(--text-muted)] uppercase font-bold">{new Date(c.date).toLocaleDateString()} {c.note && `• ${c.note}`}</p>
@@ -437,7 +558,7 @@ const Goals: React.FC<GoalsProps> = ({ goals, transactions, uid, loading }) => {
       {/* Modal Criar Meta */}
       {showAddForm && (
         <div className="fixed inset-0 z-[100] bg-black/40 backdrop-blur-md flex items-center justify-center p-6">
-          <div className="bg-white w-full max-w-md rounded-[3.5rem] p-10 shadow-2xl relative animate-fade max-h-[90vh] overflow-y-auto pr-1">
+          <div className="bg-[var(--surface)] w-full max-w-md rounded-[3.5rem] p-10 shadow-2xl relative animate-fade max-h-[90vh] overflow-y-auto pr-1">
             <button onClick={() => { setShowAddForm(false); setEditingGoalId(null); }} className="absolute top-10 right-10 text-[var(--text-muted)] font-black text-xl">✕</button>
             <h3 className="text-2xl font-black text-[var(--text-primary)] uppercase italic mb-8 tracking-tighter">
               {editingGoalId ? 'Editar Objetivo' : 'Novo Objetivo'}
@@ -514,10 +635,10 @@ const Goals: React.FC<GoalsProps> = ({ goals, transactions, uid, loading }) => {
       {/* Modal Aporte */}
       {showAporteModal && (
         <div className="fixed inset-0 z-[100] bg-black/40 backdrop-blur-md flex items-center justify-center p-6">
-          <div className="bg-white w-full max-w-sm rounded-[3.5rem] p-10 shadow-2xl relative animate-fade text-center">
+          <div className="bg-[var(--surface)] w-full max-w-sm rounded-[3.5rem] p-10 shadow-2xl relative animate-fade text-center">
             <button onClick={() => setShowAporteModal(null)} className="absolute top-10 right-10 text-[var(--text-muted)] font-black text-xl">✕</button>
             <h3 className="text-2xl font-black text-[var(--text-primary)] uppercase italic mb-2 tracking-tighter">Aporte Manual</h3>
-            <p className="text-[10px] text-[var(--text-muted)] font-bold uppercase mb-10 italic">Disponível: {format(saldoLivre)}</p>
+            <p className="text-[10px] text-[var(--text-muted)] font-bold uppercase mb-6 italic">Quanto deseja guardar?</p>
             
             <div className="space-y-6">
               <div className="relative">
@@ -529,8 +650,31 @@ const Goals: React.FC<GoalsProps> = ({ goals, transactions, uid, loading }) => {
                   onChange={val => setAporteAmount(val.toString())} 
                 />
               </div>
+
+              <div className="space-y-2">
+                <p className="text-[9px] font-black text-[var(--text-muted)] uppercase tracking-widest mb-2">De onde sairá o dinheiro?</p>
+                <div className="grid grid-cols-2 gap-2">
+                  {wallets.map(w => (
+                    <button 
+                      key={w.id}
+                      onClick={() => setSelectedWalletId(w.id)}
+                      className={`p-3 rounded-2xl border transition-all flex flex-col items-center gap-1 ${selectedWalletId === w.id ? 'bg-[var(--green-whatsapp)] border-[var(--green-whatsapp)] text-white shadow-lg scale-105' : 'bg-[var(--bg-body)] border-[var(--border)] text-[var(--text-primary)] hover:border-[var(--green-whatsapp)]'}`}
+                    >
+                      <span className="text-xl">{w.icon || '💰'}</span>
+                      <span className="text-[9px] font-black uppercase truncate w-full">{w.name}</span>
+                      <span className={`text-[8px] font-bold ${selectedWalletId === w.id ? 'text-white/80' : 'text-[var(--text-muted)]'}`}>{format(w.balance)}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               <input className="w-full bg-[var(--bg-body)] rounded-2xl p-5 text-xs font-bold outline-none focus:border-[var(--green-whatsapp)] border-2 border-transparent transition-all" placeholder="Nota opcional (Ex: Bônus do mês)" value={aporteNote} onChange={e => setAporteNote(e.target.value)} />
-              <button onClick={handleAddAporte} className="w-full bg-[var(--green-whatsapp)] text-white py-6 rounded-[2rem] font-black text-[11px] uppercase shadow-xl shadow-[var(--green-whatsapp)]/20 mt-4 active:scale-95 transition-all">
+              
+              <button 
+                onClick={handleAddAporte} 
+                className="w-full bg-[var(--green-whatsapp)] text-white py-6 rounded-[2rem] font-black text-[11px] uppercase shadow-xl shadow-[var(--green-whatsapp)]/20 mt-4 active:scale-95 transition-all disabled:opacity-50"
+                disabled={!selectedWalletId || !aporteAmount || parseFloat(aporteAmount) <= 0}
+              >
                 ✨ Confirmar e Guardar
               </button>
             </div>
@@ -541,7 +685,7 @@ const Goals: React.FC<GoalsProps> = ({ goals, transactions, uid, loading }) => {
       {/* Modal Gasto da Meta */}
       {showGastoModal && (
         <div className="fixed inset-0 z-[100] bg-black/40 backdrop-blur-md flex items-center justify-center p-6">
-          <div className="bg-white w-full max-w-sm rounded-[3.5rem] p-10 shadow-2xl relative animate-fade text-center">
+          <div className="bg-[var(--surface)] w-full max-w-sm rounded-[3.5rem] p-10 shadow-2xl relative animate-fade text-center">
             <button onClick={() => setShowGastoModal(null)} className="absolute top-10 right-10 text-[var(--text-muted)] font-black text-xl">✕</button>
             <h3 className="text-2xl font-black text-rose-500 uppercase italic mb-2 tracking-tighter">Gastar da Meta</h3>
             <p className="text-[10px] text-[var(--text-muted)] font-bold uppercase mb-10 italic">
@@ -582,7 +726,7 @@ const Goals: React.FC<GoalsProps> = ({ goals, transactions, uid, loading }) => {
       {/* Modal Confirmação de Exclusão */}
       {showDeleteConfirm && (
         <div className="fixed inset-0 z-[100] bg-black/40 backdrop-blur-md flex items-center justify-center p-6">
-          <div className="bg-white w-full max-w-sm rounded-[3rem] p-10 shadow-2xl relative animate-fade text-center">
+          <div className="bg-[var(--surface)] w-full max-w-sm rounded-[3rem] p-10 shadow-2xl relative animate-fade text-center">
             <div className="w-16 h-16 bg-rose-100 text-rose-500 rounded-full flex items-center justify-center mx-auto mb-6">
               <span className="text-2xl">🗑️</span>
             </div>

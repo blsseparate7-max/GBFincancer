@@ -132,11 +132,13 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ user, onComplete }) => {
       generatedGoals.push({
         name: hasCar ? 'Manutenção Carro/Moto' : 'Comprar Carro/Moto',
         targetAmount: parseFloat(carValue) * 0.30,
+        baseValue: parseFloat(carValue),
         currentAmount: 0,
         location: 'Cofre Automóvel',
         category: 'Carro',
         priority: 'Média',
         icon: '🚗',
+        level: 1,
         deadlineMonths: 36
       });
     }
@@ -144,11 +146,13 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ user, onComplete }) => {
       generatedGoals.push({
         name: hasHouse ? 'Reforma/Manutenção Casa' : 'Entrada da Casa Própria',
         targetAmount: parseFloat(houseValue) * 0.30,
+        baseValue: parseFloat(houseValue),
         currentAmount: 0,
         location: 'Cofre Imobiliário',
         category: 'Casa',
         priority: 'Alta',
         icon: '🏠',
+        level: 1,
         deadlineMonths: 60
       });
     }
@@ -157,11 +161,13 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ user, onComplete }) => {
       generatedGoals.push({
         name: 'Reserva de Emergência',
         targetAmount: savedVal * 1.30,
+        baseValue: savedVal,
         currentAmount: hasSavings ? savedVal : 0,
         location: 'Cofre de Segurança',
         category: 'Reserva',
         priority: 'Alta',
         icon: '🛡️',
+        level: 1,
         deadlineMonths: 12
       });
     }

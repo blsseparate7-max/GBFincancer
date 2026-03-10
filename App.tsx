@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { db, auth } from './services/firebaseConfig';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { collection, doc, onSnapshot, query, orderBy, limit, getDoc } from 'firebase/firestore';
-import { UserSession, Transaction, SavingGoal, Notification, Message, Bill, CategoryLimit, CreditCardInfo, Wallet, UserCategory } from './types';
+import { UserSession, Transaction, SavingGoal, Notification, Message, Bill, CategoryLimit, CreditCardInfo, Wallet, UserCategory, UserOnboarding } from './types';
 import Sidebar from './components/Sidebar';
 import Header from './components/Header';
 import Auth from './components/Auth';
@@ -17,14 +17,15 @@ import AdminPanel from './components/AdminPanel';
 import SetupWizard from './components/SetupWizard';
 import WelcomeOnboarding from './components/WelcomeOnboarding';
 import LGPDOnboarding from './components/LGPDOnboarding';
-import HealthScoreTab from './components/HealthScoreTab';
 import ImpactSimulator from './components/ImpactSimulator';
 import YearlySummary from './components/YearlySummary';
 import Settings from './components/Settings';
 import WalletTab from './components/WalletTab';
 import Insights from './components/Insights';
+import HealthScoreTab from './components/HealthScoreTab';
 import Extrato from './components/Extrato';
 import CategoriesTab from './components/CategoriesTab';
+import ContextualOnboarding from './components/ContextualOnboarding';
 import { normalizeCard, normalizeGoal, normalizeReminder, normalizeLimit, normalizeWallet, normalizeUserCategory, normalizeTransaction, assertSchema } from './services/normalizationService';
 
 const App: React.FC = () => {
@@ -135,9 +136,18 @@ const App: React.FC = () => {
       setNotifications(snap.docs.map(d => ({ id: d.id, ...d.data() } as Notification)));
     });
 
+    const unsubOnboarding = onSnapshot(doc(db, "users", session.uid, "onboarding", "flags"), (snap) => {
+      if (snap.exists()) {
+        setOnboarding(snap.data() as UserOnboarding);
+      } else {
+        setOnboarding({});
+      }
+    });
+
     return () => { 
       unsubTrans(); unsubGoals(); unsubReminders(); 
       unsubLimits(); unsubCards(); unsubWallets(); unsubNotifs(); unsubCats();
+      unsubOnboarding();
     };
   }, [session?.uid]);
 
@@ -150,6 +160,7 @@ const App: React.FC = () => {
   const [cards, setCards] = useState<CreditCardInfo[]>([]);
   const [wallets, setWallets] = useState<Wallet[]>([]);
   const [categories, setCategories] = useState<UserCategory[]>([]);
+  const [onboarding, setOnboarding] = useState<UserOnboarding>({});
 
   const [loadingCards, setLoadingCards] = useState(true);
   const [loadingGoals, setLoadingGoals] = useState(true);
@@ -226,28 +237,14 @@ const App: React.FC = () => {
       });
     }
 
-    // 4. Salvar Metas
+    // 4. Salvar Metas Sugeridas (Não criar automaticamente)
     if (data.goals && data.goals.length > 0) {
-      for (const goal of data.goals) {
-        await dispatchEvent(session.uid, {
-          type: 'CREATE_GOAL',
-          payload: { 
-            name: goal.name, 
-            targetAmount: goal.targetAmount, 
-            currentAmount: goal.currentAmount || 0,
-            location: goal.location || 'Cofre Principal',
-            category: goal.category,
-            priority: goal.priority,
-            icon: goal.icon,
-            deadlineMonths: goal.deadlineMonths
-          },
-          source: 'ui',
-          createdAt: new Date()
-        });
-      }
+      await syncUserData(session.uid, { 
+        suggestedGoals: data.goals 
+      });
     }
     
-    setSession(prev => prev ? { ...prev, onboardingSeen: true, incomeProfile: data.incomeProfile } : null);
+    setSession(prev => prev ? { ...prev, onboardingSeen: true, incomeProfile: data.incomeProfile, suggestedGoals: data.goals } : null);
     setOnboardingStep('none');
   };
 
@@ -266,17 +263,17 @@ const App: React.FC = () => {
     }
 
     switch (activeTab) {
-      case 'chat': return <ChatInterface user={session} messages={messages} setMessages={setMessages} transactions={transactions} limits={limits} reminders={reminders} cards={cards} wallets={wallets} categories={categories} />;
+      case 'chat': return <ChatInterface user={session} messages={messages} setMessages={setMessages} transactions={transactions} limits={limits} reminders={reminders} cards={cards} wallets={wallets} categories={categories} goals={goals} />;
       case 'extrato': return <Extrato uid={session.uid} cards={cards} categories={categories} />;
       case 'categories': return <CategoriesTab uid={session.uid} categories={categories} loading={loadingCategories} />;
       case 'dash': return <Dashboard transactions={transactions} goals={goals} limits={limits} wallets={wallets} uid={session.uid} loading={loadingCards || loadingGoals || loadingLimits || loadingWallets} />;
-      case 'goals': return <Goals goals={goals} transactions={transactions} uid={session.uid} loading={loadingGoals} />;
-      case 'cc': return <CreditCard transactions={transactions} uid={session.uid} cards={cards} loading={loadingCards} />;
-      case 'reminders': return <Reminders bills={reminders} uid={session.uid} loading={loadingReminders} />;
+      case 'goals': return <Goals goals={goals} transactions={transactions} wallets={wallets} uid={session.uid} user={session} loading={loadingGoals} />;
+      case 'cc': return <CreditCard transactions={transactions} uid={session.uid} cards={cards} wallets={wallets} loading={loadingCards} />;
+      case 'reminders': return <Reminders bills={reminders} wallets={wallets} uid={session.uid} loading={loadingReminders} />;
       case 'messages': return <Messages notifications={notifications} />;
       case 'resumo': return <YearlySummary transactions={transactions} goals={goals} wallets={wallets} />;
-      case 'insights': return <Insights transactions={transactions} />;
-      case 'score': return <HealthScoreTab transactions={transactions} />;
+      case 'insights': return <Insights transactions={transactions} limits={limits} />;
+      case 'score': return <HealthScoreTab transactions={transactions} limits={limits} goals={goals} />;
       case 'stress': return <ImpactSimulator transactions={transactions} />;
       case 'profile': return <ProfileEdit user={session} onUpdate={(d) => setSession(p => p ? {...p, ...d} : null)} onLogout={() => signOut(auth)} />;
       case 'config': return <Settings user={session} onLogout={() => signOut(auth)} />;
@@ -293,7 +290,7 @@ const App: React.FC = () => {
         
         return <WalletTab uid={session.uid} freeBalance={freeBalance} goals={goals} wallets={wallets} loading={loadingWallets || loadingGoals} />;
       }
-      default: return <ChatInterface user={session} messages={messages} setMessages={setMessages} transactions={transactions} limits={limits} reminders={reminders} />;
+      default: return <ChatInterface user={session} messages={messages} setMessages={setMessages} transactions={transactions} limits={limits} reminders={reminders} goals={goals} />;
     }
   };
 
@@ -302,7 +299,7 @@ const App: React.FC = () => {
   };
 
   return (
-    <div className="flex min-h-dvh w-full bg-[var(--bg-body)] text-[var(--text-primary)]">
+    <div className={`flex min-h-dvh w-full ${activeTab === 'chat' ? 'theme-light' : ''} bg-[var(--bg-body)] text-[var(--text-primary)] transition-colors duration-300`}>
       
       {/* Overlay para fechar menu ao clicar fora */}
       {sidebarExpanded && (
@@ -347,6 +344,14 @@ const App: React.FC = () => {
           <div className="absolute inset-0 whatsapp-pattern pointer-events-none"></div>
           <div className="relative z-10 flex-1 min-h-0 flex flex-col">
             {renderContent()}
+            {session && onboardingStep === 'none' && (
+              <ContextualOnboarding 
+                uid={session.uid} 
+                activeTab={activeTab} 
+                onboarding={onboarding} 
+                setOnboarding={setOnboarding} 
+              />
+            )}
           </div>
         </main>
       </div>

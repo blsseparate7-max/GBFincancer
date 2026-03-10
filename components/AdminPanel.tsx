@@ -121,13 +121,13 @@ const AdminPanel: React.FC<{ currentAdminId: string }> = ({ currentAdminId }) =>
   };
 
   return (
-    <div className="h-full flex flex-col bg-[#0b141a] text-[#e9edef] overflow-hidden animate-fade">
+    <div className="h-full flex flex-col bg-[var(--bg-body)] text-[var(--text-primary)] overflow-hidden animate-fade">
       {/* Sidebar Admin Interna */}
       <div className="flex-1 flex overflow-hidden">
-        <aside className="w-64 bg-[#111b21] border-r border-white/5 flex flex-col shrink-0">
-          <div className="p-6 border-b border-white/5">
-            <h2 className="text-xl font-black italic text-[#00a884] tracking-tighter uppercase">CEO Dashboard</h2>
-            <p className="text-[10px] text-[#8696a0] font-bold uppercase tracking-widest mt-1">Gestão de Ativos v5.0</p>
+        <aside className="w-64 bg-[var(--surface)] border-r border-[var(--border)] flex flex-col shrink-0">
+          <div className="p-6 border-b border-[var(--border)]">
+            <h2 className="text-xl font-black italic text-[var(--green-whatsapp)] tracking-tighter uppercase">CEO Dashboard</h2>
+            <p className="text-[10px] text-[var(--text-muted)] font-bold uppercase tracking-widest mt-1">Gestão de Ativos v5.0</p>
           </div>
           
           <nav className="flex-1 p-3 space-y-1">
@@ -140,7 +140,7 @@ const AdminPanel: React.FC<{ currentAdminId: string }> = ({ currentAdminId }) =>
               <button 
                 key={tab.id}
                 onClick={() => setActiveSubTab(tab.id as any)}
-                className={`w-full flex items-center gap-3 p-3.5 rounded-xl text-xs font-bold transition-all ${activeSubTab === tab.id ? 'bg-[#2a3942] text-[#00a884]' : 'text-[#8696a0] hover:bg-white/5'}`}
+                className={`w-full flex items-center gap-3 p-3.5 rounded-xl text-xs font-bold transition-all ${activeSubTab === tab.id ? 'bg-[#2a3942] text-[var(--green-whatsapp)]' : 'text-[var(--text-muted)] hover:bg-white/5'}`}
               >
                 <span className="text-lg">{tab.icon}</span>
                 {tab.label}
@@ -148,8 +148,8 @@ const AdminPanel: React.FC<{ currentAdminId: string }> = ({ currentAdminId }) =>
             ))}
           </nav>
 
-          <div className="p-4 bg-[#202c33] border-t border-white/5">
-            <p className="text-[9px] font-black text-[#8696a0] uppercase text-center italic">Privacidade CEO: Dados Sensíveis Ocultos 🔒</p>
+          <div className="p-4 bg-[#202c33] border-t border-[var(--border)]">
+            <p className="text-[9px] font-black text-[var(--text-muted)] uppercase text-center italic">Privacidade CEO: Dados Sensíveis Ocultos 🔒</p>
           </div>
         </aside>
 
@@ -158,35 +158,35 @@ const AdminPanel: React.FC<{ currentAdminId: string }> = ({ currentAdminId }) =>
           {activeSubTab === 'dashboard' && (
             <div className="space-y-8 animate-fade">
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                <div className="bg-[#111b21] p-6 rounded-3xl border border-white/5">
-                  <p className="text-[9px] font-black text-[#8696a0] uppercase mb-1">Total de Cadastros</p>
+                <div className="bg-[var(--surface)] p-6 rounded-3xl border border-[var(--border)]">
+                  <p className="text-[9px] font-black text-[var(--text-muted)] uppercase mb-1">Total de Cadastros</p>
                   <h3 className="text-3xl font-black">{stats.total}</h3>
                 </div>
-                <div className="bg-[#111b21] p-6 rounded-3xl border border-white/5">
-                  <p className="text-[9px] font-black text-[#8696a0] uppercase mb-1">Assinaturas Ativas</p>
-                  <h3 className="text-3xl font-black text-[#00a884]">{stats.premium}</h3>
+                <div className="bg-[var(--surface)] p-6 rounded-3xl border border-[var(--border)]">
+                  <p className="text-[9px] font-black text-[var(--text-muted)] uppercase mb-1">Assinaturas Ativas</p>
+                  <h3 className="text-3xl font-black text-[var(--green-whatsapp)]">{stats.premium}</h3>
                 </div>
-                <div className="bg-[#111b21] p-6 rounded-3xl border border-white/5">
-                  <p className="text-[9px] font-black text-[#8696a0] uppercase mb-1">Usuários Bloqueados</p>
+                <div className="bg-[var(--surface)] p-6 rounded-3xl border border-[var(--border)]">
+                  <p className="text-[9px] font-black text-[var(--text-muted)] uppercase mb-1">Usuários Bloqueados</p>
                   <h3 className="text-3xl font-black text-rose-500">{stats.blocked}</h3>
                 </div>
-                <div className="bg-[#111b21] p-6 rounded-3xl border border-white/5">
-                  <p className="text-[9px] font-black text-[#8696a0] uppercase mb-1">Taxa de Conversão</p>
+                <div className="bg-[var(--surface)] p-6 rounded-3xl border border-[var(--border)]">
+                  <p className="text-[9px] font-black text-[var(--text-muted)] uppercase mb-1">Taxa de Conversão</p>
                   <h3 className="text-3xl font-black text-amber-500">{stats.total > 0 ? ((stats.premium / stats.total) * 100).toFixed(1) : 0}%</h3>
                 </div>
               </div>
 
               <div className="space-y-4">
-                <h3 className="text-[10px] font-black text-[#8696a0] uppercase tracking-widest italic">Logs de Auditoria Recentes</h3>
-                <div className="bg-[#111b21] rounded-3xl border border-white/5 overflow-hidden">
+                <h3 className="text-[10px] font-black text-[var(--text-muted)] uppercase tracking-widest italic">Logs de Auditoria Recentes</h3>
+                <div className="bg-[var(--surface)] rounded-3xl border border-[var(--border)] overflow-hidden">
                   {auditLogs.length === 0 ? (
-                    <p className="p-8 text-center text-[#8696a0] text-xs italic">Nenhuma atividade registrada.</p>
+                    <p className="p-8 text-center text-[var(--text-muted)] text-xs italic">Nenhuma atividade registrada.</p>
                   ) : (
                     auditLogs.map(log => (
-                      <div key={log.id} className="p-4 border-b border-white/5 flex justify-between items-center text-[11px]">
+                      <div key={log.id} className="p-4 border-b border-[var(--border)] flex justify-between items-center text-[11px]">
                         <div className="flex gap-4 items-center">
-                          <span className="bg-[#2a3942] px-2 py-1 rounded-lg font-black text-[#00a884]">{log.action}</span>
-                          <span className="text-[#8696a0] font-mono">{log.details}</span>
+                          <span className="bg-[#2a3942] px-2 py-1 rounded-lg font-black text-[var(--green-whatsapp)]">{log.action}</span>
+                          <span className="text-[var(--text-muted)] font-mono">{log.details}</span>
                         </div>
                         <span className="text-[#667781]">{log.createdAt?.seconds ? new Date(log.createdAt.seconds * 1000).toLocaleString() : 'Recent'}</span>
                       </div>
@@ -199,9 +199,9 @@ const AdminPanel: React.FC<{ currentAdminId: string }> = ({ currentAdminId }) =>
 
           {activeSubTab === 'users' && (
             <div className="space-y-4 animate-fade">
-              <div className="bg-[#111b21] rounded-3xl border border-white/5 overflow-hidden">
+              <div className="bg-[var(--surface)] rounded-3xl border border-[var(--border)] overflow-hidden">
                 <table className="w-full text-left">
-                  <thead className="bg-[#202c33] text-[9px] font-black text-[#8696a0] uppercase">
+                  <thead className="bg-[#202c33] text-[9px] font-black text-[var(--text-muted)] uppercase">
                     <tr>
                       <th className="p-4">Nome</th>
                       <th className="p-4">Email</th>
@@ -215,41 +215,41 @@ const AdminPanel: React.FC<{ currentAdminId: string }> = ({ currentAdminId }) =>
                     {customers.map(user => {
                       const daysLeft = calculateDaysRemaining(user.subscriptionExpiryDate);
                       return (
-                        <tr key={user.uid} className="border-b border-white/5 hover:bg-white/5 transition-all">
+                        <tr key={user.uid} className="border-b border-[var(--border)] hover:bg-white/5 transition-all">
                           <td className="p-4">
                             <div className="flex items-center gap-3">
-                              <div className="w-8 h-8 rounded-full bg-[#00a884]/20 flex items-center justify-center font-black text-[#00a884] text-xs uppercase">
+                              <div className="w-8 h-8 rounded-full bg-[var(--green-whatsapp)]/20 flex items-center justify-center font-black text-[var(--green-whatsapp)] text-xs uppercase">
                                 {user.userName?.charAt(0)}
                               </div>
                               <span className="font-bold">{user.userName}</span>
                             </div>
                           </td>
                           <td className="p-4">
-                            <p className="text-[11px] text-[#8696a0]">{user.email}</p>
+                            <p className="text-[11px] text-[var(--text-muted)]">{user.email}</p>
                           </td>
                           <td className="p-4">
-                            <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${user.subscriptionStatus === 'ACTIVE' ? 'bg-[#d9fdd3]/10 text-[#00a884]' : 'bg-rose-500/10 text-rose-500'}`}>
+                            <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${user.subscriptionStatus === 'ACTIVE' ? 'bg-[#d9fdd3]/10 text-[var(--green-whatsapp)]' : 'bg-rose-500/10 text-rose-500'}`}>
                               {user.subscriptionStatus}
                             </span>
                             <p className="text-[9px] text-[#667781] mt-1">{user.plan}</p>
                           </td>
                           <td className="p-4">
                             <div className="flex flex-col">
-                              <span className={`font-black text-xs ${daysLeft > 5 ? 'text-[#00a884]' : 'text-rose-500'}`}>
+                              <span className={`font-black text-xs ${daysLeft > 5 ? 'text-[var(--green-whatsapp)]' : 'text-rose-500'}`}>
                                 {daysLeft} dias
                               </span>
                               <span className="text-[9px] text-[#667781]">restantes</span>
                             </div>
                           </td>
                           <td className="p-4">
-                            <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${user.status === 'active' ? 'bg-[#d9fdd3]/10 text-[#00a884]' : 'bg-rose-500/10 text-rose-500'}`}>
+                            <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${user.status === 'active' ? 'bg-[#d9fdd3]/10 text-[var(--green-whatsapp)]' : 'bg-rose-500/10 text-rose-500'}`}>
                               {user.status}
                             </span>
                           </td>
                           <td className="p-4 text-right space-x-2">
                             <button 
                               onClick={() => handleUpdateUser(user.uid, { status: user.status === 'active' ? 'blocked' : 'active' })}
-                              className={`p-2 rounded-xl transition-all ${user.status === 'active' ? 'bg-rose-500/10 text-rose-500' : 'bg-[#00a884]/10 text-[#00a884]'}`}
+                              className={`p-2 rounded-xl transition-all ${user.status === 'active' ? 'bg-rose-500/10 text-rose-500' : 'bg-[var(--green-whatsapp)]/10 text-[var(--green-whatsapp)]'}`}
                               title={user.status === 'active' ? 'Bloquear' : 'Desbloquear'}
                             >
                               {user.status === 'active' ? '🚫' : '✅'}
@@ -273,24 +273,24 @@ const AdminPanel: React.FC<{ currentAdminId: string }> = ({ currentAdminId }) =>
 
           {activeSubTab === 'messages' && (
             <div className="max-w-xl mx-auto space-y-8 animate-fade">
-              <div className="bg-[#111b21] p-8 rounded-[3rem] border border-white/5 space-y-6">
+              <div className="bg-[var(--surface)] p-8 rounded-[3rem] border border-[var(--border)] space-y-6">
                 <header className="text-center">
-                  <h3 className="text-xl font-black italic tracking-tighter uppercase text-[#00a884]">Broadcast Oficial</h3>
-                  <p className="text-[10px] text-[#8696a0] font-bold uppercase tracking-widest mt-1">Envio de Mensagens em Massa</p>
+                  <h3 className="text-xl font-black italic tracking-tighter uppercase text-[var(--green-whatsapp)]">Broadcast Oficial</h3>
+                  <p className="text-[10px] text-[var(--text-muted)] font-bold uppercase tracking-widest mt-1">Envio de Mensagens em Massa</p>
                 </header>
 
                 <div className="space-y-4">
                   <div className="space-y-1">
-                    <label className="text-[9px] font-black text-[#8696a0] uppercase ml-2">Título da Mensagem</label>
-                    <input className="w-full bg-[#202c33] rounded-2xl p-4 text-sm font-bold outline-none border border-transparent focus:border-[#00a884]" placeholder="Ex: Manutenção Programada" value={msgTitle} onChange={e => setMsgTitle(e.target.value)} />
+                    <label className="text-[9px] font-black text-[var(--text-muted)] uppercase ml-2">Título da Mensagem</label>
+                    <input className="w-full bg-[#202c33] rounded-2xl p-4 text-sm font-bold outline-none border border-transparent focus:border-[var(--green-whatsapp)]" placeholder="Ex: Manutenção Programada" value={msgTitle} onChange={e => setMsgTitle(e.target.value)} />
                   </div>
                   <div className="space-y-1">
-                    <label className="text-[9px] font-black text-[#8696a0] uppercase ml-2">Corpo da Mensagem</label>
-                    <textarea className="w-full bg-[#202c33] rounded-2xl p-4 text-sm font-medium outline-none border border-transparent focus:border-[#00a884] h-32" placeholder="Escreva o comunicado aqui..." value={msgBody} onChange={e => setMsgBody(e.target.value)} />
+                    <label className="text-[9px] font-black text-[var(--text-muted)] uppercase ml-2">Corpo da Mensagem</label>
+                    <textarea className="w-full bg-[#202c33] rounded-2xl p-4 text-sm font-medium outline-none border border-transparent focus:border-[var(--green-whatsapp)] h-32" placeholder="Escreva o comunicado aqui..." value={msgBody} onChange={e => setMsgBody(e.target.value)} />
                   </div>
                   <div className="space-y-1">
-                    <label className="text-[9px] font-black text-[#8696a0] uppercase ml-2">Destinatário (Vazio para Global)</label>
-                    <select className="w-full bg-[#202c33] rounded-2xl p-4 text-sm font-bold outline-none appearance-none text-[#8696a0]" value={targetUser} onChange={e => setTargetUser(e.target.value)}>
+                    <label className="text-[9px] font-black text-[var(--text-muted)] uppercase ml-2">Destinatário (Vazio para Global)</label>
+                    <select className="w-full bg-[#202c33] rounded-2xl p-4 text-sm font-bold outline-none appearance-none text-[var(--text-muted)]" value={targetUser} onChange={e => setTargetUser(e.target.value)}>
                       <option value="">TODOS OS USUÁRIOS (GLOBAL)</option>
                       {customers.map(u => <option key={u.uid} value={u.uid}>{u.userName} ({u.email})</option>)}
                     </select>
@@ -299,7 +299,7 @@ const AdminPanel: React.FC<{ currentAdminId: string }> = ({ currentAdminId }) =>
                   <button 
                     onClick={handleSendBroadcast}
                     disabled={isLoading}
-                    className="w-full bg-[#00a884] text-white py-4 rounded-2xl font-black text-[10px] uppercase shadow-xl mt-4 active:scale-95 transition-all"
+                    className="w-full bg-[var(--green-whatsapp)] text-white py-4 rounded-2xl font-black text-[10px] uppercase shadow-xl mt-4 active:scale-95 transition-all"
                   >
                     {isLoading ? 'Disparando...' : '🚀 Enviar Agora'}
                   </button>
@@ -310,37 +310,37 @@ const AdminPanel: React.FC<{ currentAdminId: string }> = ({ currentAdminId }) =>
 
           {activeSubTab === 'config' && (
             <div className="max-w-xl mx-auto space-y-6 animate-fade">
-              <div className="bg-[#111b21] p-8 rounded-[3rem] border border-white/5 space-y-8">
+              <div className="bg-[var(--surface)] p-8 rounded-[3rem] border border-[var(--border)] space-y-8">
                 <header>
-                  <h3 className="text-xl font-black italic tracking-tighter uppercase text-[#00a884]">Parâmetros Globais</h3>
-                  <p className="text-[10px] text-[#8696a0] font-bold uppercase tracking-widest mt-1">Configurações de Engine IA</p>
+                  <h3 className="text-xl font-black italic tracking-tighter uppercase text-[var(--green-whatsapp)]">Parâmetros Globais</h3>
+                  <p className="text-[10px] text-[var(--text-muted)] font-bold uppercase tracking-widest mt-1">Configurações de Engine IA</p>
                 </header>
 
                 <div className="space-y-6">
                   <div className="flex justify-between items-center p-4 bg-[#202c33] rounded-2xl">
                     <div>
                       <h4 className="text-xs font-bold text-white">Porcentagem de Aporte</h4>
-                      <p className="text-[9px] text-[#8696a0] uppercase font-bold mt-0.5">Define a sugestão padrão do Dashboard</p>
+                      <p className="text-[9px] text-[var(--text-muted)] uppercase font-bold mt-0.5">Define a sugestão padrão do Dashboard</p>
                     </div>
                     <div className="flex items-center gap-3">
                       <input 
                         type="number" 
-                        className="bg-[#111b21] w-16 p-2 rounded-xl text-center font-black text-[#00a884]" 
+                        className="bg-[var(--surface)] w-16 p-2 rounded-xl text-center font-black text-[var(--green-whatsapp)]" 
                         value={config?.defaultAportePercent || 30} 
                         onChange={e => handleUpdateConfig({ defaultAportePercent: parseInt(e.target.value) })}
                       />
-                      <span className="font-black text-[#00a884]">%</span>
+                      <span className="font-black text-[var(--green-whatsapp)]">%</span>
                     </div>
                   </div>
 
                   <div className="flex justify-between items-center p-4 bg-[#202c33] rounded-2xl">
                     <div>
                       <h4 className="text-xs font-bold text-white">Modo Manutenção</h4>
-                      <p className="text-[9px] text-[#8696a0] uppercase font-bold mt-0.5">Bloqueia acesso às funções financeiras</p>
+                      <p className="text-[9px] text-[var(--text-muted)] uppercase font-bold mt-0.5">Bloqueia acesso às funções financeiras</p>
                     </div>
                     <button 
                       onClick={() => handleUpdateConfig({ maintenanceMode: !config?.maintenanceMode })}
-                      className={`w-12 h-6 rounded-full relative transition-all ${config?.maintenanceMode ? 'bg-[#00a884]' : 'bg-[#111b21]'}`}
+                      className={`w-12 h-6 rounded-full relative transition-all ${config?.maintenanceMode ? 'bg-[var(--green-whatsapp)]' : 'bg-[var(--surface)]'}`}
                     >
                       <div className={`w-4 h-4 bg-white rounded-full absolute top-1 transition-all ${config?.maintenanceMode ? 'right-1' : 'left-1'}`} />
                     </button>

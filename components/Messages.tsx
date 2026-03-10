@@ -22,8 +22,8 @@ const Messages: React.FC<MessagesProps> = ({ notifications }) => {
 
       <div className="space-y-3">
         {notifications.length > 0 ? notifications.map(notif => (
-          <div key={notif.id} className="bg-white p-5 rounded-2xl border border-[var(--border)] flex gap-4 shadow-sm">
-            <div className={`w-12 h-12 rounded-xl flex items-center justify-center text-xl shrink-0 ${notif.type.includes('LIMIT') ? 'bg-amber-50 text-amber-500' : 'bg-[#d9fdd3] text-[#008069]'}`}>
+          <div key={notif.id} className="bg-[var(--surface)] p-5 rounded-2xl border border-[var(--border)] flex gap-4 shadow-sm">
+            <div className={`w-12 h-12 rounded-xl flex items-center justify-center text-xl shrink-0 ${notif.type.includes('LIMIT') ? 'bg-amber-500/10 text-amber-500' : 'bg-[var(--green-whatsapp)]/10 text-[var(--green-whatsapp)]'}`}>
               {notif.type.includes('LIMIT') ? '⚠️' : '📩'}
             </div>
             <div className="flex-1">

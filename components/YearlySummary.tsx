@@ -52,15 +52,15 @@ const YearlySummary: React.FC<YearlySummaryProps> = ({ transactions, goals, wall
 
       {/* Totais do Ano */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-        <div className="bg-white p-6 rounded-2xl border border-[var(--border)] shadow-sm">
+        <div className="bg-[var(--surface)] p-6 rounded-2xl border border-[var(--border)] shadow-sm">
           <p className="text-[9px] font-black text-[var(--text-muted)] uppercase mb-1">Acumulado Entradas</p>
           <h4 className="text-xl font-black text-[var(--green-whatsapp)]">{format(yearData.totalIncome)}</h4>
         </div>
-        <div className="bg-white p-6 rounded-2xl border border-[var(--border)] shadow-sm">
+        <div className="bg-[var(--surface)] p-6 rounded-2xl border border-[var(--border)] shadow-sm">
           <p className="text-[9px] font-black text-[var(--text-muted)] uppercase mb-1">Acumulado Saídas</p>
           <h4 className="text-xl font-black text-[#ef4444]">{format(yearData.totalExpense)}</h4>
         </div>
-        <div className="bg-white p-6 rounded-2xl border border-[var(--border)] shadow-sm">
+        <div className="bg-[var(--surface)] p-6 rounded-2xl border border-[var(--border)] shadow-sm">
           <p className="text-[9px] font-black text-[var(--text-muted)] uppercase mb-1">Patrimônio Líquido Gerado</p>
           <h4 className="text-xl font-black text-[var(--text-primary)]">{format(yearData.totalBalance)}</h4>
         </div>
@@ -69,7 +69,7 @@ const YearlySummary: React.FC<YearlySummaryProps> = ({ transactions, goals, wall
       {/* Grid de 12 Meses */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
         {yearData.monthly.map((m, idx) => (
-          <div key={idx} className={`bg-white p-5 rounded-3xl border transition-all ${m.hasData ? 'border-[var(--border)] shadow-sm' : 'border-dashed border-gray-200 opacity-50'}`}>
+          <div key={idx} className={`bg-[var(--surface)] p-5 rounded-3xl border transition-all ${m.hasData ? 'border-[var(--border)] shadow-sm' : 'border-dashed border-[var(--border)] opacity-50'}`}>
             <div className="flex justify-between items-center mb-4">
               <span className="text-xs font-black uppercase italic text-[var(--text-primary)]">{m.name}</span>
               {m.hasData && (
@@ -86,7 +86,7 @@ const YearlySummary: React.FC<YearlySummaryProps> = ({ transactions, goals, wall
                 <span className="text-[var(--text-muted)]">SAÍDAS</span>
                 <span className="text-[#ef4444]">{format(m.expense)}</span>
               </div>
-              <div className="pt-2 border-t border-gray-100 flex justify-between items-center">
+              <div className="pt-2 border-t border-[var(--border)]/30 flex justify-between items-center">
                 <span className="text-[9px] font-black text-[var(--text-primary)] uppercase">Saldo</span>
                 <span className={`text-sm font-black ${m.balance >= 0 ? 'text-[var(--text-primary)]' : 'text-red-500'}`}>
                   {format(m.balance)}

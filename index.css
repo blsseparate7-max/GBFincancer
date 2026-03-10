@@ -12,9 +12,23 @@
 }
 
 :root {
-    --bg-body: #f0f2f5;
+    --bg-body: #0b141a;
+    --surface: #111b21;
+    --border: #2a3942;
+    --text-primary: #e9edef;
+    --text-muted: #8696a0;
+    --green-whatsapp: #00a884;
+    --green-whatsapp-dark: #008069;
+    --green-bubble: #005c4b;
+    --ai-bubble: #202c33;
+    --chat-bg: #0b141a;
+    --bubble-text: #e9edef;
+}
+
+.theme-light {
+    --bg-body: #efeae2;
     --surface: #ffffff;
-    --border: #e9edef;
+    --border: #e1e1e1;
     --text-primary: #111b21;
     --text-muted: #667781;
     --green-whatsapp: #00a884;
@@ -22,6 +36,7 @@
     --green-bubble: #d9fdd3;
     --ai-bubble: #ffffff;
     --chat-bg: #efeae2;
+    --bubble-text: #111b21;
 }
 
 body { 
@@ -31,13 +46,19 @@ body {
     overflow-x: hidden;
     min-height: 100dvh;
     width: 100vw;
+    transition: background-color 0.3s ease, color 0.3s ease;
 }
 
 .whatsapp-pattern {
     background-image: url('https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png');
     background-repeat: repeat;
     opacity: 0.06;
+    filter: invert(1);
+}
+
+.theme-light .whatsapp-pattern {
     filter: none;
+    opacity: 0.06;
 }
 
 .no-scrollbar::-webkit-scrollbar { display: none; }
@@ -47,14 +68,14 @@ body {
     background-color: var(--green-bubble); 
     border-radius: 8px 0px 8px 8px; 
     box-shadow: 0 1px 1px rgba(0,0,0,.1);
-    color: #111b21;
+    color: var(--bubble-text);
 }
 
 .bubble-ai { 
     background-color: var(--ai-bubble); 
     border-radius: 0px 8px 8px 8px; 
     box-shadow: 0 1px 1px rgba(0,0,0,.1);
-    color: #111b21;
+    color: var(--bubble-text);
 }
 
 .animate-fade { animation: fadeIn 0.2s ease-out; }
