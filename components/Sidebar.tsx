@@ -32,6 +32,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, expanded, se
       items: [
         { id: 'wallets', label: 'Carteiras', icon: '👛' },
         { id: 'cc', label: 'Cartão de Crédito', icon: '💳' },
+        { id: 'debts', label: 'Estou Endividado', icon: '🆘' },
       ]
     },
     {

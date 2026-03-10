@@ -104,7 +104,11 @@ export type EventType =
   | 'CREATE_CATEGORY'
   | 'UPDATE_CATEGORY'
   | 'DELETE_CATEGORY'
-  | 'MOVE_TRANSACTION_CATEGORY';
+  | 'MOVE_TRANSACTION_CATEGORY'
+  | 'CREATE_DEBT'
+  | 'UPDATE_DEBT'
+  | 'DELETE_DEBT'
+  | 'REGISTER_DEBT_PAYMENT';
 
 export interface FinanceEvent {
   type: EventType;
@@ -298,5 +302,29 @@ export interface WalletTransfer {
   amount: number;
   date: string;
   note?: string;
+  createdAt: any;
+}
+
+export type DebtType = 'CARTAO_CREDITO' | 'EMPRESTIMO' | 'CHEQUE_ESPECIAL' | 'FINANCIAMENTO' | 'DIVIDA_INFORMAL' | 'OUTRO';
+
+export interface Debt {
+  id: string;
+  name: string;
+  totalAmount: number;
+  remainingAmount: number;
+  installmentAmount: number;
+  interestRate?: number;
+  remainingInstallments?: number;
+  type: DebtType;
+  strategy?: 'SNOWBALL' | 'AVALANCHE';
+  createdAt: any;
+  updatedAt: any;
+}
+
+export interface DebtPayment {
+  id: string;
+  debtId: string;
+  amount: number;
+  date: string;
   createdAt: any;
 }

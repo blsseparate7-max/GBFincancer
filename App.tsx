@@ -26,6 +26,7 @@ import HealthScoreTab from './components/HealthScoreTab';
 import Extrato from './components/Extrato';
 import CategoriesTab from './components/CategoriesTab';
 import ContextualOnboarding from './components/ContextualOnboarding';
+import DebtAssistant from './components/DebtAssistant';
 import { normalizeCard, normalizeGoal, normalizeReminder, normalizeLimit, normalizeWallet, normalizeUserCategory, normalizeTransaction, assertSchema } from './services/normalizationService';
 
 const App: React.FC = () => {
@@ -275,6 +276,7 @@ const App: React.FC = () => {
       case 'insights': return <Insights transactions={transactions} limits={limits} />;
       case 'score': return <HealthScoreTab transactions={transactions} limits={limits} goals={goals} />;
       case 'stress': return <ImpactSimulator transactions={transactions} />;
+      case 'debts': return <DebtAssistant uid={session.uid} transactions={transactions} wallets={wallets} user={session} />;
       case 'profile': return <ProfileEdit user={session} onUpdate={(d) => setSession(p => p ? {...p, ...d} : null)} onLogout={() => signOut(auth)} />;
       case 'config': return <Settings user={session} onLogout={() => signOut(auth)} />;
       case 'admin': return session.role === 'ADMIN' ? <AdminPanel currentAdminId={session.uid} /> : null;

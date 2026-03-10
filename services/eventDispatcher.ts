@@ -710,6 +710,69 @@ export const dispatchEvent = async (uid: string, event: FinanceEvent) => {
         await deleteDoc(doc(userRef, "limits", limitId));
         break;
       }
+
+      case 'CREATE_DEBT': {
+        await addDoc(collection(userRef, "debts"), {
+          ...event.payload,
+          remainingAmount: event.payload.totalAmount,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp()
+        });
+        break;
+      }
+
+      case 'UPDATE_DEBT': {
+        const { id, ...updates } = event.payload;
+        await updateDoc(doc(userRef, "debts", id), {
+          ...updates,
+          updatedAt: serverTimestamp()
+        });
+        break;
+      }
+
+      case 'DELETE_DEBT': {
+        const { id } = event.payload;
+        await deleteDoc(doc(userRef, "debts", id));
+        break;
+      }
+
+      case 'REGISTER_DEBT_PAYMENT': {
+        const { debtId, amount, date, sourceWalletId } = event.payload;
+        
+        // 1. Registra o pagamento na subcoleção de pagamentos da dívida
+        await addDoc(collection(userRef, "debts", debtId, "payments"), {
+          amount,
+          date: date || now.toISOString(),
+          createdAt: serverTimestamp()
+        });
+
+        // 2. Atualiza o saldo restante da dívida
+        await updateDoc(doc(userRef, "debts", debtId), {
+          remainingAmount: increment(-amount),
+          updatedAt: serverTimestamp()
+        });
+
+        // 3. Registra como uma despesa no Dashboard
+        const debtSnap = await getDoc(doc(userRef, "debts", debtId));
+        const debtName = debtSnap.exists() ? debtSnap.data().name : "Dívida";
+        
+        await addDoc(collection(userRef, "transactions"), {
+          description: `Pagamento Dívida: ${debtName}`,
+          amount,
+          category: 'Dívidas',
+          type: 'EXPENSE',
+          paymentMethod: 'PIX',
+          sourceWalletId: sourceWalletId || null,
+          date: date || now.toISOString(),
+          createdAt: serverTimestamp()
+        });
+
+        // 4. Atualiza saldo da carteira se houver
+        if (sourceWalletId) {
+          await updateWalletBalance(uid, sourceWalletId, -amount);
+        }
+        break;
+      }
     }
 
     return { success: true };
