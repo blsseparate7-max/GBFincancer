@@ -29,7 +29,7 @@ const Investments: React.FC<InvestmentsProps> = ({ transactions, availableBalanc
   }, [transactions, availableBalance]);
 
   return (
-    <div className="p-6 h-full overflow-y-auto bg-[var(--bg-body)] pb-32 space-y-8">
+    <div className="p-6 min-h-full bg-[var(--bg-body)] pb-32 space-y-8">
       <div className="bg-[var(--surface)] p-10 rounded-b-[4rem] -mx-6 -mt-6 shadow-2xl relative overflow-hidden text-center border-b border-[var(--border)]">
         <div className="absolute top-0 right-0 w-32 h-32 bg-[var(--green-whatsapp)]/10 rounded-full -mr-16 -mt-16 blur-3xl"></div>
         <p className="text-[10px] font-black text-[var(--green-whatsapp)] uppercase tracking-widest mb-2">Sobras do Dashboard</p>

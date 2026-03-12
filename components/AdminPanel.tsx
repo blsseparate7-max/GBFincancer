@@ -121,9 +121,9 @@ const AdminPanel: React.FC<{ currentAdminId: string }> = ({ currentAdminId }) =>
   };
 
   return (
-    <div className="h-full flex flex-col bg-[var(--bg-body)] text-[var(--text-primary)] overflow-hidden animate-fade">
+    <div className="min-h-full flex flex-col bg-[var(--bg-body)] text-[var(--text-primary)] animate-fade">
       {/* Sidebar Admin Interna */}
-      <div className="flex-1 flex overflow-hidden">
+      <div className="flex-1 flex">
         <aside className="w-64 bg-[var(--surface)] border-r border-[var(--border)] flex flex-col shrink-0">
           <div className="p-6 border-b border-[var(--border)]">
             <h2 className="text-xl font-black italic text-[var(--green-whatsapp)] tracking-tighter uppercase">CEO Dashboard</h2>
@@ -154,7 +154,7 @@ const AdminPanel: React.FC<{ currentAdminId: string }> = ({ currentAdminId }) =>
         </aside>
 
         {/* Conteúdo Admin */}
-        <main className="flex-1 overflow-y-auto p-8 pb-32">
+        <main className="flex-1 p-8 pb-32">
           {activeSubTab === 'dashboard' && (
             <div className="space-y-8 animate-fade">
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4">

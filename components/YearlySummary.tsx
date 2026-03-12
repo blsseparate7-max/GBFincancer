@@ -39,7 +39,7 @@ const YearlySummary: React.FC<YearlySummaryProps> = ({ transactions, goals, wall
   const format = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v);
 
   return (
-    <div className="p-6 space-y-6 animate-fade pb-32">
+    <div className="p-6 space-y-6 animate-fade pb-32 min-h-full">
       <header className="mb-8">
         <h2 className="text-[10px] font-black text-[var(--green-whatsapp)] uppercase tracking-[0.4em] mb-1">Performance Consolidada</h2>
         <h1 className="text-3xl font-black text-[var(--text-primary)] uppercase italic tracking-tighter">Resumo Anual {new Date().getFullYear()}</h1>

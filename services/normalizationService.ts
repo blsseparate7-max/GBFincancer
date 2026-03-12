@@ -6,7 +6,7 @@ import { db } from './firebaseConfig';
  * Migra silenciosamente um cartão se faltarem campos essenciais.
  */
 export const migrateCardIfNeeded = async (uid: string, cardId: string, data: any) => {
-  const needsMigration = data.dueDay === undefined || data.closingDay === undefined || data.limitTotal === undefined;
+  const needsMigration = data.dueDay === undefined || data.closingDay === undefined || data.limitTotal === undefined || data.invoiceAmount === undefined;
   if (needsMigration) {
     try {
       const cardRef = doc(db, "users", uid, "cards", cardId);
@@ -14,6 +14,7 @@ export const migrateCardIfNeeded = async (uid: string, cardId: string, data: any
         dueDay: data.dueDay || 10,
         closingDay: data.closingDay || 7,
         limitTotal: data.limitTotal || data.limit || 0,
+        invoiceAmount: data.invoiceAmount !== undefined ? data.invoiceAmount : (data.usedAmount || 0),
         updatedAt: new Date()
       });
       console.log(`GB: Cartão ${cardId} migrado com sucesso.`);
@@ -78,6 +79,7 @@ export const normalizeCard = (docSnap: any, uid?: string): CreditCardInfo => {
     limit: limitTotal,
     usedAmount: usedAmount,
     availableAmount: data.availableAmount !== undefined ? data.availableAmount : (limitTotal - usedAmount),
+    invoiceAmount: data.invoiceAmount !== undefined ? data.invoiceAmount : usedAmount,
     dueDay: data.dueDay || 10,
     closingDay: data.closingDay || 7,
     updatedAt: data.updatedAt || null
@@ -129,6 +131,8 @@ export const normalizeWallet = (docSnap: any, uid?: string): Wallet => {
     balance: data.balance !== undefined ? data.balance : (data.amount || data.value || 0),
     color: data.color || '#128C7E',
     icon: data.icon || 'Wallet',
+    note: data.note || '',
+    isActive: data.isActive !== undefined ? data.isActive : true,
     createdAt: data.createdAt || null,
     updatedAt: data.updatedAt || null
   };
@@ -199,6 +203,30 @@ export const normalizeCategoryName = (cat: string): string => {
   
   // Se não bater com nenhum, retorna Capitalizado para manter padrão visual
   return cat.charAt(0).toUpperCase() + cat.slice(1).toLowerCase();
+};
+
+/**
+ * Normaliza dados de Dívidas.
+ */
+export const normalizeDebt = (docSnap: any): any => {
+  const data = docSnap.data ? docSnap.data() : docSnap;
+  const id = docSnap.id || data.id;
+
+  return {
+    id,
+    name: data.name || 'Dívida sem nome',
+    totalAmount: data.totalAmount || 0,
+    remainingAmount: data.remainingAmount !== undefined ? data.remainingAmount : (data.totalAmount || 0),
+    installmentAmount: data.installmentAmount || 0,
+    interestRate: data.interestRate || 0,
+    remainingInstallments: data.remainingInstallments || 0,
+    type: data.type || 'OUTRO',
+    status: data.status || 'ATIVA',
+    observation: data.observation || '',
+    strategy: data.strategy || null,
+    createdAt: data.createdAt || null,
+    updatedAt: data.updatedAt || null
+  };
 };
 
 /**

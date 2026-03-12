@@ -46,7 +46,8 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, expanded, se
     {
       label: 'Análises',
       items: [
-        { id: 'resumo', label: 'Resumo Anual', icon: '📅' },
+        { id: 'calendar', label: 'Calendário', icon: '📅' },
+        { id: 'resumo', label: 'Resumo Anual', icon: '📊' },
         { id: 'extrato', label: 'Extrato', icon: '📝' },
         { id: 'categories', label: 'Categorias', icon: '🏷️' },
       ]

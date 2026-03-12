@@ -62,6 +62,7 @@ export interface CreditCardInfo {
   limit: number;      
   usedAmount: number;  
   availableAmount: number; 
+  invoiceAmount: number; // Valor da fatura atual
   dueDay: number;     
   closingDay: number; 
   updatedAt: any;
@@ -154,6 +155,7 @@ export interface IncomeSource {
   dates: number[]; // Dias do mês (1-31) ou dias da semana (0-6)
   amountExpected?: number;
   description: string;
+  targetWalletName?: string;
 }
 
 export interface IncomeProfile {
@@ -291,6 +293,8 @@ export interface Wallet {
   balance: number;
   color?: string;
   icon?: string;
+  note?: string;
+  isActive?: boolean;
   createdAt: any;
   updatedAt: any;
 }
@@ -306,6 +310,7 @@ export interface WalletTransfer {
 }
 
 export type DebtType = 'CARTAO_CREDITO' | 'EMPRESTIMO' | 'CHEQUE_ESPECIAL' | 'FINANCIAMENTO' | 'DIVIDA_INFORMAL' | 'OUTRO';
+export type DebtStatus = 'ATIVA' | 'EM_PAGAMENTO' | 'EM_ESPERA' | 'QUITADA';
 
 export interface Debt {
   id: string;
@@ -316,6 +321,8 @@ export interface Debt {
   interestRate?: number;
   remainingInstallments?: number;
   type: DebtType;
+  status: DebtStatus;
+  observation?: string;
   strategy?: 'SNOWBALL' | 'AVALANCHE';
   createdAt: any;
   updatedAt: any;

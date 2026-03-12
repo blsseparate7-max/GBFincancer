@@ -93,7 +93,7 @@ const CategoriesTab: React.FC<CategoriesTabProps> = ({ uid, categories, loading 
   }
 
   return (
-    <div className="flex-1 flex flex-col h-full bg-[var(--bg-body)]">
+    <div className="flex-1 flex flex-col min-h-full bg-[var(--bg-body)]">
       <div className="p-6 flex justify-between items-end bg-white/5 border-b border-white/10">
         <div>
           <h2 className="text-[10px] font-black text-[var(--green-whatsapp)] uppercase tracking-[0.4em] mb-1">Personalização</h2>

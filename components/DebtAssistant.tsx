@@ -1,43 +1,66 @@
-
 import React, { useState, useMemo, useEffect } from 'react';
-import { Debt, Transaction, Wallet, UserSession, DebtType } from '../types';
+import { Debt, Transaction, Wallet, UserSession, DebtType, DebtStatus, SavingGoal, CreditCardInfo } from '../types';
 import { dispatchEvent } from '../services/eventDispatcher';
 import MoneyInput from './MoneyInput';
 import { collection, onSnapshot, query, orderBy } from 'firebase/firestore';
 import { db } from '../services/firebaseConfig';
-import { TrendingDown, AlertTriangle, CheckCircle2, ArrowRight, Calculator, Zap, Snowflake } from 'lucide-react';
+import { normalizeDebt } from '../services/normalizationService';
+import { 
+  TrendingDown, 
+  AlertTriangle, 
+  CheckCircle2, 
+  ArrowRight, 
+  Calculator, 
+  Zap, 
+  Snowflake, 
+  Filter, 
+  Plus, 
+  Clock, 
+  Target,
+  Info,
+  ChevronRight,
+  Trash2,
+  Edit3,
+  History,
+  DollarSign,
+  PieChart
+} from 'lucide-react';
 
 interface DebtAssistantProps {
   uid: string;
   transactions: Transaction[];
   wallets: Wallet[];
   user: UserSession;
+  goals: SavingGoal[];
+  cards: CreditCardInfo[];
 }
 
-const DebtAssistant: React.FC<DebtAssistantProps> = ({ uid, transactions, wallets, user }) => {
+const DebtAssistant: React.FC<DebtAssistantProps> = ({ uid, transactions, wallets, user, goals, cards }) => {
   const [debts, setDebts] = useState<Debt[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
-  const [showPaymentModal, setShowPaymentModal] = useState<string | null>(null);
-  const [paymentAmount, setPaymentAmount] = useState('');
-  const [selectedWalletId, setSelectedWalletId] = useState('');
-  const [extraPayment, setExtraPayment] = useState(0);
+  const [editingDebt, setEditingDebt] = useState<Debt | null>(null);
+  const [filterStatus, setFilterStatus] = useState<DebtStatus | 'TODAS'>('TODAS');
+  const [extraSimulation, setExtraSimulation] = useState(0);
 
-  // Form state for new debt
-  const [newDebt, setNewDebt] = useState({
+  // Form state for debt
+  const [debtForm, setDebtForm] = useState({
     name: '',
     totalAmount: 0,
+    remainingAmount: 0,
     installmentAmount: 0,
     type: 'CARTAO_CREDITO' as DebtType,
     interestRate: 0,
-    remainingInstallments: 0
+    remainingInstallments: 0,
+    status: 'ATIVA' as DebtStatus,
+    observation: ''
   });
 
   useEffect(() => {
     if (!uid) return;
     const q = query(collection(db, "users", uid, "debts"), orderBy("createdAt", "desc"));
     const unsub = onSnapshot(q, (snap) => {
-      const data = snap.docs.map(d => ({ id: d.id, ...d.data() } as Debt));
+      const data = snap.docs.map(d => normalizeDebt(d));
       setDebts(data);
       setLoading(false);
     });
@@ -47,115 +70,136 @@ const DebtAssistant: React.FC<DebtAssistantProps> = ({ uid, transactions, wallet
   const format = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v);
 
   const stats = useMemo(() => {
-    const totalDebt = debts.reduce((acc, d) => acc + d.remainingAmount, 0);
-    const initialDebt = debts.reduce((acc, d) => acc + d.totalAmount, 0);
-    const totalInstallments = debts.reduce((acc, d) => acc + d.installmentAmount, 0);
+    const activeDebts = debts.filter(d => d.status !== 'QUITADA');
+    const totalRemaining = activeDebts.reduce((acc, d) => acc + (d.remainingAmount || 0), 0);
+    const totalInitial = debts.reduce((acc, d) => acc + (d.totalAmount || 0), 0);
+    const monthlyInstallments = activeDebts.filter(d => d.status === 'EM_PAGAMENTO').reduce((acc, d) => acc + (d.installmentAmount || 0), 0);
     const monthlyIncome = user.incomeProfile?.totalExpectedMonthly || 0;
     
-    const commitmentPercent = monthlyIncome > 0 ? (totalInstallments / monthlyIncome) * 100 : 0;
+    const impactPercent = monthlyIncome > 0 ? (monthlyInstallments / monthlyIncome) * 100 : 0;
     
-    let status: 'controlled' | 'attention' | 'critical' = 'controlled';
-    if (commitmentPercent > 35) status = 'critical';
-    else if (commitmentPercent > 20) status = 'attention';
+    let impactStatus: 'healthy' | 'attention' | 'critical' = 'healthy';
+    if (impactPercent > 35) impactStatus = 'critical';
+    else if (impactPercent > 20) impactStatus = 'attention';
 
-    // Automatic exit plan
-    const monthsToPayOff = totalInstallments > 0 ? totalDebt / totalInstallments : 0;
-    const monthsToPayOffExtra = (totalInstallments + extraPayment) > 0 ? totalDebt / (totalInstallments + extraPayment) : 0;
+    // Suggested Payoff Amount
+    // Sobra = Renda - Gastos do Mês - Metas - Faturas CC
+    const currentMonth = new Date().getMonth();
+    const currentYear = new Date().getFullYear();
+    const monthExpenses = transactions
+      .filter(t => t.type === 'EXPENSE' && new Date(t.date).getMonth() === currentMonth && new Date(t.date).getFullYear() === currentYear)
+      .reduce((acc, t) => acc + Number(t.amount), 0);
+    
+    const totalGoalsMonthly = goals.reduce((acc, g) => acc + ((g.targetAmount - g.currentAmount) / Math.max(1, g.deadlineMonths || 12)), 0);
+    const totalCCInvoices = cards.reduce((acc, c) => acc + (c.invoiceAmount || 0), 0);
+    
+    // Consideramos a sobra real e também o potencial de economia baseado nos limites
+    const rawSurplus = monthlyIncome - monthExpenses - totalGoalsMonthly - totalCCInvoices;
+    
+    // Sugerimos 40% da sobra real + 10% de economia potencial se houver renda
+    const suggestedExtra = Math.max(0, (rawSurplus * 0.4) + (monthlyIncome * 0.05)); 
 
-    // Expense cut suggestions
+    // Time Estimates
+    const monthsCurrent = monthlyInstallments > 0 ? totalRemaining / monthlyInstallments : 0;
+    const monthsSuggested = (monthlyInstallments + suggestedExtra) > 0 ? totalRemaining / (monthlyInstallments + suggestedExtra) : 0;
+    const monthsSimulated = (monthlyInstallments + extraSimulation) > 0 ? totalRemaining / (monthlyInstallments + extraSimulation) : 0;
+
+    // Priority Suggestion
+    const debtsWithInterest = activeDebts.filter(d => (d.interestRate || 0) > 0).sort((a, b) => (b.interestRate || 0) - (a.interestRate || 0));
+    const smallestDebts = activeDebts.sort((a, b) => a.remainingAmount - b.remainingAmount);
+    
+    let priorityDebt = null;
+    let priorityReason = "";
+    if (debtsWithInterest.length > 0) {
+      priorityDebt = debtsWithInterest[0];
+      priorityReason = `Possui a maior taxa de juros (${priorityDebt.interestRate}%). Priorizar esta dívida economizará mais dinheiro a longo prazo (Método Avalanche).`;
+    } else if (smallestDebts.length > 0) {
+      priorityDebt = smallestDebts[0];
+      priorityReason = `É a sua menor dívida. Quitá-la rapidamente dará um fôlego psicológico e financeiro (Método Bola de Neve).`;
+    }
+
+    // Expense Cuts
     const last30Days = new Date();
     last30Days.setDate(last30Days.getDate() - 30);
-    
-    const highExpenseCategories = transactions
+    const categorySpending = transactions
       .filter(t => t.type === 'EXPENSE' && new Date(t.date).getTime() > last30Days.getTime())
       .reduce((acc, t) => {
         acc[t.category] = (acc[t.category] || 0) + Number(t.amount);
         return acc;
       }, {} as Record<string, number>);
 
-    const suggestions = Object.entries(highExpenseCategories)
-      .map(([category, amount]) => ({
-        category,
-        amount: Number(amount),
-        potentialSaving: Number(amount) * 0.5 // Suggest cutting 50%
-      }))
-      .sort((a, b) => b.amount - a.amount)
-      .slice(0, 3);
+    const topCuts = Object.entries(categorySpending)
+      .map(([category, amount]) => ({ category, amount: amount as number, cut: (amount as number) * 0.2 }))
+      .sort((a, b) => (b.amount as number) - (a.amount as number))
+      .slice(0, 2);
 
     return {
-      totalDebt,
-      initialDebt,
-      totalInstallments,
-      monthlyIncome,
-      commitmentPercent,
-      status,
-      monthsToPayOff,
-      monthsToPayOffExtra,
-      suggestions
+      totalRemaining,
+      totalInitial,
+      monthlyInstallments,
+      impactPercent,
+      impactStatus,
+      suggestedExtra,
+      monthsCurrent,
+      monthsSuggested,
+      monthsSimulated,
+      priorityDebt,
+      priorityReason,
+      topCuts,
+      counts: {
+        total: debts.length,
+        inPayment: debts.filter(d => d.status === 'EM_PAGAMENTO').length,
+        paid: debts.filter(d => d.status === 'QUITADA').length,
+        waiting: debts.filter(d => d.status === 'EM_ESPERA').length,
+        active: debts.filter(d => d.status === 'ATIVA').length
+      }
     };
-  }, [debts, user, extraPayment, transactions]);
+  }, [debts, user, transactions, goals, cards, extraSimulation]);
 
-  const handleAddDebt = async () => {
-    if (!newDebt.name || newDebt.totalAmount <= 0 || newDebt.installmentAmount <= 0) {
-      alert("Preencha os campos obrigatórios.");
+  const handleSaveDebt = async () => {
+    if (!debtForm.name || debtForm.totalAmount <= 0) {
+      alert("Preencha o nome e o valor total.");
       return;
     }
 
-    await dispatchEvent(uid, {
-      type: 'CREATE_DEBT',
-      payload: newDebt,
-      source: 'ui',
-      createdAt: new Date()
-    });
+    const payload = {
+      ...debtForm,
+      remainingAmount: debtForm.remainingAmount || debtForm.totalAmount,
+      updatedAt: new Date()
+    };
+
+    if (editingDebt) {
+      await dispatchEvent(uid, {
+        type: 'UPDATE_DEBT',
+        payload: { id: editingDebt.id, ...payload },
+        source: 'ui',
+        createdAt: new Date()
+      });
+    } else {
+      await dispatchEvent(uid, {
+        type: 'CREATE_DEBT',
+        payload: { ...payload, createdAt: new Date() },
+        source: 'ui',
+        createdAt: new Date()
+      });
+    }
 
     setShowAddModal(false);
-    setNewDebt({
+    setEditingDebt(null);
+    resetForm();
+  };
+
+  const resetForm = () => {
+    setDebtForm({
       name: '',
       totalAmount: 0,
+      remainingAmount: 0,
       installmentAmount: 0,
       type: 'CARTAO_CREDITO',
       interestRate: 0,
-      remainingInstallments: 0
-    });
-  };
-
-  const handleRegisterPayment = async () => {
-    if (!showPaymentModal || !paymentAmount || !selectedWalletId) {
-      alert("Preencha todos os campos.");
-      return;
-    }
-
-    const amount = parseFloat(paymentAmount);
-    const wallet = wallets.find(w => w.id === selectedWalletId);
-    
-    if (wallet && amount > wallet.balance) {
-      alert("Saldo insuficiente na carteira selecionada.");
-      return;
-    }
-
-    await dispatchEvent(uid, {
-      type: 'REGISTER_DEBT_PAYMENT',
-      payload: {
-        debtId: showPaymentModal,
-        amount,
-        sourceWalletId: selectedWalletId,
-        date: new Date().toISOString()
-      },
-      source: 'ui',
-      createdAt: new Date()
-    });
-
-    setShowPaymentModal(null);
-    setPaymentAmount('');
-    setSelectedWalletId('');
-  };
-
-  const handleSetStrategy = async (debtId: string, strategy: 'SNOWBALL' | 'AVALANCHE') => {
-    await dispatchEvent(uid, {
-      type: 'UPDATE_DEBT',
-      payload: { id: debtId, strategy },
-      source: 'ui',
-      createdAt: new Date()
+      remainingInstallments: 0,
+      status: 'ATIVA',
+      observation: ''
     });
   };
 
@@ -170,242 +214,313 @@ const DebtAssistant: React.FC<DebtAssistantProps> = ({ uid, transactions, wallet
     }
   };
 
-  if (loading) return <div className="p-10 text-center animate-pulse">Carregando assistente...</div>;
+  const filteredDebts = debts.filter(d => filterStatus === 'TODAS' || d.status === filterStatus);
 
-  if (debts.length === 0 && !showAddModal) {
-    return (
-      <div className="p-6 max-w-2xl mx-auto space-y-8 animate-fade">
-        <div className="text-center space-y-4 py-10">
-          <div className="w-20 h-20 bg-rose-500/10 rounded-full flex items-center justify-center mx-auto mb-6">
-            <AlertTriangle size={40} className="text-rose-500" />
-          </div>
-          <h1 className="text-3xl font-black text-[var(--text-primary)] uppercase italic tracking-tighter">Estou Endividado</h1>
-          <p className="text-[var(--text-muted)] font-medium leading-relaxed">
-            Não se preocupe, o primeiro passo para a liberdade financeira é o diagnóstico. 
-            Vamos mapear suas dívidas e criar um plano real para você sair do vermelho.
-          </p>
-          
-          <div className="bg-[var(--surface)] p-8 rounded-[2.5rem] border border-[var(--border)] shadow-xl text-left space-y-6 mt-10">
-            <h3 className="text-sm font-black text-[var(--text-primary)] uppercase tracking-widest text-center">Diagnóstico Inicial</h3>
-            <p className="text-[10px] text-[var(--text-muted)] text-center italic">Para começar, precisamos entender o tamanho do desafio.</p>
-            
-            <div className="space-y-4">
-              <div className="p-4 bg-[var(--bg-body)] rounded-2xl border border-[var(--border)] flex items-center gap-4">
-                <div className="w-10 h-10 bg-rose-500/20 rounded-full flex items-center justify-center text-rose-500 font-black">1</div>
-                <p className="text-xs font-bold text-[var(--text-primary)]">Mapeie cada uma das suas dívidas individualmente.</p>
-              </div>
-              <div className="p-4 bg-[var(--bg-body)] rounded-2xl border border-[var(--border)] flex items-center gap-4">
-                <div className="w-10 h-10 bg-amber-400/20 rounded-full flex items-center justify-center text-amber-500 font-black">2</div>
-                <p className="text-xs font-bold text-[var(--text-primary)]">Identifique as taxas de juros para priorizar o pagamento.</p>
-              </div>
-              <div className="p-4 bg-[var(--bg-body)] rounded-2xl border border-[var(--border)] flex items-center gap-4">
-                <div className="w-10 h-10 bg-[var(--green-whatsapp)]/20 rounded-full flex items-center justify-center text-[var(--green-whatsapp)] font-black">3</div>
-                <p className="text-xs font-bold text-[var(--text-primary)]">Crie um plano de ataque e acompanhe sua evolução.</p>
-              </div>
-            </div>
-
-            <button 
-              onClick={() => setShowAddModal(true)}
-              className="w-full bg-[var(--green-whatsapp)] text-white py-5 rounded-2xl font-black uppercase text-xs shadow-xl shadow-[var(--green-whatsapp)]/20 hover:scale-[1.02] active:scale-95 transition-all mt-4"
-            >
-              Adicionar Minha Primeira Dívida
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
+  if (loading) return <div className="p-10 text-center animate-pulse font-black uppercase tracking-widest text-[var(--text-muted)]">Analisando passivos...</div>;
 
   return (
-    <div className="p-6 space-y-8 animate-fade pb-32">
-      <header className="flex justify-between items-end">
+    <div className="p-4 space-y-6 animate-fade pb-32 max-w-7xl mx-auto min-h-full">
+      <header className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
         <div>
-          <h2 className="text-[10px] font-black text-rose-500 uppercase tracking-[0.4em] mb-1">Recuperação Financeira</h2>
-          <h1 className="text-3xl font-black text-[var(--text-primary)] uppercase italic tracking-tighter">Estou Endividado</h1>
+          <h2 className="text-[10px] font-black text-rose-500 uppercase tracking-[0.4em] mb-1">Mapa da Liberdade</h2>
+          <h1 className="text-2xl font-black text-[var(--text-primary)] uppercase italic tracking-tighter">Estou Endividado</h1>
         </div>
         <button 
-          onClick={() => setShowAddModal(true)}
-          className="text-[10px] font-black text-[var(--green-whatsapp)] border border-[var(--green-whatsapp)]/30 px-4 py-2 rounded-full uppercase hover:bg-[var(--green-whatsapp)]/10 transition-all"
+          onClick={() => { resetForm(); setShowAddModal(true); }}
+          className="bg-[var(--green-whatsapp)] text-white px-6 py-3 rounded-2xl font-black uppercase text-[10px] shadow-xl shadow-[var(--green-whatsapp)]/20 hover:scale-105 active:scale-95 transition-all flex items-center gap-2"
         >
-          + Nova Dívida
+          <Plus size={16} /> Adicionar Nova Dívida
         </button>
       </header>
 
-      {/* Resumo da Situação */}
-      <section className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="bg-[var(--surface)] p-6 rounded-[2rem] border border-[var(--border)] shadow-sm">
-          <p className="text-[9px] font-black text-[var(--text-muted)] uppercase tracking-widest mb-1">Dívida Total Restante</p>
-          <h3 className="text-2xl font-black text-rose-500 italic">{format(stats.totalDebt)}</h3>
-          <div className="mt-4 h-1.5 w-full bg-[var(--bg-body)] rounded-full overflow-hidden">
-            <div 
-              className="h-full bg-rose-500 transition-all duration-1000" 
-              style={{ width: `${stats.initialDebt > 0 ? ((stats.initialDebt - stats.totalDebt) / stats.initialDebt) * 100 : 0}%` }} 
-            />
+      {/* 1. Visão Geral Superior */}
+      <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="bg-[var(--surface)] p-5 rounded-3xl border border-[var(--border)] shadow-sm">
+          <p className="text-[10px] font-black text-[var(--text-muted)] uppercase tracking-widest mb-2">Total em Dívidas</p>
+          <h3 className="text-2xl font-black text-rose-500 italic">{format(stats.totalRemaining)}</h3>
+          <div className="flex flex-wrap gap-2 mt-3">
+            <span className="text-[9px] font-bold px-2 py-1 bg-rose-500/10 text-rose-500 rounded-lg uppercase">{stats.counts.total} Total</span>
+            <span className="text-[9px] font-bold px-2 py-1 bg-[var(--green-whatsapp)]/10 text-[var(--green-whatsapp)] rounded-lg uppercase">{stats.counts.paid} Quitadas</span>
           </div>
-          <p className="text-[8px] font-bold text-[var(--text-muted)] uppercase mt-2">
-            {stats.initialDebt > 0 ? (((stats.initialDebt - stats.totalDebt) / stats.initialDebt) * 100).toFixed(1) : 0}% Pago
+        </div>
+
+        <div className="bg-[var(--surface)] p-5 rounded-3xl border border-[var(--border)] shadow-sm">
+          <p className="text-[10px] font-black text-[var(--text-muted)] uppercase tracking-widest mb-2">Parcelas Mensais</p>
+          <h3 className="text-2xl font-black text-[var(--text-primary)] italic">{format(stats.monthlyInstallments)}</h3>
+          <p className="text-[9px] font-bold text-[var(--text-muted)] uppercase mt-3 flex items-center gap-1">
+            <Clock size={12} /> {stats.counts.inPayment} em pagamento
           </p>
         </div>
 
-        <div className="bg-[var(--surface)] p-6 rounded-[2rem] border border-[var(--border)] shadow-sm">
-          <p className="text-[9px] font-black text-[var(--text-muted)] uppercase tracking-widest mb-1">Parcelas Mensais</p>
-          <h3 className="text-2xl font-black text-[var(--text-primary)] italic">{format(stats.totalInstallments)}</h3>
-          <p className="text-[8px] font-bold text-[var(--text-muted)] uppercase mt-2">{debts.length} Dívidas ativas</p>
-        </div>
-
-        <div className={`p-6 rounded-[2rem] border shadow-sm ${
-          stats.status === 'critical' ? 'bg-rose-500/10 border-rose-500/20 text-rose-500' :
-          stats.status === 'attention' ? 'bg-amber-400/10 border-amber-400/20 text-amber-500' :
+        <div className={`p-5 rounded-3xl border shadow-sm ${
+          stats.impactStatus === 'critical' ? 'bg-rose-500/10 border-rose-500/20 text-rose-500' :
+          stats.impactStatus === 'attention' ? 'bg-amber-400/10 border-amber-400/20 text-amber-500' :
           'bg-[var(--green-whatsapp)]/10 border-[var(--green-whatsapp)]/20 text-[var(--green-whatsapp)]'
         }`}>
-          <p className="text-[9px] font-black uppercase tracking-widest mb-1">Comprometimento da Renda</p>
-          <h3 className="text-2xl font-black italic">{stats.commitmentPercent.toFixed(1)}%</h3>
-          <p className="text-[8px] font-bold uppercase mt-2">
-            {stats.status === 'critical' ? '⚠️ Situação Crítica' :
-             stats.status === 'attention' ? '⚡ Atenção Necessária' :
-             '✅ Situação Controlada'}
+          <p className="text-[10px] font-black uppercase tracking-widest mb-2">Impacto na Renda</p>
+          <h3 className="text-2xl font-black italic">{stats.impactPercent.toFixed(1)}%</h3>
+          <div className="mt-3 space-y-2">
+            <div className="h-1.5 w-full bg-black/10 rounded-full overflow-hidden">
+              <div 
+                className={`h-full transition-all duration-1000 ${
+                  stats.impactStatus === 'critical' ? 'bg-rose-500' :
+                  stats.impactStatus === 'attention' ? 'bg-amber-400' :
+                  'bg-[var(--green-whatsapp)]'
+                }`}
+                style={{ width: `${Math.min(100, stats.impactPercent)}%` }}
+              />
+            </div>
+            <p className="text-[9px] font-black uppercase flex items-center gap-1">
+              {stats.impactStatus === 'critical' ? '⚠️ Nível Crítico' :
+               stats.impactStatus === 'attention' ? '⚡ Atenção' :
+               '✅ Nível Saudável'}
+            </p>
+          </div>
+        </div>
+
+        <div className="bg-[var(--green-whatsapp)] p-5 rounded-3xl text-white shadow-xl shadow-[var(--green-whatsapp)]/20 relative overflow-hidden group">
+          <div className="absolute -right-4 -bottom-4 opacity-10 group-hover:scale-110 transition-transform">
+            <Zap size={100} />
+          </div>
+          <p className="text-[10px] font-black uppercase tracking-widest mb-2 opacity-80">Valor Sugerido para Quitar</p>
+          <h3 className="text-2xl font-black italic">{format(stats.suggestedExtra)}</h3>
+          <p className="text-[9px] font-bold uppercase mt-3 opacity-80 flex items-center gap-1">
+            <Calculator size={12} /> Acelere sua liberdade
           </p>
         </div>
       </section>
 
-      {/* Plano de Saída e Simulador */}
-      <section className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-[var(--surface)] p-8 rounded-[2.5rem] border border-[var(--border)] shadow-sm space-y-6">
-          <div className="flex items-center gap-3">
-            <Calculator className="text-[var(--green-whatsapp)]" size={20} />
-            <h3 className="text-xs font-black text-[var(--text-primary)] uppercase tracking-widest">Plano de Saída</h3>
+      {/* 2. Tempo Estimado e Simulação */}
+      <section className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-2 bg-[var(--surface)] p-6 rounded-3xl border border-[var(--border)] space-y-6">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <Clock className="text-amber-500" size={20} />
+              <h3 className="text-xs font-black text-[var(--text-primary)] uppercase tracking-widest">Tempo para ser Livre</h3>
+            </div>
           </div>
-          
-          <div className="space-y-4">
-            <div className="p-4 bg-[var(--bg-body)] rounded-2xl border border-[var(--border)]">
-              <p className="text-[10px] text-[var(--text-muted)] font-bold uppercase mb-2">Cenário Atual</p>
-              <p className="text-sm font-medium leading-relaxed">
-                Pagando <span className="font-black text-[var(--text-primary)]">{format(stats.totalInstallments)}</span> por mês, 
-                sua dívida acaba em aproximadamente <span className="font-black text-rose-500">{Math.ceil(stats.monthsToPayOff)} meses</span>.
-              </p>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="space-y-4">
+              <div className="p-4 bg-[var(--bg-body)] rounded-2xl border border-[var(--border)]">
+                <p className="text-[9px] font-black text-[var(--text-muted)] uppercase mb-2">No ritmo atual</p>
+                <p className="text-lg font-black text-[var(--text-primary)] italic">{Math.ceil(stats.monthsCurrent)} Meses</p>
+                <p className="text-[8px] font-bold text-[var(--text-muted)] uppercase mt-1">Pagando {format(stats.monthlyInstallments)}/mês</p>
+              </div>
+              <div className="p-4 bg-[var(--green-whatsapp)]/5 rounded-2xl border border-[var(--green-whatsapp)]/20">
+                <p className="text-[9px] font-black text-[var(--green-whatsapp)] uppercase mb-2">Com valor sugerido</p>
+                <p className="text-lg font-black text-[var(--green-whatsapp)] italic">{Math.ceil(stats.monthsSuggested)} Meses</p>
+                <p className="text-[8px] font-bold text-[var(--green-whatsapp)] uppercase mt-1">Economia de {Math.ceil(Math.abs(stats.monthsCurrent - stats.monthsSuggested))} meses</p>
+              </div>
             </div>
 
-            <div className="p-4 bg-[var(--green-whatsapp)]/5 rounded-2xl border border-[var(--green-whatsapp)]/20">
-              <p className="text-[10px] text-[var(--green-whatsapp)] font-bold uppercase mb-2">Simulador de Aceleração</p>
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-bold text-[var(--text-muted)] uppercase">Aporte extra mensal:</span>
-                  <span className="text-sm font-black text-[var(--green-whatsapp)]">{format(extraPayment)}</span>
-                </div>
-                <input 
-                  type="range" 
-                  min="0" 
-                  max="2000" 
-                  step="50"
-                  value={extraPayment}
-                  onChange={(e) => setExtraPayment(Number(e.target.value))}
-                  className="w-full h-1.5 bg-[var(--bg-body)] rounded-full appearance-none cursor-pointer accent-[var(--green-whatsapp)]"
-                />
-                <p className="text-sm font-medium leading-relaxed text-[var(--text-primary)]">
-                  Se pagar <span className="font-black text-[var(--green-whatsapp)]">{format(stats.totalInstallments + extraPayment)}</span> por mês, 
-                  sua dívida acaba em <span className="font-black text-[var(--green-whatsapp)]">{Math.ceil(stats.monthsToPayOffExtra)} meses</span>.
-                  <br />
-                  <span className="text-[10px] font-bold text-[var(--green-whatsapp)] uppercase">
-                    Você economiza {Math.ceil(stats.monthsToPayOff - stats.monthsToPayOffExtra)} meses de juros!
-                  </span>
+            <div className="p-4 bg-[var(--bg-body)] rounded-2xl border border-[var(--border)] space-y-4">
+              <div className="flex justify-between items-center">
+                <h4 className="text-[10px] font-black text-[var(--text-primary)] uppercase">Simulador de Aporte Extra</h4>
+                <span className="text-sm font-black text-[var(--green-whatsapp)]">{format(extraSimulation)}</span>
+              </div>
+              <input 
+                type="range" min="0" max="5000" step="50" value={extraSimulation}
+                onChange={(e) => setExtraSimulation(Number(e.target.value))}
+                className="w-full h-1.5 bg-[var(--surface)] rounded-full appearance-none cursor-pointer accent-[var(--green-whatsapp)]"
+              />
+              <div className="pt-2 border-t border-[var(--border)]">
+                <p className="text-[10px] font-bold text-[var(--text-muted)] uppercase">Resultado da Simulação:</p>
+                <p className="text-base font-black text-[var(--text-primary)] italic">
+                  Quitação em <span className="text-[var(--green-whatsapp)]">{Math.ceil(stats.monthsSimulated)} meses</span>
                 </p>
               </div>
             </div>
           </div>
         </div>
 
-        <div className="bg-[var(--surface)] p-8 rounded-[2.5rem] border border-[var(--border)] shadow-sm space-y-6">
+        <div className="bg-[var(--surface)] p-6 rounded-3xl border border-[var(--border)] space-y-6">
           <div className="flex items-center gap-3">
             <TrendingDown className="text-rose-500" size={20} />
-            <h3 className="text-xs font-black text-[var(--text-primary)] uppercase tracking-widest">Sugestão de Cortes</h3>
+            <h3 className="text-xs font-black text-[var(--text-primary)] uppercase tracking-widest">Cortes Sugeridos</h3>
           </div>
-          
           <div className="space-y-4">
-            {stats.suggestions.map((s, i) => (
-              <div key={i} className="flex items-center justify-between p-4 bg-[var(--bg-body)] rounded-2xl border border-[var(--border)]">
+            {stats.topCuts.length > 0 ? stats.topCuts.map((cut, i) => (
+              <div key={i} className="flex justify-between items-center p-4 bg-[var(--bg-body)] rounded-2xl border border-[var(--border)]">
                 <div>
-                  <p className="text-[10px] font-black text-[var(--text-primary)] uppercase">{s.category}</p>
-                  <p className="text-[9px] font-bold text-[var(--text-muted)] uppercase">Gasto atual: {format(s.amount)}</p>
+                  <p className="text-[10px] font-black text-[var(--text-primary)] uppercase">{cut.category}</p>
+                  <p className="text-[8px] font-bold text-[var(--text-muted)] uppercase">Gasto: {format(cut.amount)}</p>
                 </div>
                 <div className="text-right">
-                  <p className="text-[10px] font-black text-[var(--green-whatsapp)] uppercase">Corte sugerido</p>
-                  <p className="text-sm font-black text-[var(--green-whatsapp)]">+{format(s.potentialSaving)}</p>
+                  <p className="text-[10px] font-black text-[var(--green-whatsapp)] uppercase">Liberar</p>
+                  <p className="text-sm font-black text-[var(--green-whatsapp)]">+{format(cut.cut)}</p>
                 </div>
               </div>
+            )) : (
+              <div className="text-center py-4 text-[10px] text-[var(--text-muted)] uppercase font-bold italic">Sem dados de gastos recentes</div>
+            )}
+            <div className="p-4 bg-amber-400/5 rounded-2xl border border-amber-400/20 flex gap-3">
+              <Info size={16} className="text-amber-500 shrink-0" />
+              <p className="text-[9px] text-[var(--text-muted)] leading-relaxed italic">
+                Reduzindo 20% desses gastos, você libera <span className="font-black text-[var(--text-primary)]">{format(stats.topCuts.reduce((a, b) => a + b.cut, 0))}</span> extras para suas dívidas.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* 3. Prioridade de Pagamento */}
+      {stats.priorityDebt && (
+        <section className="bg-[var(--surface)] p-6 rounded-3xl border-2 border-[var(--green-whatsapp)]/30 shadow-xl relative overflow-hidden">
+          <div className="absolute top-0 right-0 p-4 opacity-10">
+            {stats.priorityDebt.interestRate ? <Zap size={80} /> : <Snowflake size={80} />}
+          </div>
+          <div className="flex items-center gap-3 mb-4">
+            <div className="w-8 h-8 bg-[var(--green-whatsapp)] rounded-full flex items-center justify-center text-white">
+              <ArrowRight size={18} />
+            </div>
+            <h3 className="text-xs font-black text-[var(--text-primary)] uppercase tracking-widest">Sugestão de Prioridade</h3>
+          </div>
+          <div className="flex flex-col md:flex-row md:items-center gap-6">
+            <div className="flex-1">
+              <h4 className="text-lg font-black text-[var(--text-primary)] uppercase italic mb-2">{stats.priorityDebt.name}</h4>
+              <p className="text-sm text-[var(--text-muted)] leading-relaxed max-w-2xl">
+                {stats.priorityReason}
+              </p>
+            </div>
+            <div className="bg-[var(--bg-body)] p-4 rounded-2xl border border-[var(--border)] min-w-[200px]">
+              <p className="text-[9px] font-black text-[var(--text-muted)] uppercase mb-1">Valor Restante</p>
+              <p className="text-base font-black text-rose-500">{format(stats.priorityDebt.remainingAmount)}</p>
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* 4. Filtros e Lista de Dívidas */}
+      <section className="space-y-6">
+        <div className="flex flex-col md:flex-row justify-between items-center gap-4">
+          <div className="flex items-center gap-2 overflow-x-auto pb-2 w-full md:w-auto no-scrollbar">
+            {(['TODAS', 'ATIVA', 'EM_PAGAMENTO', 'EM_ESPERA', 'QUITADA'] as const).map(status => (
+              <button 
+                key={status}
+                onClick={() => setFilterStatus(status)}
+                className={`px-4 py-2 rounded-full text-[9px] font-black uppercase tracking-widest transition-all whitespace-nowrap border ${
+                  filterStatus === status 
+                  ? 'bg-[var(--text-primary)] text-white border-[var(--text-primary)] shadow-lg' 
+                  : 'bg-[var(--surface)] text-[var(--text-muted)] border-[var(--border)] hover:border-[var(--text-primary)]'
+                }`}
+              >
+                {status.replace('_', ' ')}
+              </button>
             ))}
-            <p className="text-[9px] text-[var(--text-muted)] font-medium italic text-center">
-              Reduzindo esses gastos pela metade, você libera <span className="font-black text-[var(--green-whatsapp)]">{format(stats.suggestions.reduce((acc, s) => acc + s.potentialSaving, 0))}</span> extras por mês.
-            </p>
+          </div>
+          <div className="flex items-center gap-2 text-[10px] font-black text-[var(--text-muted)] uppercase">
+            <Filter size={14} /> {filteredDebts.length} Dívidas encontradas
           </div>
         </div>
-      </section>
 
-      {/* Estratégias */}
-      <section className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="bg-[var(--surface)] p-6 rounded-[2rem] border border-[var(--border)] shadow-sm hover:border-[var(--green-whatsapp)] transition-all cursor-pointer group">
-          <div className="flex items-center gap-3 mb-4">
-            <Snowflake className="text-blue-400" size={20} />
-            <h4 className="text-xs font-black text-[var(--text-primary)] uppercase tracking-widest">Método Bola de Neve</h4>
-          </div>
-          <p className="text-[10px] text-[var(--text-muted)] leading-relaxed">
-            Foque em pagar primeiro as <span className="font-bold text-[var(--text-primary)]">menores dívidas</span>. 
-            Isso gera vitórias rápidas e motivação psicológica para continuar o plano.
-          </p>
-        </div>
-
-        <div className="bg-[var(--surface)] p-6 rounded-[2rem] border border-[var(--border)] shadow-sm hover:border-rose-500 transition-all cursor-pointer group">
-          <div className="flex items-center gap-3 mb-4">
-            <Zap className="text-amber-400" size={20} />
-            <h4 className="text-xs font-black text-[var(--text-primary)] uppercase tracking-widest">Método Avalanche</h4>
-          </div>
-          <p className="text-[10px] text-[var(--text-muted)] leading-relaxed">
-            Foque em pagar primeiro as dívidas com <span className="font-bold text-[var(--text-primary)]">maiores juros</span>. 
-            Matematicamente, é a forma mais barata e rápida de quitar tudo.
-          </p>
-        </div>
-      </section>
-
-      {/* Lista de Dívidas */}
-      <section className="space-y-4">
-        <h3 className="text-[10px] font-black text-[var(--text-muted)] uppercase tracking-widest italic px-1">Suas Dívidas Ativas</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {debts.map(debt => {
-            const pct = ((debt.totalAmount - debt.remainingAmount) / debt.totalAmount) * 100;
+          {filteredDebts.map(debt => {
+            const progress = ((debt.totalAmount - debt.remainingAmount) / debt.totalAmount) * 100;
+            const isPaid = debt.status === 'QUITADA';
+            const inPayment = debt.status === 'EM_PAGAMENTO';
+
             return (
-              <div key={debt.id} className="bg-[var(--surface)] p-6 rounded-[2rem] border border-[var(--border)] shadow-sm space-y-4">
-                <div className="flex justify-between items-start">
+              <div key={debt.id} className={`bg-[var(--surface)] p-5 rounded-3xl border border-[var(--border)] shadow-sm hover:shadow-md transition-all group relative overflow-hidden ${isPaid ? 'opacity-60' : ''}`}>
+                <div className={`absolute top-0 left-0 w-1.5 h-full ${
+                  debt.status === 'QUITADA' ? 'bg-[var(--green-whatsapp)]' :
+                  debt.status === 'EM_PAGAMENTO' ? 'bg-amber-400' :
+                  debt.status === 'EM_ESPERA' ? 'bg-blue-400' : 'bg-rose-500'
+                }`} />
+
+                <div className="flex justify-between items-start mb-6">
                   <div>
-                    <h4 className="text-sm font-black text-[var(--text-primary)] uppercase italic">{debt.name}</h4>
-                    <p className="text-[9px] font-bold text-[var(--text-muted)] uppercase">{debt.type.replace('_', ' ')}</p>
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className={`text-[8px] font-black px-2 py-0.5 rounded-full uppercase ${
+                        debt.status === 'QUITADA' ? 'bg-[var(--green-whatsapp)]/10 text-[var(--green-whatsapp)]' :
+                        debt.status === 'EM_PAGAMENTO' ? 'bg-amber-400/10 text-amber-500' :
+                        debt.status === 'EM_ESPERA' ? 'bg-blue-400/10 text-blue-500' : 'bg-rose-500/10 text-rose-500'
+                      }`}>
+                        {debt.status.replace('_', ' ')}
+                      </span>
+                      <span className="text-[8px] font-bold text-[var(--text-muted)] uppercase tracking-widest">{debt.type.replace('_', ' ')}</span>
+                    </div>
+                    <h4 className="text-lg font-black text-[var(--text-primary)] uppercase italic tracking-tight">{debt.name}</h4>
+                    {debt.observation && <p className="text-[10px] text-[var(--text-muted)] italic mt-1 truncate max-w-[200px]">{debt.observation}</p>}
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-all">
                     <button 
-                      onClick={() => setShowPaymentModal(debt.id)}
-                      className="bg-[var(--text-primary)] text-white px-4 py-2 rounded-xl text-[9px] font-black uppercase hover:scale-105 transition-all"
+                      onClick={() => { setEditingDebt(debt); setDebtForm({...debt}); setShowAddModal(true); }}
+                      className="p-2 text-[var(--text-muted)] hover:text-[var(--green-whatsapp)] hover:bg-[var(--green-whatsapp)]/10 rounded-xl transition-all"
                     >
-                      Pagar
+                      <Edit3 size={16} />
                     </button>
                     <button 
                       onClick={() => handleDeleteDebt(debt.id)}
-                      className="p-2 text-[var(--text-muted)] hover:text-rose-500 transition-colors"
+                      className="p-2 text-[var(--text-muted)] hover:text-rose-500 hover:bg-rose-500/10 rounded-xl transition-all"
                     >
-                      <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
+                      <Trash2 size={16} />
                     </button>
                   </div>
                 </div>
 
-                <div className="space-y-2">
-                  <div className="flex justify-between text-[10px] font-black">
-                    <span className="text-[var(--text-muted)] uppercase">Restante: {format(debt.remainingAmount)}</span>
-                    <span className="text-[var(--text-primary)]">{pct.toFixed(0)}%</span>
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <div className="flex justify-between text-[10px] font-black uppercase">
+                      <span className="text-[var(--text-muted)]">Progresso da Quitação</span>
+                      <span className="text-[var(--text-primary)]">{progress.toFixed(0)}%</span>
+                    </div>
+                    <div className="h-2.5 w-full bg-[var(--bg-body)] rounded-full overflow-hidden border border-[var(--border)]">
+                      <div 
+                        className={`h-full transition-all duration-1000 ${isPaid ? 'bg-[var(--green-whatsapp)]' : 'bg-rose-500'}`} 
+                        style={{ width: `${progress}%` }} 
+                      />
+                    </div>
+                    <div className="flex justify-between text-[9px] font-bold text-[var(--text-muted)] uppercase italic">
+                      <span>Dívida Inicial: {format(debt.totalAmount)}</span>
+                      <span>Restante: {format(debt.remainingAmount)}</span>
+                    </div>
                   </div>
-                  <div className="h-2 w-full bg-[var(--bg-body)] rounded-full overflow-hidden">
-                    <div className="h-full bg-[var(--green-whatsapp)] transition-all duration-1000" style={{ width: `${pct}%` }} />
-                  </div>
-                  <div className="flex justify-between text-[9px] font-bold text-[var(--text-muted)] uppercase">
-                    <span>Parcela: {format(debt.installmentAmount)}</span>
-                    <span>Total: {format(debt.totalAmount)}</span>
-                  </div>
+
+                  {inPayment && (
+                    <div className="p-4 bg-[var(--bg-body)] rounded-2xl border border-[var(--border)] grid grid-cols-2 gap-4">
+                      <div>
+                        <p className="text-[9px] font-black text-[var(--text-muted)] uppercase mb-1">Parcela Atual</p>
+                        <p className="text-sm font-black text-[var(--text-primary)]">{format(debt.installmentAmount)}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-[9px] font-black text-[var(--text-muted)] uppercase mb-1">Previsão de Quitação</p>
+                        <p className="text-sm font-black text-rose-500 italic">{Math.ceil(debt.remainingAmount / debt.installmentAmount)} Meses</p>
+                      </div>
+                    </div>
+                  )}
+
+                  {!isPaid && (
+                    <div className="space-y-3">
+                      <p className="text-[9px] font-black text-[var(--text-muted)] uppercase tracking-widest text-center">Simulação de Aceleração</p>
+                      <div className="flex gap-2">
+                        <button 
+                          onClick={() => {
+                            const extra = 100;
+                            const currentMonths = Math.ceil(debt.remainingAmount / debt.installmentAmount);
+                            const newMonths = Math.ceil(debt.remainingAmount / (debt.installmentAmount + extra));
+                            alert(`Simulação: Pagando +R$ ${extra}/mês, você quita em ${newMonths} meses (Economia de ${currentMonths - newMonths} meses).`);
+                          }}
+                          className="flex-1 py-3 bg-[var(--bg-body)] border border-[var(--border)] rounded-xl text-[10px] font-black uppercase text-[var(--text-muted)] hover:text-[var(--green-whatsapp)] hover:border-[var(--green-whatsapp)] transition-all flex flex-col items-center gap-1"
+                        >
+                          <span>+R$100</span>
+                          <span className="text-[8px] opacity-60">Acelerar</span>
+                        </button>
+                        <button 
+                          onClick={() => {
+                            const extra = 200;
+                            const currentMonths = Math.ceil(debt.remainingAmount / debt.installmentAmount);
+                            const newMonths = Math.ceil(debt.remainingAmount / (debt.installmentAmount + extra));
+                            alert(`Simulação: Pagando +R$ ${extra}/mês, você quita em ${newMonths} meses (Economia de ${currentMonths - newMonths} meses).`);
+                          }}
+                          className="flex-1 py-3 bg-[var(--bg-body)] border border-[var(--border)] rounded-xl text-[10px] font-black uppercase text-[var(--text-muted)] hover:text-[var(--green-whatsapp)] hover:border-[var(--green-whatsapp)] transition-all flex flex-col items-center gap-1"
+                        >
+                          <span>+R$200</span>
+                          <span className="text-[8px] opacity-60">Acelerar</span>
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             );
@@ -413,132 +528,111 @@ const DebtAssistant: React.FC<DebtAssistantProps> = ({ uid, transactions, wallet
         </div>
       </section>
 
-      {/* Modal Adicionar Dívida */}
+      {/* Modal Adicionar/Editar Dívida */}
       {showAddModal && (
         <div className="fixed inset-0 z-[1000] bg-black/40 backdrop-blur-md flex items-center justify-center p-6">
-          <div className="bg-[var(--surface)] w-full max-w-md rounded-[3rem] p-10 shadow-2xl relative animate-fade max-h-[90vh] overflow-y-auto">
-            <button onClick={() => setShowAddModal(false)} className="absolute top-10 right-10 text-[var(--text-muted)] font-black text-xl">✕</button>
-            <h3 className="text-2xl font-black text-[var(--text-primary)] uppercase italic mb-2 text-center">Diagnóstico de Dívida</h3>
-            <p className="text-[10px] text-[var(--text-muted)] font-black uppercase mb-8 text-center tracking-widest opacity-60 italic">Seja honesto com seus números</p>
+          <div className="bg-[var(--surface)] w-full max-w-lg rounded-3xl p-8 shadow-2xl relative animate-fade max-h-[90vh] overflow-y-auto no-scrollbar">
+            <button onClick={() => setShowAddModal(false)} className="absolute top-8 right-8 text-[var(--text-muted)] font-black text-xl hover:text-rose-500 transition-colors">✕</button>
+            <h3 className="text-xl font-black text-[var(--text-primary)] uppercase italic mb-1 text-center">{editingDebt ? 'Editar Dívida' : 'Nova Dívida'}</h3>
+            <p className="text-[9px] text-[var(--text-muted)] font-black uppercase mb-6 text-center tracking-widest opacity-60 italic">Diagnóstico para sua liberdade financeira</p>
             
             <div className="space-y-6">
               <div className="space-y-2">
                 <label className="text-[9px] font-black text-[var(--text-muted)] uppercase ml-1">Nome da Dívida</label>
                 <input 
                   className="w-full bg-[var(--bg-body)] rounded-2xl p-4 text-sm font-bold text-[var(--text-primary)] outline-none border border-transparent focus:border-[var(--green-whatsapp)] transition-all" 
-                  placeholder="Ex: Empréstimo Banco X"
-                  value={newDebt.name}
-                  onChange={e => setNewDebt({...newDebt, name: e.target.value})}
+                  placeholder="Ex: Cartão Nubank, Empréstimo Itaú..."
+                  value={debtForm.name}
+                  onChange={e => setDebtForm({...debtForm, name: e.target.value})}
                 />
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <label className="text-[9px] font-black text-[var(--text-muted)] uppercase ml-1">Valor Total</label>
+                  <label className="text-[9px] font-black text-[var(--text-muted)] uppercase ml-1">Valor Total Original</label>
                   <MoneyInput 
                     className="w-full bg-[var(--bg-body)] rounded-2xl p-4 text-sm font-bold text-[var(--text-primary)] outline-none border border-transparent focus:border-[var(--green-whatsapp)] transition-all" 
-                    value={newDebt.totalAmount}
-                    onChange={val => setNewDebt({...newDebt, totalAmount: val})}
+                    value={debtForm.totalAmount}
+                    onChange={val => setDebtForm({...debtForm, totalAmount: val})}
                   />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-[9px] font-black text-[var(--text-muted)] uppercase ml-1">Valor Parcela</label>
+                  <label className="text-[9px] font-black text-[var(--text-muted)] uppercase ml-1">Valor Restante Atual</label>
                   <MoneyInput 
                     className="w-full bg-[var(--bg-body)] rounded-2xl p-4 text-sm font-bold text-[var(--text-primary)] outline-none border border-transparent focus:border-[var(--green-whatsapp)] transition-all" 
-                    value={newDebt.installmentAmount}
-                    onChange={val => setNewDebt({...newDebt, installmentAmount: val})}
+                    value={debtForm.remainingAmount}
+                    onChange={val => setDebtForm({...debtForm, remainingAmount: val})}
                   />
                 </div>
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-[9px] font-black text-[var(--text-muted)] uppercase ml-1">Tipo da Dívida</label>
-                <select 
-                  className="w-full bg-[var(--bg-body)] rounded-2xl p-4 text-sm font-bold text-[var(--text-primary)] outline-none border border-transparent focus:border-[var(--green-whatsapp)] transition-all appearance-none"
-                  value={newDebt.type}
-                  onChange={e => setNewDebt({...newDebt, type: e.target.value as DebtType})}
-                >
-                  <option value="CARTAO_CREDITO">Cartão de Crédito</option>
-                  <option value="EMPRESTIMO">Empréstimo</option>
-                  <option value="CHEQUE_ESPECIAL">Cheque Especial</option>
-                  <option value="FINANCIAMENTO">Financiamento</option>
-                  <option value="DIVIDA_INFORMAL">Dívida Informal</option>
-                  <option value="OUTRO">Outro</option>
-                </select>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <label className="text-[9px] font-black text-[var(--text-muted)] uppercase ml-1">Taxa Juros % (Opcional)</label>
-                  <input 
-                    type="number"
+                  <label className="text-[9px] font-black text-[var(--text-muted)] uppercase ml-1">Valor da Parcela</label>
+                  <MoneyInput 
                     className="w-full bg-[var(--bg-body)] rounded-2xl p-4 text-sm font-bold text-[var(--text-primary)] outline-none border border-transparent focus:border-[var(--green-whatsapp)] transition-all" 
-                    placeholder="0.00"
-                    value={newDebt.interestRate || ''}
-                    onChange={e => setNewDebt({...newDebt, interestRate: parseFloat(e.target.value)})}
+                    value={debtForm.installmentAmount}
+                    onChange={val => setDebtForm({...debtForm, installmentAmount: val})}
                   />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-[9px] font-black text-[var(--text-muted)] uppercase ml-1">Parcelas Restantes</label>
+                  <label className="text-[9px] font-black text-[var(--text-muted)] uppercase ml-1">Taxa de Juros % (Opcional)</label>
                   <input 
-                    type="number"
+                    type="number" step="0.01"
                     className="w-full bg-[var(--bg-body)] rounded-2xl p-4 text-sm font-bold text-[var(--text-primary)] outline-none border border-transparent focus:border-[var(--green-whatsapp)] transition-all" 
-                    placeholder="0"
-                    value={newDebt.remainingInstallments || ''}
-                    onChange={e => setNewDebt({...newDebt, remainingInstallments: parseInt(e.target.value)})}
+                    placeholder="Ex: 12.5"
+                    value={debtForm.interestRate || ''}
+                    onChange={e => setDebtForm({...debtForm, interestRate: parseFloat(e.target.value)})}
                   />
                 </div>
               </div>
 
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <label className="text-[9px] font-black text-[var(--text-muted)] uppercase ml-1">Tipo</label>
+                  <select 
+                    className="w-full bg-[var(--bg-body)] rounded-2xl p-4 text-sm font-bold text-[var(--text-primary)] outline-none border border-transparent focus:border-[var(--green-whatsapp)] transition-all appearance-none"
+                    value={debtForm.type}
+                    onChange={e => setDebtForm({...debtForm, type: e.target.value as DebtType})}
+                  >
+                    <option value="CARTAO_CREDITO">Cartão de Crédito</option>
+                    <option value="EMPRESTIMO">Empréstimo</option>
+                    <option value="CHEQUE_ESPECIAL">Cheque Especial</option>
+                    <option value="FINANCIAMENTO">Financiamento</option>
+                    <option value="DIVIDA_INFORMAL">Dívida Informal</option>
+                    <option value="OUTRO">Outro</option>
+                  </select>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[9px] font-black text-[var(--text-muted)] uppercase ml-1">Status</label>
+                  <select 
+                    className="w-full bg-[var(--bg-body)] rounded-2xl p-4 text-sm font-bold text-[var(--text-primary)] outline-none border border-transparent focus:border-[var(--green-whatsapp)] transition-all appearance-none"
+                    value={debtForm.status}
+                    onChange={e => setDebtForm({...debtForm, status: e.target.value as DebtStatus})}
+                  >
+                    <option value="ATIVA">Ativa (Não organizada)</option>
+                    <option value="EM_PAGAMENTO">Em Pagamento</option>
+                    <option value="EM_ESPERA">Em Espera</option>
+                    <option value="QUITADA">Quitada</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-[9px] font-black text-[var(--text-muted)] uppercase ml-1">Observação / Notas</label>
+                <textarea 
+                  className="w-full bg-[var(--bg-body)] rounded-2xl p-4 text-sm font-bold text-[var(--text-primary)] outline-none border border-transparent focus:border-[var(--green-whatsapp)] transition-all h-24 resize-none" 
+                  placeholder="Detalhes sobre a dívida, acordos, etc..."
+                  value={debtForm.observation}
+                  onChange={e => setDebtForm({...debtForm, observation: e.target.value})}
+                />
+              </div>
+
               <button 
-                onClick={handleAddDebt}
+                onClick={handleSaveDebt}
                 className="w-full bg-[var(--green-whatsapp)] text-white py-5 rounded-2xl font-black text-[11px] uppercase shadow-2xl mt-4 active:scale-95 transition-all"
               >
-                Salvar Diagnóstico
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Modal Registrar Pagamento */}
-      {showPaymentModal && (
-        <div className="fixed inset-0 z-[1000] bg-black/40 backdrop-blur-md flex items-center justify-center p-6">
-          <div className="bg-[var(--surface)] w-full max-w-sm rounded-[3rem] p-10 shadow-2xl relative animate-fade">
-            <button onClick={() => setShowPaymentModal(null)} className="absolute top-10 right-10 text-[var(--text-muted)] font-black text-xl">✕</button>
-            <h3 className="text-xl font-black text-[var(--text-primary)] uppercase italic mb-6 text-center">Registrar Pagamento</h3>
-            
-            <div className="space-y-6">
-              <div className="space-y-2">
-                <label className="text-[9px] font-black text-[var(--text-muted)] uppercase ml-1">Valor Pago</label>
-                <MoneyInput 
-                  className="w-full bg-[var(--bg-body)] rounded-2xl p-4 text-sm font-bold text-[var(--text-primary)] outline-none border border-transparent focus:border-[var(--green-whatsapp)] transition-all" 
-                  value={Number(paymentAmount) || 0}
-                  onChange={val => setPaymentAmount(val.toString())}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-[9px] font-black text-[var(--text-muted)] uppercase ml-1">Origem do Dinheiro</label>
-                <div className="grid grid-cols-2 gap-2">
-                  {wallets.map(w => (
-                    <button 
-                      key={w.id}
-                      onClick={() => setSelectedWalletId(w.id)}
-                      className={`p-3 rounded-xl border text-center transition-all ${selectedWalletId === w.id ? 'bg-[var(--green-whatsapp)] border-[var(--green-whatsapp)] text-white' : 'bg-[var(--bg-body)] border-[var(--border)] text-[var(--text-primary)]'}`}
-                    >
-                      <p className="text-[10px] font-black uppercase truncate">{w.name}</p>
-                      <p className="text-[8px] font-bold opacity-70">{format(w.balance)}</p>
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <button 
-                onClick={handleRegisterPayment}
-                className="w-full bg-[var(--text-primary)] text-white py-5 rounded-2xl font-black text-[11px] uppercase shadow-2xl mt-4 active:scale-95 transition-all"
-              >
-                Confirmar Pagamento
+                {editingDebt ? 'Salvar Alterações' : 'Cadastrar Dívida'}
               </button>
             </div>
           </div>

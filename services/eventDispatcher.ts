@@ -116,6 +116,7 @@ export const dispatchEvent = async (uid: string, event: FinanceEvent) => {
           await updateDoc(cardRef, {
             usedAmount: increment(amount),
             availableAmount: increment(-amount),
+            invoiceAmount: increment(amount),
             updatedAt: serverTimestamp()
           });
         }
@@ -150,6 +151,7 @@ export const dispatchEvent = async (uid: string, event: FinanceEvent) => {
         await updateDoc(cardRef, {
           usedAmount: increment(-amount),
           availableAmount: increment(amount),
+          invoiceAmount: increment(-amount),
           updatedAt: serverTimestamp()
         });
 
@@ -191,13 +193,14 @@ export const dispatchEvent = async (uid: string, event: FinanceEvent) => {
       }
 
       case 'CREATE_REMINDER': {
-        const { description, amount, dueDay, category, type, recurring } = event.payload;
+        const { description, amount, dueDay, category, type, recurring, targetWalletName } = event.payload;
         const dueDate = new Date(now.getFullYear(), now.getMonth(), dueDay).toISOString();
         
         await addDoc(collection(userRef, "reminders"), {
           description, amount, dueDay, category: category || (type === 'RECEIVE' ? 'Recebimento' : 'Contas'),
           dueDate, isPaid: false, recurring: recurring !== undefined ? recurring : true,
           type: type || 'PAY',
+          targetWalletName: targetWalletName || null,
           createdAt: serverTimestamp(), isActive: true
         });
         break;
@@ -392,7 +395,7 @@ export const dispatchEvent = async (uid: string, event: FinanceEvent) => {
       }
 
       case 'UPDATE_CARD': {
-        const { id, limit, dueDay, closingDay } = event.payload;
+        const { id, name, limit, dueDay, closingDay } = event.payload;
         const cardRef = doc(userRef, "cards", id);
         const cardSnap = await getDoc(cardRef);
         
@@ -402,6 +405,7 @@ export const dispatchEvent = async (uid: string, event: FinanceEvent) => {
           const newLimit = Number(limit);
           
           await updateDoc(cardRef, {
+            name: name || cardData.name,
             limit: newLimit,
             availableAmount: newLimit - usedAmount,
             dueDay: Number(dueDay),
@@ -456,6 +460,68 @@ export const dispatchEvent = async (uid: string, event: FinanceEvent) => {
             await updateLimitConsumption(uid, oldCat, -oldAmount);
             await updateLimitConsumption(uid, newCat, newAmount);
           }
+
+          // Ajuste de Cartão de Crédito
+          const oldCardId = oldData?.cardId;
+          const newCardId = finalUpdates.cardId || oldCardId;
+          const oldMethod = oldData?.paymentMethod;
+          const newMethod = finalUpdates.paymentMethod || oldMethod;
+
+          if (oldMethod === 'CARD' && newMethod === 'CARD') {
+            if (oldCardId === newCardId) {
+              if (oldAmount !== newAmount) {
+                const cardRef = doc(userRef, "cards", oldCardId);
+                await updateDoc(cardRef, {
+                  usedAmount: increment(newAmount - oldAmount),
+                  availableAmount: increment(-(newAmount - oldAmount)),
+                  invoiceAmount: increment(newAmount - oldAmount),
+                  updatedAt: serverTimestamp()
+                });
+              }
+            } else {
+              // Mudou de cartão: estorna do antigo, cobra no novo
+              if (oldCardId) {
+                const oldCardRef = doc(userRef, "cards", oldCardId);
+                await updateDoc(oldCardRef, {
+                  usedAmount: increment(-oldAmount),
+                  availableAmount: increment(oldAmount),
+                  invoiceAmount: increment(-oldAmount),
+                  updatedAt: serverTimestamp()
+                });
+              }
+              if (newCardId) {
+                const newCardRef = doc(userRef, "cards", newCardId);
+                await updateDoc(newCardRef, {
+                  usedAmount: increment(newAmount),
+                  availableAmount: increment(-newAmount),
+                  invoiceAmount: increment(newAmount),
+                  updatedAt: serverTimestamp()
+                });
+              }
+            }
+          } else if (oldMethod !== 'CARD' && newMethod === 'CARD') {
+            // Mudou para cartão: cobra no novo
+            if (newCardId) {
+              const newCardRef = doc(userRef, "cards", newCardId);
+              await updateDoc(newCardRef, {
+                usedAmount: increment(newAmount),
+                availableAmount: increment(-newAmount),
+                invoiceAmount: increment(newAmount),
+                updatedAt: serverTimestamp()
+              });
+            }
+          } else if (oldMethod === 'CARD' && newMethod !== 'CARD') {
+            // Mudou de cartão para outro método: estorna do antigo
+            if (oldCardId) {
+              const oldCardRef = doc(userRef, "cards", oldCardId);
+              await updateDoc(oldCardRef, {
+                usedAmount: increment(-oldAmount),
+                availableAmount: increment(oldAmount),
+                invoiceAmount: increment(-oldAmount),
+                updatedAt: serverTimestamp()
+              });
+            }
+          }
         }
         break;
       }
@@ -488,6 +554,7 @@ export const dispatchEvent = async (uid: string, event: FinanceEvent) => {
             await updateDoc(cardRef, {
               usedAmount: increment(-Number(oldData.amount)),
               availableAmount: increment(Number(oldData.amount)),
+              invoiceAmount: increment(-Number(oldData.amount)),
               updatedAt: serverTimestamp()
             });
           }
@@ -582,6 +649,7 @@ export const dispatchEvent = async (uid: string, event: FinanceEvent) => {
       case 'CREATE_WALLET': {
         await addDoc(collection(userRef, "wallets"), {
           ...event.payload,
+          isActive: true,
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp()
         });
@@ -599,7 +667,10 @@ export const dispatchEvent = async (uid: string, event: FinanceEvent) => {
 
       case 'DELETE_WALLET': {
         const { id } = event.payload;
-        await deleteDoc(doc(userRef, "wallets", id));
+        await updateDoc(doc(userRef, "wallets", id), {
+          isActive: false,
+          updatedAt: serverTimestamp()
+        });
         break;
       }
 
@@ -714,7 +785,8 @@ export const dispatchEvent = async (uid: string, event: FinanceEvent) => {
       case 'CREATE_DEBT': {
         await addDoc(collection(userRef, "debts"), {
           ...event.payload,
-          remainingAmount: event.payload.totalAmount,
+          remainingAmount: event.payload.remainingAmount !== undefined ? event.payload.remainingAmount : event.payload.totalAmount,
+          status: event.payload.status || 'ATIVA',
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp()
         });

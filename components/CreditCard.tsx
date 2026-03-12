@@ -40,14 +40,24 @@ const CreditCard: React.FC<CreditCardProps> = ({ transactions, uid, cards, walle
     const currentYear = now.getFullYear();
 
     return cards.map(card => {
-      const closingDay = card.closingDay || 5;
+      const closingDay = card.closingDay || 10;
       
-      // Determina os ciclos
-      const currentCycleDate = new Date(currentYear, currentMonth, 1);
-      const currentCycle = `${currentCycleDate.getFullYear()}-${String(currentCycleDate.getMonth() + 1).padStart(2, '0')}`;
+      // Ciclo que está sendo gasto agora (Fatura Aberta)
+      const spendingDate = new Date(now);
+      if (spendingDate.getDate() > closingDay) {
+        spendingDate.setMonth(spendingDate.getMonth() + 1);
+      }
+      const currentCycle = `${spendingDate.getFullYear()}-${String(spendingDate.getMonth() + 1).padStart(2, '0')}`;
       
-      const nextCycleDate = new Date(currentYear, currentMonth + 1, 1);
-      const nextCycle = `${nextCycleDate.getFullYear()}-${String(nextCycleDate.getMonth() + 1).padStart(2, '0')}`;
+      // Ciclo anterior (Fatura que acabou de fechar ou está para fechar)
+      const prevDate = new Date(spendingDate);
+      prevDate.setMonth(prevDate.getMonth() - 1);
+      const prevCycle = `${prevDate.getFullYear()}-${String(prevDate.getMonth() + 1).padStart(2, '0')}`;
+
+      // Próximo ciclo
+      const nextDate = new Date(spendingDate);
+      nextDate.setMonth(nextDate.getMonth() + 1);
+      const nextCycle = `${nextDate.getFullYear()}-${String(nextDate.getMonth() + 1).padStart(2, '0')}`;
 
       // Filtramos transações
       const allCardExpenses = transactions.filter(t => 
@@ -56,14 +66,17 @@ const CreditCard: React.FC<CreditCardProps> = ({ transactions, uid, cards, walle
       );
       
       const currentInvoiceExpenses = allCardExpenses.filter(t => t.invoiceCycle === currentCycle);
+      const prevInvoiceExpenses = allCardExpenses.filter(t => t.invoiceCycle === prevCycle);
       const nextInvoiceExpenses = allCardExpenses.filter(t => t.invoiceCycle === nextCycle);
 
       const currentAmount = currentInvoiceExpenses.filter(t => !t.isPaid).reduce((sum, t) => sum + t.amount, 0);
+      const prevAmount = prevInvoiceExpenses.filter(t => !t.isPaid).reduce((sum, t) => sum + t.amount, 0);
       const nextAmount = nextInvoiceExpenses.filter(t => !t.isPaid).reduce((sum, t) => sum + t.amount, 0);
 
       const used = Number(card.usedAmount) || 0;
       const limit = Number(card.limit) || 0;
       const available = Number(card.availableAmount) || 0;
+      const invoiceAmount = Number(card.invoiceAmount) || 0;
       const pct = limit > 0 ? Math.min(100, (used / limit) * 100) : 0;
       
       return { 
@@ -71,13 +84,17 @@ const CreditCard: React.FC<CreditCardProps> = ({ transactions, uid, cards, walle
         used, 
         available, 
         limit, 
+        invoiceAmount,
         pct, 
         expenses: allCardExpenses,
         currentCycle,
+        prevCycle,
         nextCycle,
         currentAmount,
+        prevAmount,
         nextAmount,
         currentInvoiceExpenses,
+        prevInvoiceExpenses,
         nextInvoiceExpenses
       };
     });
@@ -107,11 +124,23 @@ const CreditCard: React.FC<CreditCardProps> = ({ transactions, uid, cards, walle
     setIsLoading(false);
   };
 
-  const handleUpdateCard = async (cardId: string, newLimit: number, newDueDay: number, newClosingDay: number) => {
+  const [activeMenu, setActiveMenu] = useState<string | null>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (activeMenu && !(event.target as Element).closest('.relative')) {
+        setActiveMenu(null);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [activeMenu]);
+
+  const handleUpdateCard = async (cardId: string, newName: string, newLimit: number, newDueDay: number, newClosingDay: number) => {
     setIsLoading(true);
     const res = await dispatchEvent(uid, {
       type: 'UPDATE_CARD',
-      payload: { id: cardId, limit: newLimit, dueDay: newDueDay, closingDay: newClosingDay },
+      payload: { id: cardId, name: newName, limit: newLimit, dueDay: newDueDay, closingDay: newClosingDay },
       source: 'ui',
       createdAt: new Date()
     });
@@ -123,11 +152,17 @@ const CreditCard: React.FC<CreditCardProps> = ({ transactions, uid, cards, walle
     setIsLoading(false);
   };
 
-  const handleDeleteCard = async (cardId: string) => {
-    if (!window.confirm("Deseja realmente excluir este cartão?")) return;
+  const handleDeleteCard = async (card: any) => {
+    const hasPending = card.used > 0 || card.invoiceAmount > 0;
+    const message = hasPending 
+      ? "Este cartão possui compras registradas ou fatura pendente. Deseja realmente excluir?" 
+      : "Deseja realmente excluir este cartão?";
+
+    if (!window.confirm(message)) return;
+
     await dispatchEvent(uid, {
       type: 'DELETE_CARD',
-      payload: { id: cardId },
+      payload: { id: card.id },
       source: 'ui',
       createdAt: new Date()
     });
@@ -211,7 +246,7 @@ const CreditCard: React.FC<CreditCardProps> = ({ transactions, uid, cards, walle
   }
 
   return (
-    <div className="p-6 space-y-6 animate-fade pb-32">
+    <div className="p-6 space-y-6 animate-fade pb-32 min-h-full">
       <header className="mb-4">
         <h2 className="text-[10px] font-black text-[var(--green-whatsapp)] uppercase tracking-[0.4em] mb-1">Gestão de Crédito</h2>
         <h1 className="text-3xl font-black text-[var(--text-primary)] uppercase italic tracking-tighter">Carteira Digital</h1>
@@ -245,17 +280,56 @@ const CreditCard: React.FC<CreditCardProps> = ({ transactions, uid, cards, walle
                     <h4 className="text-2xl font-black italic uppercase tracking-tighter leading-none">{card.name}</h4>
                     <p className="text-[10px] text-[var(--text-muted)] font-bold uppercase mt-1 tracking-widest">{card.bank || 'Bandeira Digital'}</p>
                   </div>
-                  <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button onClick={() => setShowExtrato(card.id)} className="p-2.5 bg-[var(--surface)]/50 rounded-xl hover:bg-[var(--surface)] transition-all text-[10px] font-black uppercase tracking-tighter border border-[var(--border)]">📄 Extrato</button>
-                    <button onClick={() => setIsEditing(card.id)} className="p-2.5 bg-[var(--surface)]/50 rounded-xl hover:bg-[var(--surface)] transition-all text-xs border border-[var(--border)]">✏️</button>
-                    <button onClick={() => handleDeleteCard(card.id)} className="p-2.5 bg-red-500/10 rounded-xl hover:bg-red-500/20 transition-all text-red-400 text-xs border border-red-500/20">🗑️</button>
+                  <div className="relative">
+                    <button 
+                      onClick={() => setActiveMenu(activeMenu === card.id ? null : card.id)}
+                      className="p-2.5 bg-[var(--surface)]/50 rounded-xl hover:bg-[var(--surface)] transition-all text-xs border border-[var(--border)] text-[var(--text-muted)]"
+                    >
+                      <span className="flex gap-0.5">
+                        <span className="w-1 h-1 bg-current rounded-full"></span>
+                        <span className="w-1 h-1 bg-current rounded-full"></span>
+                        <span className="w-1 h-1 bg-current rounded-full"></span>
+                      </span>
+                    </button>
+
+                    {activeMenu === card.id && (
+                      <div className="absolute right-0 mt-2 w-40 bg-[var(--surface)] border border-[var(--border)] rounded-2xl shadow-2xl z-30 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
+                        <button 
+                          onClick={() => {
+                            setShowExtrato(card.id);
+                            setActiveMenu(null);
+                          }}
+                          className="w-full px-4 py-3 text-left text-[10px] font-black uppercase hover:bg-[var(--bg-body)] transition-colors flex items-center gap-3"
+                        >
+                          <span className="text-sm">📄</span> Extrato
+                        </button>
+                        <button 
+                          onClick={() => {
+                            setIsEditing(card.id);
+                            setActiveMenu(null);
+                          }}
+                          className="w-full px-4 py-3 text-left text-[10px] font-black uppercase hover:bg-[var(--bg-body)] transition-colors flex items-center gap-3"
+                        >
+                          <span className="text-sm">✏️</span> Editar
+                        </button>
+                        <button 
+                          onClick={() => {
+                            handleDeleteCard(card);
+                            setActiveMenu(null);
+                          }}
+                          className="w-full px-4 py-3 text-left text-[10px] font-black uppercase hover:bg-red-500/10 text-red-400 transition-colors flex items-center gap-3 border-t border-[var(--border)]"
+                        >
+                          <span className="text-sm">🗑️</span> Excluir
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-10">
                   <div className="space-y-4">
                     <div className="p-4 bg-[var(--bg-body)]/50 rounded-3xl border border-[var(--border)]">
-                      <p className="text-[9px] font-black text-[var(--text-muted)] uppercase tracking-widest mb-1">Fatura Atual ({card.currentCycle})</p>
+                      <p className="text-[9px] font-black text-[var(--text-muted)] uppercase tracking-widest mb-1">Fatura Aberta ({card.currentCycle})</p>
                       <div className="flex justify-between items-end">
                         <h3 className="text-3xl font-black text-rose-500">{format(card.currentAmount)}</h3>
                         <button 
@@ -270,6 +344,21 @@ const CreditCard: React.FC<CreditCardProps> = ({ transactions, uid, cards, walle
                         <p className="text-[9px] text-[var(--green-whatsapp)] font-black uppercase italic">Vence dia {card.dueDay} • Fecha dia {card.closingDay}</p>
                       </div>
                     </div>
+
+                    {card.prevAmount > 0 && (
+                      <div className="p-4 bg-rose-500/10 rounded-3xl border border-rose-500/20">
+                        <p className="text-[9px] font-black text-rose-400 uppercase tracking-widest mb-1">Fatura Anterior ({card.prevCycle})</p>
+                        <div className="flex justify-between items-end">
+                          <h3 className="text-2xl font-black text-rose-500">{format(card.prevAmount)}</h3>
+                          <button 
+                            onClick={() => handleOpenPayment(card, card.prevCycle, card.prevAmount)}
+                            className="bg-rose-500 hover:bg-rose-600 text-white px-4 py-2 rounded-xl text-[9px] font-black uppercase transition-all active:scale-95"
+                          >
+                            Pagar
+                          </button>
+                        </div>
+                      </div>
+                    )}
 
                     <div className="p-4 bg-[var(--bg-body)]/30 rounded-3xl border border-[var(--border)] opacity-80">
                       <p className="text-[9px] font-black text-[var(--text-muted)] uppercase tracking-widest mb-1">Próxima Fatura ({card.nextCycle})</p>
@@ -309,11 +398,19 @@ const CreditCard: React.FC<CreditCardProps> = ({ transactions, uid, cards, walle
                 <div className="absolute inset-0 bg-[var(--surface)]/95 backdrop-blur-xl flex flex-col items-center justify-center p-10 z-20 animate-fade">
                   <h4 className="text-[10px] font-black uppercase mb-8 tracking-[0.3em] text-[var(--green-whatsapp)]">Ajustes do Cartão</h4>
                   
-                  <div className="w-full space-y-6 mb-10">
+                  <div className="w-full space-y-4 mb-10 overflow-y-auto pr-2">
+                    <div className="space-y-2">
+                      <label className="text-[9px] font-black text-[var(--text-muted)] uppercase ml-1">Nome do Cartão</label>
+                      <input 
+                        id={`name-edit-${card.id}`}
+                        className="bg-[var(--bg-body)] border border-[var(--border)] rounded-2xl p-4 w-full text-sm font-bold outline-none focus:border-[var(--green-whatsapp)] text-[var(--text-primary)] transition-all"
+                        defaultValue={card.name}
+                      />
+                    </div>
                     <div className="space-y-2">
                       <label className="text-[9px] font-black text-[var(--text-muted)] uppercase ml-1">Novo Limite Total</label>
                       <MoneyInput 
-                        className="bg-[var(--bg-body)] border border-[var(--border)] rounded-2xl p-5 w-full text-center text-2xl font-black outline-none focus:border-[var(--green-whatsapp)] text-[var(--text-primary)] transition-all"
+                        className="bg-[var(--bg-body)] border border-[var(--border)] rounded-2xl p-4 w-full text-center text-xl font-black outline-none focus:border-[var(--green-whatsapp)] text-[var(--text-primary)] transition-all"
                         value={card.limit}
                         onChange={(val) => {
                           const input = document.getElementById(`limit-edit-${card.id}`) as HTMLInputElement;
@@ -322,45 +419,48 @@ const CreditCard: React.FC<CreditCardProps> = ({ transactions, uid, cards, walle
                         id={`limit-edit-${card.id}`}
                       />
                     </div>
-                    <div className="space-y-2">
-                      <label className="text-[9px] font-black text-[var(--text-muted)] uppercase ml-1">Dia de Fechamento</label>
-                      <select 
-                        id={`closing-edit-${card.id}`}
-                        className="bg-[var(--bg-body)] border border-[var(--border)] rounded-2xl p-5 w-full text-center text-lg font-black outline-none appearance-none text-[var(--text-primary)] focus:border-[var(--green-whatsapp)] transition-all"
-                        defaultValue={card.closingDay}
-                      >
-                        {Array.from({length: 31}, (_, i) => i + 1).map(d => (
-                          <option key={d} value={d} className="bg-[var(--surface)]">{d}</option>
-                        ))}
-                      </select>
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-[9px] font-black text-[var(--text-muted)] uppercase ml-1">Dia de Vencimento</label>
-                      <select 
-                        id={`day-edit-${card.id}`}
-                        className="bg-[var(--bg-body)] border border-[var(--border)] rounded-2xl p-5 w-full text-center text-lg font-black outline-none appearance-none text-[var(--text-primary)] focus:border-[var(--green-whatsapp)] transition-all"
-                        defaultValue={card.dueDay}
-                      >
-                        {Array.from({length: 31}, (_, i) => i + 1).map(d => (
-                          <option key={d} value={d} className="bg-[var(--surface)]">{d}</option>
-                        ))}
-                      </select>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <label className="text-[9px] font-black text-[var(--text-muted)] uppercase ml-1">Dia de Fechamento</label>
+                        <select 
+                          id={`closing-edit-${card.id}`}
+                          className="bg-[var(--bg-body)] border border-[var(--border)] rounded-2xl p-4 w-full text-center text-sm font-black outline-none appearance-none text-[var(--text-primary)] focus:border-[var(--green-whatsapp)] transition-all"
+                          defaultValue={card.closingDay}
+                        >
+                          {Array.from({length: 31}, (_, i) => i + 1).map(d => (
+                            <option key={d} value={d} className="bg-[var(--surface)]">{d}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-[9px] font-black text-[var(--text-muted)] uppercase ml-1">Dia de Vencimento</label>
+                        <select 
+                          id={`day-edit-${card.id}`}
+                          className="bg-[var(--bg-body)] border border-[var(--border)] rounded-2xl p-4 w-full text-center text-sm font-black outline-none appearance-none text-[var(--text-primary)] focus:border-[var(--green-whatsapp)] transition-all"
+                          defaultValue={card.dueDay}
+                        >
+                          {Array.from({length: 31}, (_, i) => i + 1).map(d => (
+                            <option key={d} value={d} className="bg-[var(--surface)]">{d}</option>
+                          ))}
+                        </select>
+                      </div>
                     </div>
                   </div>
 
                   <div className="flex gap-3 w-full">
-                    <button onClick={() => setIsEditing(null)} className="flex-1 py-5 text-[10px] font-black uppercase bg-[var(--bg-body)] rounded-2xl hover:bg-[var(--surface)] transition-all text-[var(--text-muted)] border border-[var(--border)]">Cancelar</button>
+                    <button onClick={() => setIsEditing(null)} className="flex-1 py-4 text-[10px] font-black uppercase bg-[var(--bg-body)] rounded-2xl hover:bg-[var(--surface)] transition-all text-[var(--text-muted)] border border-[var(--border)]">Cancelar</button>
                     <button 
                       disabled={isLoading}
                       onClick={() => {
+                        const name = (document.getElementById(`name-edit-${card.id}`) as HTMLInputElement).value;
                         const val = (document.getElementById(`limit-edit-${card.id}`) as HTMLInputElement).value;
                         const day = (document.getElementById(`day-edit-${card.id}`) as HTMLSelectElement).value;
                         const closing = (document.getElementById(`closing-edit-${card.id}`) as HTMLSelectElement).value;
-                        handleUpdateCard(card.id, parseFloat(val), parseInt(day), parseInt(closing));
+                        handleUpdateCard(card.id, name, parseFloat(val), parseInt(day), parseInt(closing));
                       }}
-                      className="flex-1 py-5 text-[10px] font-black uppercase bg-[var(--green-whatsapp)] text-white rounded-2xl shadow-lg shadow-[var(--green-whatsapp)]/20"
+                      className="flex-1 py-4 text-[10px] font-black uppercase bg-[var(--green-whatsapp)] text-white rounded-2xl shadow-lg shadow-[var(--green-whatsapp)]/20"
                     >
-                      {isLoading ? '...' : 'Salvar Alterações'}
+                      {isLoading ? '...' : 'Salvar'}
                     </button>
                   </div>
                 </div>

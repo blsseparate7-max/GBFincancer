@@ -114,7 +114,7 @@ const HealthScoreTab: React.FC<HealthScoreTabProps> = ({ transactions = [], limi
   }, [transactions, limits, goals]);
 
   return (
-    <div className="p-6 space-y-8 animate-fade pb-32 max-w-2xl mx-auto">
+    <div className="p-6 space-y-8 animate-fade pb-32 max-w-2xl mx-auto min-h-full">
       <header>
         <h2 className="text-[10px] font-black text-[var(--green-whatsapp)] uppercase tracking-[0.4em] mb-1">Saúde Financeira</h2>
         <h1 className="text-3xl font-black text-[var(--text-primary)] uppercase italic tracking-tighter">Score GB</h1>

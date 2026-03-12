@@ -45,6 +45,7 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ user, onComplete }) => {
   const [newSourceDates, setNewSourceDates] = useState<number[]>([]);
   const [newSourceAmount, setNewSourceAmount] = useState<number>(0);
   const [newSourceDesc, setNewSourceDesc] = useState('');
+  const [newSourceWallet, setNewSourceWallet] = useState('');
 
   // Form states for bills
   const [billDesc, setBillDesc] = useState('');
@@ -99,12 +100,14 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ user, onComplete }) => {
       frequency: newSourceFreq,
       dates: newSourceDates,
       amountExpected: newSourceAmount > 0 ? newSourceAmount : undefined,
-      description: newSourceDesc
+      description: newSourceDesc,
+      targetWalletName: newSourceWallet || 'Carteira Principal'
     };
     setSources([...sources, source]);
     setNewSourceDesc('');
     setNewSourceAmount(0);
     setNewSourceDates([]);
+    setNewSourceWallet('');
     setShowSourceForm(false);
   };
 
@@ -309,6 +312,14 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ user, onComplete }) => {
                     <MoneyInput 
                       className="w-full bg-[#111B21] p-4 rounded-xl text-sm font-bold text-[#E9EDEF] outline-none border-2 border-transparent focus:border-[#00A884] transition-all"
                       value={newSourceAmount} onChange={val => setNewSourceAmount(val)}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[9px] font-black text-[#8696A0] uppercase ml-2">Em qual carteira esse dinheiro entra?</label>
+                    <input 
+                      placeholder="Ex: Nubank, Inter, Dinheiro..."
+                      className="w-full bg-[#111B21] p-4 rounded-xl text-sm font-bold text-[#E9EDEF] outline-none border-2 border-transparent focus:border-[#00A884] transition-all"
+                      value={newSourceWallet} onChange={e => setNewSourceWallet(e.target.value)}
                     />
                   </div>
                   <div className="flex gap-2">

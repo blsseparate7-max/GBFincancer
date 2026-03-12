@@ -9,7 +9,7 @@ interface SettingsProps {
 
 const Settings: React.FC<SettingsProps> = ({ user, onLogout }) => {
   return (
-    <div className="p-6 space-y-6 animate-fade">
+    <div className="p-6 space-y-6 animate-fade min-h-full">
       <header className="mb-8">
         <h2 className="text-[10px] font-black text-[#667781] uppercase tracking-[0.4em] mb-1">Preferências de Sistema</h2>
         <h1 className="text-3xl font-black text-[#111b21] uppercase italic tracking-tighter">Configurações</h1>

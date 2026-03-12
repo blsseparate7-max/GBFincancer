@@ -60,7 +60,7 @@ export const calculateMonthlySummary = (transactions: Transaction[]) => {
     .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
 
   const expense = monthTransactions
-    .filter(t => t.type === 'EXPENSE')
+    .filter(t => t.type === 'EXPENSE' && t.paymentMethod !== 'CARD')
     .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
 
   const balance = income - expense;

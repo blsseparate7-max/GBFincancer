@@ -69,7 +69,7 @@ const ProfileEdit: React.FC<ProfileEditProps> = ({ user, onUpdate, onLogout }) =
   };
 
   return (
-    <div className="p-6 max-w-2xl mx-auto w-full space-y-8 animate-fade pb-32 relative z-10">
+    <div className="p-6 max-w-2xl mx-auto w-full space-y-8 animate-fade pb-32 relative z-10 min-h-full">
       <header className="text-center">
         <h2 className="text-[10px] font-black text-[#00a884] uppercase tracking-[0.4em] mb-1">Privacidade & Perfil</h2>
         <h1 className="text-3xl font-black text-[#e9edef] uppercase italic tracking-tighter">Meus Dados</h1>

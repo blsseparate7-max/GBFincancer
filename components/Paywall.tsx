@@ -10,7 +10,7 @@ interface PaywallProps {
 
 const Paywall: React.FC<PaywallProps> = ({ userName, onPay, onLogout }) => {
   return (
-    <div className="flex flex-col h-full bg-[#f0f2f5] animate-in fade-in duration-500 items-center justify-center p-6">
+    <div className="flex flex-col min-h-full bg-[#f0f2f5] animate-in fade-in duration-500 items-center justify-center p-6">
       <div className="w-full max-w-sm">
         <div className="bg-[#075e54] pt-12 pb-10 px-8 text-center text-white rounded-t-[3rem] shadow-2xl relative overflow-hidden">
           <div className="absolute top-0 left-0 w-full h-full opacity-10 pointer-events-none whatsapp-bg"></div>

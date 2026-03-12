@@ -126,7 +126,7 @@ const Reminders: React.FC<RemindersProps> = ({ bills, wallets, uid, loading }) =
   }
 
   return (
-    <div className="p-6 space-y-6 animate-fade pb-32">
+    <div className="p-6 space-y-6 animate-fade pb-32 min-h-full">
       <header className="flex justify-between items-end">
         <div>
           <h2 className="text-[10px] font-black text-[var(--green-whatsapp)] uppercase tracking-[0.4em] mb-1">Agenda Mensal</h2>

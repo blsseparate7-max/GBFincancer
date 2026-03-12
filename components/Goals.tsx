@@ -305,7 +305,7 @@ const Goals: React.FC<GoalsProps> = ({ goals, transactions, wallets, uid, user, 
   }
 
   return (
-    <div className="p-6 space-y-6 animate-fade pb-32">
+    <div className="p-6 space-y-6 animate-fade pb-32 min-h-full">
       <header className="mb-4">
         <h2 className="text-[10px] font-black text-[var(--green-whatsapp)] uppercase tracking-[0.4em] mb-1">Patrimônio Manual</h2>
         <h1 className="text-3xl font-black text-[var(--text-primary)] uppercase italic tracking-tighter">Meus Cofres</h1>

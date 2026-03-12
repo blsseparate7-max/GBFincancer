@@ -4,6 +4,7 @@ import { collection, onSnapshot, query, orderBy, doc } from 'firebase/firestore'
 import { Wallet, WalletTransfer, WalletType, SavingGoal } from '../types';
 import { dispatchEvent } from '../services/eventDispatcher';
 import MoneyInput from './MoneyInput';
+import { MoreVertical, Edit2, Trash2, ArrowRightLeft } from 'lucide-react';
 
 interface WalletTabProps {
   uid: string;
@@ -26,6 +27,8 @@ const WalletTab: React.FC<WalletTabProps> = ({ uid, freeBalance, goals, wallets:
   const [type, setType] = useState<WalletType>('CONTA');
   const [balance, setBalance] = useState('');
   const [color, setColor] = useState('#00a884');
+  const [note, setNote] = useState('');
+  const [activeMenu, setActiveMenu] = useState<string | null>(null);
 
   const [fromId, setFromId] = useState('');
   const [toId, setToId] = useState('');
@@ -47,7 +50,8 @@ const WalletTab: React.FC<WalletTabProps> = ({ uid, freeBalance, goals, wallets:
     return () => { unsubTransfers(); };
   }, [uid]);
 
-  const totalInWallets = useMemo(() => wallets.reduce((acc, w) => acc + (w.balance || 0), 0), [wallets]);
+  const activeWallets = useMemo(() => wallets.filter(w => w.isActive !== false), [wallets]);
+  const totalInWallets = useMemo(() => activeWallets.reduce((acc, w) => acc + (w.balance || 0), 0), [activeWallets]);
   const totalSavedInGoals = useMemo(() => goals.reduce((acc, g) => acc + (g.currentAmount || 0), 0), [goals]);
   const difference = freeBalance - totalInWallets;
 
@@ -56,11 +60,11 @@ const WalletTab: React.FC<WalletTabProps> = ({ uid, freeBalance, goals, wallets:
     setIsLoading(true);
     await dispatchEvent(uid, {
       type: 'CREATE_WALLET',
-      payload: { name, type, balance: Number(balance), color },
+      payload: { name, type, balance: Number(balance), color, note },
       source: 'ui',
       createdAt: new Date()
     });
-    setName(''); setBalance(''); setType('CONTA'); setIsAdding(false);
+    setName(''); setBalance(''); setType('CONTA'); setNote(''); setIsAdding(false);
     setIsLoading(false);
   };
 
@@ -74,12 +78,14 @@ const WalletTab: React.FC<WalletTabProps> = ({ uid, freeBalance, goals, wallets:
         name, 
         type, 
         balance: Number(balance), 
-        color 
+        color,
+        note
       },
       source: 'ui',
       createdAt: new Date()
     });
     setEditingWallet(null);
+    setNote('');
     setIsLoading(false);
   };
 
@@ -106,7 +112,7 @@ const WalletTab: React.FC<WalletTabProps> = ({ uid, freeBalance, goals, wallets:
   const handleDeleteWallet = async (wallet: Wallet) => {
     const hasBalance = (wallet.balance || 0) > 0;
     const msg = hasBalance 
-      ? `Esta carteira possui saldo (R$ ${wallet.balance.toFixed(2)}). Deseja transferir o saldo antes de excluir? Se excluir agora, o saldo será perdido no controle interno.`
+      ? `Essa carteira ainda possui saldo (R$ ${wallet.balance.toFixed(2)}). Deseja transferir ou zerar antes de remover?`
       : "Excluir esta carteira?";
     
     if (!window.confirm(msg)) return;
@@ -117,6 +123,7 @@ const WalletTab: React.FC<WalletTabProps> = ({ uid, freeBalance, goals, wallets:
       source: 'ui',
       createdAt: new Date()
     });
+    setActiveMenu(null);
   };
 
   const openEdit = (wallet: Wallet) => {
@@ -125,6 +132,8 @@ const WalletTab: React.FC<WalletTabProps> = ({ uid, freeBalance, goals, wallets:
     setType(wallet.type);
     setBalance(wallet.balance.toString());
     setColor(wallet.color || '#00a884');
+    setNote(wallet.note || '');
+    setActiveMenu(null);
   };
 
   if (loading) {
@@ -139,7 +148,7 @@ const WalletTab: React.FC<WalletTabProps> = ({ uid, freeBalance, goals, wallets:
   }
 
   return (
-    <div className="p-4 lg:p-8 space-y-8 animate-fade max-w-5xl mx-auto pb-32">
+    <div className="p-4 lg:p-8 space-y-8 animate-fade max-w-5xl mx-auto pb-32 min-h-full">
       {/* Header / Stats */}
       <div className="bg-[var(--surface)] rounded-[2rem] p-6 border border-[var(--border)] shadow-2xl">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -179,7 +188,7 @@ const WalletTab: React.FC<WalletTabProps> = ({ uid, freeBalance, goals, wallets:
 
       {/* Wallets Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {wallets.map(wallet => (
+        {activeWallets.map(wallet => (
           <div key={wallet.id} className="bg-[var(--surface)] p-5 rounded-3xl border border-[var(--border)] hover:border-[var(--green-whatsapp)]/30 transition-all group relative overflow-hidden">
             <div className="absolute top-0 left-0 w-1 h-full" style={{ backgroundColor: wallet.color || '#00a884' }} />
             
@@ -187,10 +196,42 @@ const WalletTab: React.FC<WalletTabProps> = ({ uid, freeBalance, goals, wallets:
               <div>
                 <p className="text-[9px] font-black text-[var(--text-muted)] uppercase tracking-widest mb-1">{wallet.type}</p>
                 <h4 className="text-lg font-black text-[var(--text-primary)]">{wallet.name}</h4>
+                {wallet.note && <p className="text-[10px] text-[var(--text-muted)] italic truncate max-w-[150px]">{wallet.note}</p>}
               </div>
-              <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-all">
-                <button onClick={() => openEdit(wallet)} className="p-2 text-[var(--green-whatsapp)] hover:bg-[var(--green-whatsapp)]/10 rounded-lg transition-all">✏️</button>
-                <button onClick={() => handleDeleteWallet(wallet)} className="p-2 text-rose-500 hover:bg-rose-500/10 rounded-lg transition-all">🗑️</button>
+              <div className="relative">
+                <button 
+                  onClick={() => setActiveMenu(activeMenu === wallet.id ? null : wallet.id)}
+                  className="p-2 text-[var(--text-muted)] hover:bg-[var(--bg-body)] rounded-lg transition-all"
+                >
+                  <MoreVertical size={16} />
+                </button>
+
+                {activeMenu === wallet.id && (
+                  <div className="absolute right-0 mt-2 w-40 bg-[var(--surface)] border border-[var(--border)] rounded-2xl shadow-2xl z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
+                    <button 
+                      onClick={() => openEdit(wallet)}
+                      className="w-full px-4 py-3 text-left text-[10px] font-black uppercase hover:bg-[var(--bg-body)] transition-colors flex items-center gap-3"
+                    >
+                      <Edit2 size={14} className="text-[var(--green-whatsapp)]" /> Editar
+                    </button>
+                    <button 
+                      onClick={() => {
+                        setIsTransferring(true);
+                        setFromId(wallet.id);
+                        setActiveMenu(null);
+                      }}
+                      className="w-full px-4 py-3 text-left text-[10px] font-black uppercase hover:bg-[var(--bg-body)] transition-colors flex items-center gap-3"
+                    >
+                      <ArrowRightLeft size={14} className="text-amber-500" /> Transferir
+                    </button>
+                    <button 
+                      onClick={() => handleDeleteWallet(wallet)}
+                      className="w-full px-4 py-3 text-left text-[10px] font-black uppercase hover:bg-rose-500/10 text-rose-500 transition-colors flex items-center gap-3 border-t border-[var(--border)]"
+                    >
+                      <Trash2 size={14} /> Remover
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -279,6 +320,10 @@ const WalletTab: React.FC<WalletTabProps> = ({ uid, freeBalance, goals, wallets:
                 </div>
               </div>
               <div className="space-y-1">
+                <label className="text-[9px] font-black text-[var(--text-muted)] uppercase ml-2">Observação (Opcional)</label>
+                <input className="w-full bg-[var(--bg-body)] rounded-2xl p-4 text-sm font-bold outline-none border border-transparent focus:border-[var(--green-whatsapp)] text-[var(--text-primary)]" placeholder="Ex: Conta principal, reserva..." value={note} onChange={e => setNote(e.target.value)} />
+              </div>
+              <div className="space-y-1">
                 <label className="text-[9px] font-black text-[var(--text-muted)] uppercase ml-2">Cor de Identificação</label>
                 <div className="flex gap-2">
                   {['#00a884', '#128c7e', '#34b7f1', '#ffbc2c', '#ea0038', '#a62c67'].map(c => (
@@ -332,6 +377,10 @@ const WalletTab: React.FC<WalletTabProps> = ({ uid, freeBalance, goals, wallets:
                     onChange={val => setBalance(val.toString())} 
                   />
                 </div>
+              </div>
+              <div className="space-y-1">
+                <label className="text-[9px] font-black text-[var(--text-muted)] uppercase ml-2">Observação (Opcional)</label>
+                <input className="w-full bg-[var(--bg-body)] rounded-2xl p-4 text-sm font-bold outline-none border border-transparent focus:border-[var(--green-whatsapp)] text-[var(--text-primary)]" placeholder="Ex: Conta principal, reserva..." value={note} onChange={e => setNote(e.target.value)} />
               </div>
               <div className="space-y-1">
                 <label className="text-[9px] font-black text-[var(--text-muted)] uppercase ml-2">Cor de Identificação</label>

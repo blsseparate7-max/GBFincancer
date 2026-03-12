@@ -8,7 +8,7 @@ interface PlaceholderProps {
 }
 
 const Placeholder: React.FC<PlaceholderProps> = ({ title, description }) => (
-  <div className="p-6 h-full flex flex-col items-center justify-center text-center space-y-4 animate-fade">
+  <div className="p-6 min-h-full flex flex-col items-center justify-center text-center space-y-4 animate-fade">
     <div className="w-20 h-20 bg-[#1F2937] rounded-3xl flex items-center justify-center text-4xl grayscale opacity-20">🚧</div>
     <h2 className="text-xl font-black text-white uppercase italic tracking-tighter">{title}</h2>
     <p className="text-sm text-[#9CA3AF] max-w-xs leading-relaxed">{description}</p>

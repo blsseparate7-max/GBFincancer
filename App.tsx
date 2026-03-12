@@ -8,6 +8,7 @@ import Header from './components/Header';
 import Auth from './components/Auth';
 import ChatInterface from './components/ChatInterface';
 import Dashboard from './components/Dashboard';
+import CalendarTab from './components/CalendarTab';
 import Goals from './components/Goals';
 import CreditCard from './components/CreditCard';
 import Reminders from './components/Reminders';
@@ -198,12 +199,29 @@ const App: React.FC = () => {
       onboardingSeen: true 
     });
 
-    // 2. Criar Lembretes para Fontes de Renda
+    // 2. Criar Carteiras e Lembretes para Fontes de Renda
     if (data.incomeProfile?.sources) {
       for (const source of data.incomeProfile.sources) {
         if (source.amountExpected && source.frequency !== 'VARIABLE') {
           const dueDay = source.dates && source.dates.length > 0 ? source.dates[0] : 1;
           
+          // Criar Carteira se informada
+          let targetWalletId = null;
+          if (source.targetWalletName) {
+            const walletRes = await dispatchEvent(session.uid, {
+              type: 'CREATE_WALLET',
+              payload: {
+                name: source.targetWalletName,
+                type: 'CONTA',
+                balance: 0,
+                color: '#00A884',
+                icon: 'Wallet'
+              },
+              source: 'ui',
+              createdAt: new Date()
+            });
+          }
+
           await dispatchEvent(session.uid, {
             type: 'CREATE_REMINDER',
             payload: {
@@ -212,7 +230,8 @@ const App: React.FC = () => {
               dueDay: dueDay,
               category: 'Recebimento',
               type: 'RECEIVE',
-              recurring: true
+              recurring: true,
+              targetWalletName: source.targetWalletName // Passamos o nome para o chat identificar depois
             },
             source: 'ui',
             createdAt: new Date()
@@ -267,7 +286,8 @@ const App: React.FC = () => {
       case 'chat': return <ChatInterface user={session} messages={messages} setMessages={setMessages} transactions={transactions} limits={limits} reminders={reminders} cards={cards} wallets={wallets} categories={categories} goals={goals} />;
       case 'extrato': return <Extrato uid={session.uid} cards={cards} categories={categories} />;
       case 'categories': return <CategoriesTab uid={session.uid} categories={categories} loading={loadingCategories} />;
-      case 'dash': return <Dashboard transactions={transactions} goals={goals} limits={limits} wallets={wallets} uid={session.uid} loading={loadingCards || loadingGoals || loadingLimits || loadingWallets} />;
+      case 'dash': return <Dashboard transactions={transactions} goals={goals} limits={limits} wallets={wallets} reminders={reminders} uid={session.uid} loading={loadingCards || loadingGoals || loadingLimits || loadingWallets} />;
+      case 'calendar': return <CalendarTab transactions={transactions} reminders={reminders} loading={loadingReminders} />;
       case 'goals': return <Goals goals={goals} transactions={transactions} wallets={wallets} uid={session.uid} user={session} loading={loadingGoals} />;
       case 'cc': return <CreditCard transactions={transactions} uid={session.uid} cards={cards} wallets={wallets} loading={loadingCards} />;
       case 'reminders': return <Reminders bills={reminders} wallets={wallets} uid={session.uid} loading={loadingReminders} />;
@@ -276,7 +296,7 @@ const App: React.FC = () => {
       case 'insights': return <Insights transactions={transactions} limits={limits} />;
       case 'score': return <HealthScoreTab transactions={transactions} limits={limits} goals={goals} />;
       case 'stress': return <ImpactSimulator transactions={transactions} />;
-      case 'debts': return <DebtAssistant uid={session.uid} transactions={transactions} wallets={wallets} user={session} />;
+      case 'debts': return <DebtAssistant uid={session.uid} transactions={transactions} wallets={wallets} user={session} goals={goals} cards={cards} />;
       case 'profile': return <ProfileEdit user={session} onUpdate={(d) => setSession(p => p ? {...p, ...d} : null)} onLogout={() => signOut(auth)} />;
       case 'config': return <Settings user={session} onLogout={() => signOut(auth)} />;
       case 'admin': return session.role === 'ADMIN' ? <AdminPanel currentAdminId={session.uid} /> : null;
@@ -301,7 +321,7 @@ const App: React.FC = () => {
   };
 
   return (
-    <div className={`flex min-h-dvh w-full ${activeTab === 'chat' ? 'theme-light' : ''} bg-[var(--bg-body)] text-[var(--text-primary)] transition-colors duration-300`}>
+    <div className={`flex h-dvh w-full overflow-hidden ${activeTab === 'chat' ? 'theme-light' : ''} bg-[var(--bg-body)] text-[var(--text-primary)] transition-colors duration-300`}>
       
       {/* Overlay para fechar menu ao clicar fora */}
       {sidebarExpanded && (
@@ -329,8 +349,7 @@ const App: React.FC = () => {
         />
       </div>
 
-      {/* Main Content Area */}
-      <div className="flex-1 flex flex-col min-w-0 relative">
+      <div className="flex-1 flex flex-col min-w-0 relative h-full overflow-hidden">
         <Header 
           activeTab={activeTab} 
           userName={session.name} 
@@ -342,9 +361,9 @@ const App: React.FC = () => {
           }} 
           onLogout={() => signOut(auth)} 
         />
-        <main className="flex-1 relative bg-[var(--chat-bg)] flex flex-col">
+        <main className={`flex-1 min-w-0 relative bg-[var(--chat-bg)] flex flex-col ${activeTab === 'chat' ? 'overflow-hidden' : 'overflow-y-auto overflow-x-hidden'}`}>
           <div className="absolute inset-0 whatsapp-pattern pointer-events-none"></div>
-          <div className="relative z-10 flex-1 min-h-0 flex flex-col">
+          <div className="relative z-10 flex-1 flex flex-col">
             {renderContent()}
             {session && onboardingStep === 'none' && (
               <ContextualOnboarding 

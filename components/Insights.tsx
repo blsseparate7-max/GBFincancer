@@ -79,7 +79,7 @@ const Insights: React.FC<InsightsProps> = ({ transactions, limits }) => {
   }, [summary, limits]);
 
   return (
-    <div className="p-4 space-y-6 max-w-2xl mx-auto pb-20">
+    <div className="p-4 space-y-6 max-w-2xl mx-auto pb-20 min-h-full">
       <header className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-black italic text-[var(--green-whatsapp)] tracking-tighter">CAMINHO FINANCEIRO</h2>

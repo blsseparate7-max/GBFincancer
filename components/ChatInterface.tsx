@@ -22,6 +22,8 @@ interface ChatProps {
 const ChatInterface: React.FC<ChatProps> = ({ user, messages, setMessages, transactions, limits, reminders, cards, wallets, categories, goals }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [pendingAction, setPendingAction] = useState<any>(null);
+  const [salaryCheckDone, setSalaryCheckDone] = useState(false);
+  const [pendingSalaryReminder, setPendingSalaryReminder] = useState<Bill | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const isProcessingRef = useRef(false);
   const summarySentRef = useRef(false);
@@ -46,7 +48,13 @@ const ChatInterface: React.FC<ChatProps> = ({ user, messages, setMessages, trans
     const generateSummary = () => {
       const summary = calculateMonthlySummary(transactions);
       const totalSaved = goals.reduce((sum, g) => sum + (Number(g.currentAmount) || 0), 0);
-      const balance = summary.income - summary.expense - totalSaved;
+      
+      // Saldo atual disponível (soma das carteiras ativas) - mesma lógica do Dashboard
+      const balance = wallets
+        .filter(w => w.isActive !== false)
+        .reduce((sum, w) => sum + (Number(w.balance) || 0), 0);
+
+      const sobraMensal = summary.income - summary.expense;
 
       // Contas a vencer (próximos 7 dias)
       const now = new Date();
@@ -83,7 +91,7 @@ const ChatInterface: React.FC<ChatProps> = ({ user, messages, setMessages, trans
         economyText = "Continue registrando seus gastos para eu identificar onde você pode economizar!";
       }
 
-      const summaryText = `💰 Resumo rápido da sua vida financeira\n\nSaldo atual: ${formatCurrency(balance)}\n\nContas a vencer:\n${billsText}\n\nPossível economia:\n${economyText}`;
+      const summaryText = `💰 Resumo rápido da sua vida financeira\n\nSaldo Disponível: ${formatCurrency(balance)}\nSobra do Mês: ${formatCurrency(sobraMensal)}\n\nContas a vencer:\n${billsText}\n\nPossível economia:\n${economyText}`;
 
       const summaryMsg: Message = {
         id: 'auto-summary-' + Date.now(),
@@ -100,6 +108,73 @@ const ChatInterface: React.FC<ChatProps> = ({ user, messages, setMessages, trans
     const timer = setTimeout(generateSummary, 500);
     return () => clearTimeout(timer);
   }, [transactions, reminders, goals, setMessages, messages]);
+
+  // Verificar se é dia de pagamento
+  useEffect(() => {
+    if (salaryCheckDone || reminders.length === 0) return;
+
+    const today = new Date();
+    const todayDay = today.getDate();
+
+    // Procurar por lembretes de recebimento para hoje que não estão pagos
+    const salaryReminder = reminders.find(r => 
+      !r.isPaid && 
+      r.type === 'RECEIVE' && 
+      r.dueDay === todayDay &&
+      r.description.toLowerCase().includes('recebimento')
+    );
+
+    if (salaryReminder) {
+      setPendingSalaryReminder(salaryReminder);
+      
+      const msg: Message = {
+        id: 'salary-check-' + Date.now(),
+        text: `👋 Olá! Notei que hoje é dia de receber: **${salaryReminder.description}** (${formatCurrency(salaryReminder.amount)}).\n\nVocê já recebeu esse valor?`,
+        sender: 'ai',
+        timestamp: new Date()
+      };
+      setMessages(prev => [...prev, msg]);
+    }
+
+    setSalaryCheckDone(true);
+  }, [reminders, salaryCheckDone]);
+
+  const handleSalaryConfirm = (confirmed: boolean) => {
+    if (!pendingSalaryReminder) return;
+
+    if (confirmed) {
+      // Se confirmou, abrimos o seletor de carteira
+      setPendingAction({
+        type: 'ADD_INCOME',
+        payload: {
+          amount: pendingSalaryReminder.amount,
+          category: pendingSalaryReminder.category || 'Recebimento',
+          description: pendingSalaryReminder.description,
+          date: new Date().toISOString(),
+          reminderId: pendingSalaryReminder.id,
+          targetWalletName: (pendingSalaryReminder as any).targetWalletName
+        }
+      });
+      
+      const msg: Message = {
+        id: 'salary-yes-' + Date.now(),
+        text: "Excelente! Em qual carteira esse dinheiro entrou?",
+        sender: 'ai',
+        timestamp: new Date()
+      };
+      setMessages(prev => [...prev, msg]);
+    } else {
+      const msg: Message = {
+        id: 'salary-no-' + Date.now(),
+        text: "Sem problemas! Me avise quando o dinheiro cair para eu registrar e atualizar seus saldos. 😉",
+        sender: 'ai',
+        timestamp: new Date()
+      };
+      setMessages(prev => [...prev, msg]);
+    }
+    
+    setPendingSalaryReminder(null);
+  };
 
   const handleSend = async (text: string) => {
     if (!text.trim() || isLoading || isProcessingRef.current) return;
@@ -179,25 +254,39 @@ const ChatInterface: React.FC<ChatProps> = ({ user, messages, setMessages, trans
     try {
       const eventToDispatch = { ...pendingAction };
       
-      if (walletId === 'CARD') {
-        eventToDispatch.type = 'ADD_CARD_CHARGE';
-        eventToDispatch.payload.paymentMethod = 'CARD';
-        // Se já tiver um cardId da IA, mantém, senão usa 'default'
-        eventToDispatch.payload.cardId = eventToDispatch.payload.cardId || 'default';
+      if (pendingAction.payload.reminderId) {
+        // Se veio de um lembrete (ex: salário), usamos PAY_REMINDER
+        await dispatchEvent(user.uid, {
+          type: 'PAY_REMINDER',
+          payload: {
+            billId: pendingAction.payload.reminderId,
+            paymentMethod: 'PIX',
+            sourceWalletId: walletId
+          },
+          source: 'chat',
+          createdAt: new Date()
+        });
       } else {
-        if (eventToDispatch.type === 'ADD_INCOME') {
-          eventToDispatch.payload.targetWalletId = walletId;
+        if (walletId === 'CARD') {
+          eventToDispatch.type = 'ADD_CARD_CHARGE';
+          eventToDispatch.payload.paymentMethod = 'CARD';
+          // Se já tiver um cardId da IA, mantém, senão usa 'default'
+          eventToDispatch.payload.cardId = eventToDispatch.payload.cardId || 'default';
         } else {
-          eventToDispatch.payload.sourceWalletId = walletId;
-          eventToDispatch.payload.paymentMethod = 'PIX'; // Padroniza como PIX/Débito quando sai de carteira
+          if (eventToDispatch.type === 'ADD_INCOME') {
+            eventToDispatch.payload.targetWalletId = walletId;
+          } else {
+            eventToDispatch.payload.sourceWalletId = walletId;
+            eventToDispatch.payload.paymentMethod = 'PIX'; // Padroniza como PIX/Débito quando sai de carteira
+          }
         }
-      }
 
-      await dispatchEvent(user.uid, {
-        ...eventToDispatch,
-        source: 'chat',
-        createdAt: new Date()
-      });
+        await dispatchEvent(user.uid, {
+          ...eventToDispatch,
+          source: 'chat',
+          createdAt: new Date()
+        });
+      }
 
       // Proatividade: Checar limites
       let proactiveReply = "";
@@ -262,6 +351,27 @@ const ChatInterface: React.FC<ChatProps> = ({ user, messages, setMessages, trans
           </div>
         ))}
 
+        {pendingSalaryReminder && (
+          <div className="flex flex-col items-start gap-2 animate-fade-in-up">
+            <div className="bg-[var(--surface)] border border-[var(--border)] rounded-3xl p-5 shadow-xl w-full max-w-[90%]">
+               <div className="flex gap-2">
+                 <button 
+                   onClick={() => handleSalaryConfirm(true)}
+                   className="flex-1 bg-[var(--green-whatsapp)] text-white py-3 rounded-2xl font-black text-[10px] uppercase transition-all active:scale-95"
+                 >
+                   Sim, recebi
+                 </button>
+                 <button 
+                   onClick={() => handleSalaryConfirm(false)}
+                   className="flex-1 bg-[var(--bg-body)] text-[var(--text-muted)] border border-[var(--border)] py-3 rounded-2xl font-black text-[10px] uppercase transition-all active:scale-95"
+                 >
+                   Ainda não
+                 </button>
+               </div>
+            </div>
+          </div>
+        )}
+
         {pendingAction && (
           <div className="flex flex-col items-start gap-2 animate-fade-in-up">
             <div className="bg-[var(--surface)] border border-[var(--border)] rounded-3xl p-5 shadow-xl w-full max-w-[90%]">
@@ -292,16 +402,20 @@ const ChatInterface: React.FC<ChatProps> = ({ user, messages, setMessages, trans
               </p>
 
               <div className="grid grid-cols-2 gap-2">
-                {wallets.map(w => (
-                  <button 
-                    key={w.id}
-                    onClick={() => confirmPendingAction(w.id)}
-                    className="bg-[var(--bg-body)] hover:bg-[var(--green-whatsapp)] hover:text-white border border-[var(--border)] rounded-2xl py-3 px-2 text-[10px] font-black uppercase transition-all active:scale-95 flex flex-col items-center gap-1"
-                  >
-                    <span className="text-lg">{w.icon || '💰'}</span>
-                    <span className="truncate w-full text-center">{w.name}</span>
-                  </button>
-                ))}
+                {wallets.map(w => {
+                  const isSuggested = pendingAction.payload.targetWalletName && w.name.toLowerCase() === pendingAction.payload.targetWalletName.toLowerCase();
+                  return (
+                    <button 
+                      key={w.id}
+                      onClick={() => confirmPendingAction(w.id)}
+                      className={`${isSuggested ? 'bg-[var(--green-whatsapp)] text-white border-white' : 'bg-[var(--bg-body)] text-[var(--text-primary)] border-[var(--border)]'} hover:bg-[var(--green-whatsapp)] hover:text-white border rounded-2xl py-3 px-2 text-[10px] font-black uppercase transition-all active:scale-95 flex flex-col items-center gap-1 relative overflow-hidden`}
+                    >
+                      {isSuggested && <div className="absolute top-0 right-0 bg-white text-[var(--green-whatsapp)] text-[7px] px-1 font-black">Sugerido</div>}
+                      <span className="text-lg">{w.icon || '💰'}</span>
+                      <span className="truncate w-full text-center">{w.name}</span>
+                    </button>
+                  );
+                })}
                 {pendingAction.type !== 'ADD_INCOME' && (
                   <button 
                     onClick={() => confirmPendingAction('CARD')}
