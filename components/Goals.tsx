@@ -4,6 +4,7 @@ import { SavingGoal, Transaction, Contribution, UserSession, Wallet } from '../t
 import { dispatchEvent } from '../services/eventDispatcher';
 import MoneyInput from './MoneyInput';
 import { syncUserData } from '../services/databaseService';
+import { Notification } from './UI';
 
 interface GoalsProps {
   goals: SavingGoal[];
@@ -39,6 +40,7 @@ const Goals: React.FC<GoalsProps> = ({ goals, transactions, wallets, uid, user, 
   
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [completedGoal, setCompletedGoal] = useState<SavingGoal | null>(null);
+  const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 
   const categories = ['Viagem', 'Carro', 'Casa', 'Reserva', 'Educação', 'Lazer', 'Outros'];
   const priorities = ['Baixa', 'Média', 'Alta'];
@@ -63,7 +65,7 @@ const Goals: React.FC<GoalsProps> = ({ goals, transactions, wallets, uid, user, 
 
   const handleCreateGoal = async () => {
     if (!newGoalName || !newGoalTarget || !newGoalLocation) {
-      alert("Preencha todos os campos obrigatórios.");
+      setNotification({ message: "Preencha todos os campos obrigatórios.", type: 'error' });
       return;
     }
     
@@ -186,13 +188,13 @@ const Goals: React.FC<GoalsProps> = ({ goals, transactions, wallets, uid, user, 
     if (!showAporteModal || isNaN(val) || val <= 0) return;
 
     if (!selectedWalletId) {
-      alert("Por favor, selecione de onde sairá o dinheiro.");
+      setNotification({ message: "Por favor, selecione de onde sairá o dinheiro.", type: 'error' });
       return;
     }
 
     const wallet = wallets.find(w => w.id === selectedWalletId);
     if (wallet && val > wallet.balance) {
-      alert(`Saldo insuficiente na carteira ${wallet.name}! Você tem ${format(wallet.balance)} disponível.`);
+      setNotification({ message: `Saldo insuficiente na carteira ${wallet.name}! Você tem ${format(wallet.balance)} disponível.`, type: 'error' });
       return;
     }
     
@@ -240,7 +242,7 @@ const Goals: React.FC<GoalsProps> = ({ goals, transactions, wallets, uid, user, 
     if (!goal) return;
 
     if (val > goal.currentAmount) {
-      alert(`Saldo insuficiente na meta! Você tem ${format(goal.currentAmount)} guardado.`);
+      setNotification({ message: `Saldo insuficiente na meta! Você tem ${format(goal.currentAmount)} guardado.`, type: 'error' });
       return;
     }
 
@@ -265,7 +267,7 @@ const Goals: React.FC<GoalsProps> = ({ goals, transactions, wallets, uid, user, 
       setShowGastoModal(null);
       setTimeout(() => setSuccessMessage(null), 5000);
     } else {
-      alert("Erro ao processar gasto da meta.");
+      setNotification({ message: "Erro ao processar gasto da meta.", type: 'error' });
     }
   };
 
@@ -287,7 +289,7 @@ const Goals: React.FC<GoalsProps> = ({ goals, transactions, wallets, uid, user, 
       setShowDeleteConfirm(null);
     } catch (err: any) {
       console.error("Erro ao excluir meta:", err);
-      alert(`Erro ao excluir meta: ${err.message || "Tente novamente."}`);
+      setNotification({ message: `Erro ao excluir meta: ${err.message || "Tente novamente."}`, type: 'error' });
     }
   };
 
@@ -751,6 +753,14 @@ const Goals: React.FC<GoalsProps> = ({ goals, transactions, wallets, uid, user, 
             </div>
           </div>
         </div>
+      )}
+
+      {notification && (
+        <Notification
+          message={notification.message}
+          type={notification.type}
+          onClose={() => setNotification(null)}
+        />
       )}
     </div>
   );

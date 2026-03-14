@@ -2,6 +2,7 @@
 import React, { useState } from 'react';
 import { UserSession } from '../types';
 import MoneyInput from './MoneyInput';
+import { Notification } from './UI';
 
 interface OnboardingProps {
   user: UserSession;
@@ -14,6 +15,7 @@ const Onboarding: React.FC<OnboardingProps> = ({ user, onComplete }) => {
   const [bills, setBills] = useState<any[]>([]);
   const [goalName, setGoalName] = useState('');
   const [goalTarget, setGoalTarget] = useState('');
+  const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   
   const [billDesc, setBillDesc] = useState('');
   const [billVal, setBillVal] = useState('');
@@ -84,7 +86,13 @@ const Onboarding: React.FC<OnboardingProps> = ({ user, onComplete }) => {
               />
             </div>
             <button 
-              onClick={() => income > 0 ? nextStep() : alert("Informe sua renda")}
+              onClick={() => {
+                if (income > 0) {
+                  nextStep();
+                } else {
+                  setNotification({ message: "Informe sua renda", type: 'error' });
+                }
+              }}
               className="w-full bg-[#111b21] text-white font-bold py-4 rounded-xl shadow-lg active:scale-95 transition-all uppercase tracking-widest text-xs"
             >
               Próximo: Gastos Fixos
@@ -176,6 +184,14 @@ const Onboarding: React.FC<OnboardingProps> = ({ user, onComplete }) => {
           </div>
         )}
       </div>
+
+      {notification && (
+        <Notification
+          message={notification.message}
+          type={notification.type}
+          onClose={() => setNotification(null)}
+        />
+      )}
     </div>
   );
 };

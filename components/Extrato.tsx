@@ -6,6 +6,7 @@ import { dispatchEvent } from '../services/eventDispatcher';
 import { normalizeTransaction } from '../services/normalizationService';
 import MoneyInput from './MoneyInput';
 import { Calendar, Tag, FileText, Trash2, Edit2, CreditCard, Wallet, ArrowUpCircle, ArrowDownCircle, Search, Filter, X, ChevronDown } from 'lucide-react';
+import { Notification, ConfirmModal } from './UI';
 
 interface ExtratoProps {
   uid: string;
@@ -39,6 +40,8 @@ const Extrato: React.FC<ExtratoProps> = ({ uid, cards, categories: userCategorie
   const [editDate, setEditDate] = useState('');
   const [editCategory, setEditCategory] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+  const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<Transaction | null>(null);
 
   const PAGE_SIZE = 20;
 
@@ -141,19 +144,26 @@ const Extrato: React.FC<ExtratoProps> = ({ uid, cards, categories: userCategorie
 
       if (res.success) {
         setEditingTrans(null);
+        setNotification({ message: "Transação atualizada com sucesso!", type: 'success' });
       } else {
-        alert("Erro ao salvar alterações.");
+        setNotification({ message: "Erro ao salvar alterações.", type: 'error' });
       }
     } catch (e) {
       console.error(e);
-      alert("Erro ao salvar.");
+      setNotification({ message: "Erro ao salvar.", type: 'error' });
     } finally {
       setIsSaving(false);
     }
   };
 
-  const handleDelete = async (t: Transaction) => {
-    if (!window.confirm("Deseja realmente excluir esta transação? Esta ação não pode ser desfeita.")) return;
+  const handleDelete = (t: Transaction) => {
+    setConfirmDelete(t);
+  };
+
+  const confirmDeleteTransaction = async () => {
+    if (!confirmDelete) return;
+    const t = confirmDelete;
+    setConfirmDelete(null);
     
     try {
       const res = await dispatchEvent(uid, {
@@ -167,12 +177,15 @@ const Extrato: React.FC<ExtratoProps> = ({ uid, cards, categories: userCategorie
         createdAt: new Date()
       });
 
-      if (!res.success) {
-        alert("Erro ao excluir transação.");
+      if (res.success) {
+        setNotification({ message: "Transação excluída com sucesso!", type: 'success' });
+        if (editingTrans?.id === t.id) setEditingTrans(null);
+      } else {
+        setNotification({ message: "Erro ao excluir transação.", type: 'error' });
       }
     } catch (e) {
       console.error(e);
-      alert("Erro ao excluir.");
+      setNotification({ message: "Erro ao excluir.", type: 'error' });
     }
   };
 
@@ -508,6 +521,22 @@ const Extrato: React.FC<ExtratoProps> = ({ uid, cards, categories: userCategorie
             </div>
           </div>
         </div>
+      )}
+
+      <ConfirmModal
+        isOpen={!!confirmDelete}
+        onCancel={() => setConfirmDelete(null)}
+        onConfirm={confirmDeleteTransaction}
+        title="Excluir Transação?"
+        message="Tem certeza que deseja excluir esta transação? Esta ação não pode ser desfeita."
+      />
+
+      {notification && (
+        <Notification
+          message={notification.message}
+          type={notification.type}
+          onClose={() => setNotification(null)}
+        />
       )}
     </div>
   );

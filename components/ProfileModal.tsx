@@ -1,6 +1,7 @@
 
 import React, { useState } from 'react';
 import { UserSession } from '../types';
+import { Notification } from './UI';
 
 interface ProfileModalProps {
   user: UserSession;
@@ -22,6 +23,7 @@ const ProfileModal: React.FC<ProfileModalProps> = ({
   const [isEditing, setIsEditing] = useState(false);
   const [showBackup, setShowBackup] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 
   const handleSave = () => {
     onUpdate({ name, password, photoURL });
@@ -33,7 +35,7 @@ const ProfileModal: React.FC<ProfileModalProps> = ({
       setIsSyncing(true);
       await onSyncForce();
       setIsSyncing(false);
-      alert("Dados restaurados da nuvem!");
+      setNotification({ message: "Dados restaurados da nuvem!", type: 'success' });
     }
   };
 
@@ -45,10 +47,10 @@ const ProfileModal: React.FC<ProfileModalProps> = ({
       try {
         const json = JSON.parse(ev.target?.result as string);
         if (onImportBackup) onImportBackup(json);
-        alert("Backup restaurado com sucesso!");
-        onClose();
+        setNotification({ message: "Backup restaurado com sucesso!", type: 'success' });
+        setTimeout(() => onClose(), 1500);
       } catch (err) {
-        alert("Arquivo de backup inválido.");
+        setNotification({ message: "Arquivo de backup inválido.", type: 'error' });
       }
     };
     reader.readAsText(file);
@@ -86,7 +88,7 @@ const ProfileModal: React.FC<ProfileModalProps> = ({
           ) : showBackup ? (
             <div className="space-y-4 animate-in slide-in-from-bottom">
               <h4 className="text-[10px] font-black text-slate-400 uppercase text-center">Gestão de Backup</h4>
-              <button onClick={() => alert("Função de exportação")} className="w-full bg-slate-900 text-white font-black py-4 rounded-2xl text-[10px] uppercase flex items-center justify-center gap-2">
+              <button onClick={() => setNotification({ message: "Função de exportação em breve!", type: 'info' })} className="w-full bg-slate-900 text-white font-black py-4 rounded-2xl text-[10px] uppercase flex items-center justify-center gap-2">
                 📥 Exportar Dados (JSON)
               </button>
               <label className="w-full bg-emerald-50 text-emerald-600 border border-emerald-100 font-black py-4 rounded-2xl text-[10px] uppercase flex items-center justify-center gap-2 cursor-pointer">
@@ -124,6 +126,14 @@ const ProfileModal: React.FC<ProfileModalProps> = ({
           )}
         </div>
       </div>
+
+      {notification && (
+        <Notification
+          message={notification.message}
+          type={notification.type}
+          onClose={() => setNotification(null)}
+        />
+      )}
     </div>
   );
 };

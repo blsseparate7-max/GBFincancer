@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence, useAnimation } from 'motion/react';
 import { Mic, Send, X, Lock, Trash2, ChevronUp, Smile, Paperclip, Check } from 'lucide-react';
+import { Notification } from './UI';
 
 interface ChatComposerProps {
   onSendText: (text: string) => void;
@@ -16,6 +17,7 @@ const ChatComposer: React.FC<ChatComposerProps> = ({ onSendText, isLoading, plac
   const [dragX, setDragX] = useState(0);
   const [dragY, setDragY] = useState(0);
   const [isCancelled, setIsCancelled] = useState(false);
+  const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const recognitionRef = useRef<any>(null);
@@ -35,7 +37,7 @@ const ChatComposer: React.FC<ChatComposerProps> = ({ onSendText, isLoading, plac
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     
     if (!SpeechRecognition) {
-      alert("Seu navegador não suporta reconhecimento de voz. Tente usar o Chrome ou Safari.");
+      setNotification({ message: "Seu navegador não suporta reconhecimento de voz. Tente usar o Chrome ou Safari.", type: 'error' });
       return;
     }
 
@@ -82,7 +84,7 @@ const ChatComposer: React.FC<ChatComposerProps> = ({ onSendText, isLoading, plac
       recognition.onerror = (event: any) => {
         console.error("Erro no reconhecimento de voz:", event.error);
         if (event.error === 'not-allowed') {
-          alert("Permissão de microfone negada.");
+          setNotification({ message: "Permissão de microfone negada.", type: 'error' });
         }
         stopRecording(true);
       };
@@ -318,6 +320,14 @@ const ChatComposer: React.FC<ChatComposerProps> = ({ onSendText, isLoading, plac
             <Check size={18} className="text-white" />
           </button>
         </motion.div>
+      )}
+
+      {notification && (
+        <Notification
+          message={notification.message}
+          type={notification.type}
+          onClose={() => setNotification(null)}
+        />
       )}
     </div>
   );

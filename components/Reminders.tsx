@@ -3,6 +3,7 @@ import React, { useState, useMemo } from 'react';
 import { Bill, PaymentMethod, Wallet } from '../types';
 import { dispatchEvent } from '../services/eventDispatcher';
 import MoneyInput from './MoneyInput';
+import { Notification, ConfirmModal } from './UI';
 
 interface RemindersProps {
   bills: Bill[];
@@ -17,6 +18,8 @@ const Reminders: React.FC<RemindersProps> = ({ bills, wallets, uid, loading }) =
   const [editingBill, setEditingBill] = useState<Bill | null>(null);
   const [payingBillId, setPayingBillId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
 
   // Form States
   const [desc, setDesc] = useState('');
@@ -92,9 +95,15 @@ const Reminders: React.FC<RemindersProps> = ({ bills, wallets, uid, loading }) =
     setIsLoading(false);
   };
 
-  const handleDelete = async (id: string) => {
+  const handleDelete = (id: string) => {
     if (!id) return;
-    if (!window.confirm("Deseja remover este lembrete?")) return;
+    setConfirmDelete(id);
+  };
+
+  const confirmDeleteReminder = async () => {
+    if (!confirmDelete) return;
+    const id = confirmDelete;
+    setConfirmDelete(null);
     
     try {
       const res = await dispatchEvent(uid, {
@@ -107,9 +116,10 @@ const Reminders: React.FC<RemindersProps> = ({ bills, wallets, uid, loading }) =
       if (!res.success) {
         throw new Error(res.error?.toString() || "Erro ao excluir lembrete");
       }
+      setNotification({ message: "Lembrete removido com sucesso!", type: 'success' });
     } catch (err: any) {
       console.error("Erro ao excluir lembrete:", err);
-      alert(`Erro: ${err.message || "Tente novamente."}`);
+      setNotification({ message: `Erro: ${err.message || "Tente novamente."}`, type: 'error' });
     }
   };
 
@@ -311,6 +321,22 @@ const Reminders: React.FC<RemindersProps> = ({ bills, wallets, uid, loading }) =
             </div>
           </div>
         </div>
+      )}
+
+      <ConfirmModal
+        isOpen={!!confirmDelete}
+        onClose={() => setConfirmDelete(null)}
+        onConfirm={confirmDeleteReminder}
+        title="Excluir Lembrete?"
+        message="Tem certeza que deseja remover este lembrete recorrente?"
+      />
+
+      {notification && (
+        <Notification
+          message={notification.message}
+          type={notification.type}
+          onClose={() => setNotification(null)}
+        />
       )}
     </div>
   );

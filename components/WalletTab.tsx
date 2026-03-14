@@ -4,6 +4,8 @@ import { collection, onSnapshot, query, orderBy, doc } from 'firebase/firestore'
 import { Wallet, WalletTransfer, WalletType, SavingGoal } from '../types';
 import { dispatchEvent } from '../services/eventDispatcher';
 import MoneyInput from './MoneyInput';
+import { ConfirmModal, Notification } from './UI';
+import { motion } from 'framer-motion';
 import { MoreVertical, Edit2, Trash2, ArrowRightLeft } from 'lucide-react';
 
 interface WalletTabProps {
@@ -29,6 +31,8 @@ const WalletTab: React.FC<WalletTabProps> = ({ uid, freeBalance, goals, wallets:
   const [color, setColor] = useState('#00a884');
   const [note, setNote] = useState('');
   const [activeMenu, setActiveMenu] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<{ isOpen: boolean; wallet?: any; message: string }>({ isOpen: false, message: '' });
+  const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 
   const [fromId, setFromId] = useState('');
   const [toId, setToId] = useState('');
@@ -94,36 +98,54 @@ const WalletTab: React.FC<WalletTabProps> = ({ uid, freeBalance, goals, wallets:
     const amount = Number(transferAmount);
     const sourceWallet = wallets.find(w => w.id === fromId);
     if (sourceWallet && sourceWallet.balance < amount) {
-      alert("Saldo insuficiente na carteira de origem!");
+      setNotification({ message: "Saldo insuficiente na carteira de origem!", type: 'error' });
       return;
     }
 
     setIsLoading(true);
-    await dispatchEvent(uid, {
-      type: 'TRANSFER_WALLET',
-      payload: { fromWalletId: fromId, toWalletId: toId, amount, note: transferNote },
-      source: 'ui',
-      createdAt: new Date()
-    });
-    setFromId(''); setToId(''); setTransferAmount(''); setTransferNote(''); setIsTransferring(false);
-    setIsLoading(false);
+    try {
+      await dispatchEvent(uid, {
+        type: 'TRANSFER_WALLET',
+        payload: { fromWalletId: fromId, toWalletId: toId, amount, note: transferNote },
+        source: 'ui',
+        createdAt: new Date()
+      });
+      setNotification({ message: "Transferência realizada com sucesso!", type: 'success' });
+      setFromId(''); setToId(''); setTransferAmount(''); setTransferNote(''); setIsTransferring(false);
+    } catch (err) {
+      setNotification({ message: "Erro ao realizar transferência.", type: 'error' });
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const handleDeleteWallet = async (wallet: Wallet) => {
+  const handleDeleteWallet = (wallet: Wallet) => {
     const hasBalance = (wallet.balance || 0) > 0;
     const msg = hasBalance 
-      ? `Essa carteira ainda possui saldo (R$ ${wallet.balance.toFixed(2)}). Deseja transferir ou zerar antes de remover?`
-      : "Excluir esta carteira?";
+      ? `Essa carteira ainda possui saldo (R$ ${wallet.balance.toFixed(2)}). Deseja realmente excluir?`
+      : "Deseja excluir esta carteira?";
     
-    if (!window.confirm(msg)) return;
-    
-    await dispatchEvent(uid, {
-      type: 'DELETE_WALLET',
-      payload: { id: wallet.id },
-      source: 'ui',
-      createdAt: new Date()
-    });
-    setActiveMenu(null);
+    setConfirmDelete({ isOpen: true, wallet, message: msg });
+  };
+
+  const confirmDeleteWallet = async () => {
+    const wallet = confirmDelete.wallet;
+    if (!wallet) return;
+
+    try {
+      await dispatchEvent(uid, {
+        type: 'DELETE_WALLET',
+        payload: { id: wallet.id },
+        source: 'ui',
+        createdAt: new Date()
+      });
+      setNotification({ message: "Carteira excluída com sucesso!", type: 'success' });
+    } catch (err) {
+      setNotification({ message: "Erro ao excluir carteira.", type: 'error' });
+    } finally {
+      setConfirmDelete({ isOpen: false, message: '' });
+      setActiveMenu(null);
+    }
   };
 
   const openEdit = (wallet: Wallet) => {
@@ -148,71 +170,99 @@ const WalletTab: React.FC<WalletTabProps> = ({ uid, freeBalance, goals, wallets:
   }
 
   return (
-    <div className="p-4 lg:p-8 space-y-8 animate-fade max-w-5xl mx-auto pb-32 min-h-full">
+    <div className="p-4 lg:p-8 space-y-8 animate-fade max-w-7xl mx-auto pb-32 min-h-full">
+      {/* Notifications */}
+      {notification && (
+        <Notification 
+          message={notification.message} 
+          type={notification.type} 
+          onClose={() => setNotification(null)} 
+        />
+      )}
+
+      {/* Confirm Delete Modal */}
+      <ConfirmModal 
+        isOpen={confirmDelete.isOpen}
+        title="Excluir Carteira"
+        message={confirmDelete.message}
+        onConfirm={confirmDeleteWallet}
+        onCancel={() => setConfirmDelete({ isOpen: false, message: '' })}
+        variant="danger"
+        confirmText="Excluir"
+      />
+
       {/* Header / Stats */}
-      <div className="bg-[var(--surface)] rounded-[2rem] p-6 border border-[var(--border)] shadow-2xl">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div className="space-y-1">
-            <p className="text-[10px] font-black text-[var(--text-muted)] uppercase tracking-widest">Saldo Livre (Ref)</p>
-            <h3 className="text-2xl font-black text-[var(--text-primary)]">R$ {freeBalance.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</h3>
+      <div className="bg-[var(--surface)] rounded-[3rem] p-8 border border-[var(--border)] shadow-2xl relative overflow-hidden">
+        <div className="absolute top-0 right-0 w-64 h-64 bg-[var(--green-whatsapp)]/5 rounded-full -mr-32 -mt-32 blur-3xl pointer-events-none"></div>
+        
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 relative z-10">
+          <div className="space-y-2">
+            <p className="text-[10px] font-black text-[var(--text-muted)] uppercase tracking-[0.3em]">Saldo Livre (Ref)</p>
+            <h3 className="text-3xl font-black text-[var(--text-primary)] italic tracking-tighter">R$ {freeBalance.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</h3>
           </div>
-          <div className="space-y-1">
-            <p className="text-[10px] font-black text-[var(--text-muted)] uppercase tracking-widest">Total Alocado</p>
-            <h3 className="text-2xl font-black text-[var(--green-whatsapp)]">R$ {totalInWallets.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</h3>
+          <div className="space-y-2">
+            <p className="text-[10px] font-black text-[var(--text-muted)] uppercase tracking-[0.3em]">Total Alocado</p>
+            <h3 className="text-3xl font-black text-[var(--green-whatsapp)] italic tracking-tighter">R$ {totalInWallets.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</h3>
           </div>
-          <div className="space-y-1">
-            <p className="text-[10px] font-black text-[var(--text-muted)] uppercase tracking-widest">Diferença</p>
-            <h3 className={`text-2xl font-black ${difference === 0 ? 'text-[var(--text-muted)]' : difference > 0 ? 'text-amber-500' : 'text-rose-500'}`}>
+          <div className="space-y-2">
+            <p className="text-[10px] font-black text-[var(--text-muted)] uppercase tracking-[0.3em]">Diferença</p>
+            <h3 className={`text-3xl font-black italic tracking-tighter ${difference === 0 ? 'text-[var(--text-muted)]' : difference > 0 ? 'text-amber-500' : 'text-rose-500'}`}>
               R$ {difference.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
             </h3>
           </div>
         </div>
 
         {difference !== 0 && (
-          <div className={`mt-4 p-3 rounded-xl text-[11px] font-bold flex items-center gap-3 ${difference > 0 ? 'bg-amber-500/10 text-amber-500' : 'bg-rose-500/10 text-rose-500'}`}>
+          <div className={`mt-6 p-4 rounded-2xl text-[11px] font-black uppercase tracking-widest flex items-center gap-3 ${difference > 0 ? 'bg-amber-500/10 text-amber-500 border border-amber-500/20' : 'bg-rose-500/10 text-rose-500 border border-rose-500/20'}`}>
+            <div className={`w-2 h-2 rounded-full animate-pulse ${difference > 0 ? 'bg-amber-500' : 'bg-rose-500'}`} />
             <span>{difference > 0 ? '⚠️ Você ainda tem saldo não alocado em carteiras.' : '❌ O total das carteiras excede seu saldo livre disponível.'}</span>
           </div>
         )}
 
-        <div className="mt-6 pt-6 border-t border-[var(--border)] flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-bold text-[var(--text-muted)]">Guardado em Metas:</span>
-            <span className="text-xs font-black text-[var(--green-whatsapp)]">R$ {totalSavedInGoals.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+        <div className="mt-8 pt-8 border-t border-[var(--border)] flex flex-col sm:flex-row items-center justify-between gap-6">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-full bg-[var(--green-whatsapp)]/10 flex items-center justify-center">
+              <span className="text-lg">🎯</span>
+            </div>
+            <div>
+              <p className="text-[9px] font-black text-[var(--text-muted)] uppercase tracking-widest">Guardado em Metas</p>
+              <p className="text-sm font-black text-[var(--green-whatsapp)]">R$ {totalSavedInGoals.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+            </div>
           </div>
-          <div className="flex gap-2">
-            <button onClick={() => setIsAdding(true)} className="bg-[var(--green-whatsapp)] text-white px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest active:scale-95 transition-all">Nova Carteira</button>
-            <button onClick={() => setIsTransferring(true)} className="bg-[var(--bg-body)] text-[var(--text-primary)] border border-[var(--border)] px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest active:scale-95 transition-all">Transferir</button>
+          <div className="flex gap-3 w-full sm:w-auto">
+            <button onClick={() => setIsAdding(true)} className="flex-1 sm:flex-none bg-[var(--green-whatsapp)] text-white px-6 py-3 rounded-2xl text-[11px] font-black uppercase tracking-widest active:scale-95 transition-all shadow-lg shadow-[var(--green-whatsapp)]/20">Nova Carteira</button>
+            <button onClick={() => setIsTransferring(true)} className="flex-1 sm:flex-none bg-[var(--bg-body)] text-[var(--text-primary)] border border-[var(--border)] px-6 py-3 rounded-2xl text-[11px] font-black uppercase tracking-widest active:scale-95 transition-all hover:bg-white/5">Transferir</button>
           </div>
         </div>
       </div>
 
       {/* Wallets Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
         {activeWallets.map(wallet => (
-          <div key={wallet.id} className="bg-[var(--surface)] p-5 rounded-3xl border border-[var(--border)] hover:border-[var(--green-whatsapp)]/30 transition-all group relative overflow-hidden">
-            <div className="absolute top-0 left-0 w-1 h-full" style={{ backgroundColor: wallet.color || '#00a884' }} />
+          <div key={wallet.id} className="bg-[var(--surface)] p-7 rounded-[2.5rem] border border-[var(--border)] hover:border-[var(--green-whatsapp)]/30 transition-all group relative overflow-hidden shadow-sm hover:shadow-xl">
+            <div className="absolute top-0 left-0 w-1.5 h-full opacity-50" style={{ backgroundColor: wallet.color || '#00a884' }} />
             
-            <div className="flex justify-between items-start mb-4">
+            <div className="flex justify-between items-start mb-6">
               <div>
-                <p className="text-[9px] font-black text-[var(--text-muted)] uppercase tracking-widest mb-1">{wallet.type}</p>
-                <h4 className="text-lg font-black text-[var(--text-primary)]">{wallet.name}</h4>
-                {wallet.note && <p className="text-[10px] text-[var(--text-muted)] italic truncate max-w-[150px]">{wallet.note}</p>}
+                <p className="text-[9px] font-black text-[var(--text-muted)] uppercase tracking-[0.2em] mb-1">{wallet.type}</p>
+                <h4 className="text-xl font-black text-[var(--text-primary)] uppercase italic tracking-tight">{wallet.name}</h4>
+                {wallet.note && <p className="text-[10px] text-[var(--text-muted)] font-medium mt-1 truncate max-w-[180px]">{wallet.note}</p>}
               </div>
               <div className="relative">
                 <button 
                   onClick={() => setActiveMenu(activeMenu === wallet.id ? null : wallet.id)}
-                  className="p-2 text-[var(--text-muted)] hover:bg-[var(--bg-body)] rounded-lg transition-all"
+                  className="w-10 h-10 flex items-center justify-center text-[var(--text-muted)] hover:bg-[var(--bg-body)] rounded-xl transition-all border border-transparent hover:border-[var(--border)]"
                 >
-                  <MoreVertical size={16} />
+                  <MoreVertical size={18} />
                 </button>
 
                 {activeMenu === wallet.id && (
-                  <div className="absolute right-0 mt-2 w-40 bg-[var(--surface)] border border-[var(--border)] rounded-2xl shadow-2xl z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
+                  <div className="absolute right-0 mt-2 w-48 bg-[var(--surface)] border border-[var(--border)] rounded-3xl shadow-2xl z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200 backdrop-blur-xl">
                     <button 
                       onClick={() => openEdit(wallet)}
-                      className="w-full px-4 py-3 text-left text-[10px] font-black uppercase hover:bg-[var(--bg-body)] transition-colors flex items-center gap-3"
+                      className="w-full px-5 py-4 text-left text-[10px] font-black uppercase hover:bg-white/5 transition-colors flex items-center gap-3"
                     >
-                      <Edit2 size={14} className="text-[var(--green-whatsapp)]" /> Editar
+                      <Edit2 size={14} className="text-[var(--green-whatsapp)]" /> Editar Dados
                     </button>
                     <button 
                       onClick={() => {
@@ -220,33 +270,39 @@ const WalletTab: React.FC<WalletTabProps> = ({ uid, freeBalance, goals, wallets:
                         setFromId(wallet.id);
                         setActiveMenu(null);
                       }}
-                      className="w-full px-4 py-3 text-left text-[10px] font-black uppercase hover:bg-[var(--bg-body)] transition-colors flex items-center gap-3"
+                      className="w-full px-5 py-4 text-left text-[10px] font-black uppercase hover:bg-white/5 transition-colors flex items-center gap-3"
                     >
-                      <ArrowRightLeft size={14} className="text-amber-500" /> Transferir
+                      <ArrowRightLeft size={14} className="text-amber-500" /> Transferir Saldo
                     </button>
                     <button 
                       onClick={() => handleDeleteWallet(wallet)}
-                      className="w-full px-4 py-3 text-left text-[10px] font-black uppercase hover:bg-rose-500/10 text-rose-500 transition-colors flex items-center gap-3 border-t border-[var(--border)]"
+                      className="w-full px-5 py-4 text-left text-[10px] font-black uppercase hover:bg-rose-500/10 text-rose-500 transition-colors flex items-center gap-3 border-t border-[var(--border)]"
                     >
-                      <Trash2 size={14} /> Remover
+                      <Trash2 size={14} /> Remover Conta
                     </button>
                   </div>
                 )}
               </div>
             </div>
 
-            <div className="space-y-1">
-              <p className="text-2xl font-black text-[var(--text-primary)]">R$ {wallet.balance.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
-              <div className="flex items-center gap-2">
-                <div className="flex-1 h-1 bg-[var(--bg-body)] rounded-full overflow-hidden">
-                  <div 
-                    className="h-full bg-[var(--green-whatsapp)]" 
-                    style={{ width: `${totalInWallets > 0 ? (wallet.balance / totalInWallets) * 100 : 0}%` }} 
+            <div className="space-y-3">
+              <p className="text-3xl font-black text-[var(--text-primary)] tracking-tighter italic">R$ {wallet.balance.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[9px] font-black text-[var(--text-muted)] uppercase tracking-widest">Participação</span>
+                  <span className="text-[10px] font-black text-[var(--text-primary)]">
+                    {totalInWallets > 0 ? ((wallet.balance / totalInWallets) * 100).toFixed(0) : 0}%
+                  </span>
+                </div>
+                <div className="h-1.5 bg-[var(--bg-body)] rounded-full overflow-hidden">
+                  <motion.div 
+                    initial={{ width: 0 }}
+                    animate={{ width: `${totalInWallets > 0 ? (wallet.balance / totalInWallets) * 100 : 0}%` }}
+                    transition={{ duration: 1, ease: "easeOut" }}
+                    className="h-full bg-[var(--green-whatsapp)] shadow-[0_0_10px_rgba(0,168,132,0.3)]" 
+                    style={{ backgroundColor: wallet.color || '#00a884' }}
                   />
                 </div>
-                <span className="text-[10px] font-black text-[var(--text-muted)]">
-                  {totalInWallets > 0 ? ((wallet.balance / totalInWallets) * 100).toFixed(0) : 0}%
-                </span>
               </div>
             </div>
           </div>
@@ -254,28 +310,38 @@ const WalletTab: React.FC<WalletTabProps> = ({ uid, freeBalance, goals, wallets:
       </div>
 
       {/* Recent Transfers */}
-      <div className="space-y-4">
-        <h3 className="text-[10px] font-black text-[var(--text-muted)] uppercase tracking-widest italic">Movimentações Internas</h3>
-        <div className="bg-[var(--surface)] rounded-3xl border border-[var(--border)] overflow-hidden">
+      <div className="space-y-6">
+        <h3 className="text-[11px] font-black text-[var(--text-muted)] uppercase tracking-[0.3em] italic ml-4">Movimentações Internas</h3>
+        <div className="bg-[var(--surface)] rounded-[2.5rem] border border-[var(--border)] overflow-hidden shadow-sm">
           {transfers.length === 0 ? (
-            <p className="p-8 text-center text-[var(--text-muted)] text-xs italic">Nenhuma transferência realizada.</p>
+            <div className="p-12 text-center space-y-4">
+              <div className="w-16 h-16 bg-[var(--bg-body)] rounded-full flex items-center justify-center mx-auto opacity-20">
+                <ArrowRightLeft size={32} />
+              </div>
+              <p className="text-[10px] font-black text-[var(--text-muted)] uppercase tracking-widest italic">Nenhuma transferência realizada.</p>
+            </div>
           ) : (
             transfers.slice(0, 10).map(t => {
               const from = wallets.find(w => w.id === t.fromWalletId);
               const to = wallets.find(w => w.id === t.toWalletId);
               return (
-                <div key={t.id} className="p-4 border-b border-[var(--border)] flex justify-between items-center text-[11px]">
-                  <div className="flex gap-4 items-center">
-                    <div className="flex items-center gap-2">
-                      <span className="font-bold text-[var(--text-primary)]">{from?.name || 'Excluída'}</span>
-                      <span className="text-[var(--green-whatsapp)]">➜</span>
-                      <span className="font-bold text-[var(--text-primary)]">{to?.name || 'Excluída'}</span>
+                <div key={t.id} className="p-6 border-b border-[var(--border)] last:border-0 flex justify-between items-center group hover:bg-white/5 transition-colors">
+                  <div className="flex gap-6 items-center">
+                    <div className="w-10 h-10 rounded-full bg-[var(--bg-body)] flex items-center justify-center border border-[var(--border)] group-hover:border-[var(--green-whatsapp)]/30 transition-colors">
+                      <ArrowRightLeft size={16} className="text-[var(--text-muted)]" />
                     </div>
-                    {t.note && <span className="text-[var(--text-muted)] italic">({t.note})</span>}
+                    <div>
+                      <div className="flex items-center gap-3">
+                        <span className="text-xs font-black text-[var(--text-primary)] uppercase italic">{from?.name || 'Excluída'}</span>
+                        <span className="text-[var(--green-whatsapp)] font-black">➜</span>
+                        <span className="text-xs font-black text-[var(--text-primary)] uppercase italic">{to?.name || 'Excluída'}</span>
+                      </div>
+                      {t.note && <p className="text-[10px] text-[var(--text-muted)] font-medium mt-1">{t.note}</p>}
+                    </div>
                   </div>
                   <div className="text-right">
-                    <p className="font-black text-[var(--text-primary)]">R$ {t.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
-                    <p className="text-[9px] text-[var(--text-muted)]">{new Date(t.date).toLocaleDateString()}</p>
+                    <p className="text-base font-black text-[var(--text-primary)] tracking-tight italic">R$ {t.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                    <p className="text-[9px] font-black text-[var(--text-muted)] uppercase tracking-widest mt-1">{new Date(t.date).toLocaleDateString('pt-BR')}</p>
                   </div>
                 </div>
               );
@@ -286,22 +352,24 @@ const WalletTab: React.FC<WalletTabProps> = ({ uid, freeBalance, goals, wallets:
 
       {/* Modals */}
       {isAdding && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[300] flex items-center justify-center p-4 animate-fade">
-          <div className="bg-[var(--surface)] w-full max-w-md rounded-[2.5rem] border border-[var(--border)] p-8 space-y-6 shadow-2xl">
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-xl z-[300] flex items-center justify-center p-4 animate-fade">
+          <div className="bg-[var(--surface)] w-full max-w-md rounded-[3rem] border border-[var(--border)] p-10 space-y-8 shadow-2xl relative overflow-hidden">
+            <div className="absolute top-0 left-0 w-full h-1.5 bg-[var(--green-whatsapp)] opacity-50"></div>
+            
             <header className="text-center">
-              <h3 className="text-xl font-black italic text-[var(--green-whatsapp)] uppercase tracking-tighter">Nova Carteira</h3>
-              <p className="text-[10px] text-[var(--text-muted)] font-bold uppercase tracking-widest mt-1">Onde está seu dinheiro?</p>
+              <h3 className="text-2xl font-black italic text-[var(--text-primary)] uppercase tracking-tighter">Nova Carteira</h3>
+              <p className="text-[10px] text-[var(--green-whatsapp)] font-black uppercase tracking-[0.3em] mt-2">Onde está seu dinheiro?</p>
             </header>
 
-            <div className="space-y-4">
-              <div className="space-y-1">
-                <label className="text-[9px] font-black text-[var(--text-muted)] uppercase ml-2">Nome da Conta</label>
-                <input className="w-full bg-[var(--bg-body)] rounded-2xl p-4 text-sm font-bold outline-none border border-transparent focus:border-[var(--green-whatsapp)] text-[var(--text-primary)]" placeholder="Ex: Nubank, Dinheiro Físico..." value={name} onChange={e => setName(e.target.value)} />
+            <div className="space-y-6">
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-[var(--text-muted)] uppercase tracking-widest ml-4">Nome da Conta</label>
+                <input className="w-full bg-[var(--bg-body)] rounded-[1.5rem] p-5 text-sm font-black outline-none border border-[var(--border)] focus:border-[var(--green-whatsapp)] text-[var(--text-primary)] transition-all uppercase italic" placeholder="Ex: Nubank, Dinheiro Físico..." value={name} onChange={e => setName(e.target.value)} />
               </div>
               <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1">
-                  <label className="text-[9px] font-black text-[var(--text-muted)] uppercase ml-2">Tipo</label>
-                  <select className="w-full bg-[var(--bg-body)] rounded-2xl p-4 text-sm font-bold outline-none appearance-none text-[var(--text-primary)]" value={type} onChange={e => setType(e.target.value as WalletType)}>
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-[var(--text-muted)] uppercase tracking-widest ml-4">Tipo</label>
+                  <select className="w-full bg-[var(--bg-body)] rounded-[1.5rem] p-5 text-sm font-black outline-none border border-[var(--border)] focus:border-[var(--green-whatsapp)] text-[var(--text-primary)] appearance-none transition-all uppercase italic" value={type} onChange={e => setType(e.target.value as WalletType)}>
                     <option value="CONTA">Banco / Conta</option>
                     <option value="CARTEIRA">Dinheiro Vivo</option>
                     <option value="POUPANÇA">Poupança</option>
@@ -309,35 +377,35 @@ const WalletTab: React.FC<WalletTabProps> = ({ uid, freeBalance, goals, wallets:
                     <option value="OUTRO">Outro</option>
                   </select>
                 </div>
-                <div className="space-y-1">
-                  <label className="text-[9px] font-black text-[var(--text-muted)] uppercase ml-2">Saldo Inicial</label>
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-[var(--text-muted)] uppercase tracking-widest ml-4">Saldo Inicial</label>
                   <MoneyInput 
-                    className="w-full bg-[var(--bg-body)] rounded-2xl p-4 text-sm font-bold outline-none border border-transparent focus:border-[var(--green-whatsapp)] text-[var(--text-primary)]" 
+                    className="w-full bg-[var(--bg-body)] rounded-[1.5rem] p-5 text-sm font-black outline-none border border-[var(--border)] focus:border-[var(--green-whatsapp)] text-[var(--text-primary)] transition-all text-center" 
                     placeholder="R$ 0,00" 
                     value={Number(balance) || 0} 
                     onChange={val => setBalance(val.toString())} 
                   />
                 </div>
               </div>
-              <div className="space-y-1">
-                <label className="text-[9px] font-black text-[var(--text-muted)] uppercase ml-2">Observação (Opcional)</label>
-                <input className="w-full bg-[var(--bg-body)] rounded-2xl p-4 text-sm font-bold outline-none border border-transparent focus:border-[var(--green-whatsapp)] text-[var(--text-primary)]" placeholder="Ex: Conta principal, reserva..." value={note} onChange={e => setNote(e.target.value)} />
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-[var(--text-muted)] uppercase tracking-widest ml-4">Observação (Opcional)</label>
+                <input className="w-full bg-[var(--bg-body)] rounded-[1.5rem] p-5 text-sm font-black outline-none border border-[var(--border)] focus:border-[var(--green-whatsapp)] text-[var(--text-primary)] transition-all" placeholder="Ex: Conta principal, reserva..." value={note} onChange={e => setNote(e.target.value)} />
               </div>
-              <div className="space-y-1">
-                <label className="text-[9px] font-black text-[var(--text-muted)] uppercase ml-2">Cor de Identificação</label>
-                <div className="flex gap-2">
+              <div className="space-y-3">
+                <label className="text-[10px] font-black text-[var(--text-muted)] uppercase tracking-widest ml-4">Cor de Identificação</label>
+                <div className="flex justify-between px-2">
                   {['#00a884', '#128c7e', '#34b7f1', '#ffbc2c', '#ea0038', '#a62c67'].map(c => (
-                    <button key={c} onClick={() => setColor(c)} className={`w-8 h-8 rounded-full border-2 ${color === c ? 'border-white scale-110' : 'border-transparent opacity-50'}`} style={{ backgroundColor: c }} />
+                    <button key={c} onClick={() => setColor(c)} className={`w-10 h-10 rounded-full border-4 transition-all ${color === c ? 'border-white scale-110 shadow-lg' : 'border-transparent opacity-40 hover:opacity-100'}`} style={{ backgroundColor: c }} />
                   ))}
                 </div>
               </div>
             </div>
 
-            <div className="flex gap-3 pt-4">
-              <button onClick={() => setIsAdding(false)} className="flex-1 py-4 rounded-2xl font-black text-[10px] uppercase text-[var(--text-muted)] hover:bg-white/5 transition-all">Cancelar</button>
-              <button onClick={handleCreateWallet} disabled={isLoading} className="flex-1 bg-[var(--green-whatsapp)] text-white py-4 rounded-2xl font-black text-[10px] uppercase shadow-xl active:scale-95 transition-all">
-                {isLoading ? 'Salvando...' : 'Criar Carteira'}
+            <div className="flex flex-col gap-3 pt-4">
+              <button onClick={handleCreateWallet} disabled={isLoading} className="w-full bg-[var(--green-whatsapp)] text-white py-5 rounded-[1.5rem] font-black text-[11px] uppercase tracking-[0.2em] shadow-xl shadow-[var(--green-whatsapp)]/20 active:scale-95 transition-all">
+                {isLoading ? 'Salvando...' : 'Confirmar e Criar'}
               </button>
+              <button onClick={() => setIsAdding(false)} className="w-full py-4 rounded-[1.5rem] font-black text-[10px] uppercase text-[var(--text-muted)] hover:bg-white/5 transition-all">Cancelar</button>
             </div>
           </div>
         </div>
@@ -345,22 +413,24 @@ const WalletTab: React.FC<WalletTabProps> = ({ uid, freeBalance, goals, wallets:
 
       {/* Edit Wallet Modal */}
       {editingWallet && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[300] flex items-center justify-center p-4 animate-fade">
-          <div className="bg-[var(--surface)] w-full max-w-md rounded-[2.5rem] border border-[var(--border)] p-8 space-y-6 shadow-2xl">
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-xl z-[300] flex items-center justify-center p-4 animate-fade">
+          <div className="bg-[var(--surface)] w-full max-w-md rounded-[3rem] border border-[var(--border)] p-10 space-y-8 shadow-2xl relative overflow-hidden">
+            <div className="absolute top-0 left-0 w-full h-1.5 bg-[var(--green-whatsapp)] opacity-50"></div>
+
             <header className="text-center">
-              <h3 className="text-xl font-black italic text-[var(--green-whatsapp)] uppercase tracking-tighter">Editar Carteira</h3>
-              <p className="text-[10px] text-[var(--text-muted)] font-bold uppercase tracking-widest mt-1">Atualize os dados da sua conta</p>
+              <h3 className="text-2xl font-black italic text-[var(--text-primary)] uppercase tracking-tighter">Editar Carteira</h3>
+              <p className="text-[10px] text-[var(--green-whatsapp)] font-black uppercase tracking-[0.3em] mt-2">Atualize os dados da sua conta</p>
             </header>
 
-            <div className="space-y-4">
-              <div className="space-y-1">
-                <label className="text-[9px] font-black text-[var(--text-muted)] uppercase ml-2">Nome da Conta</label>
-                <input className="w-full bg-[var(--bg-body)] rounded-2xl p-4 text-sm font-bold outline-none border border-transparent focus:border-[var(--green-whatsapp)] text-[var(--text-primary)]" placeholder="Ex: Nubank, Dinheiro Físico..." value={name} onChange={e => setName(e.target.value)} />
+            <div className="space-y-6">
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-[var(--text-muted)] uppercase tracking-widest ml-4">Nome da Conta</label>
+                <input className="w-full bg-[var(--bg-body)] rounded-[1.5rem] p-5 text-sm font-black outline-none border border-[var(--border)] focus:border-[var(--green-whatsapp)] text-[var(--text-primary)] transition-all uppercase italic" placeholder="Ex: Nubank, Dinheiro Físico..." value={name} onChange={e => setName(e.target.value)} />
               </div>
               <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1">
-                  <label className="text-[9px] font-black text-[var(--text-muted)] uppercase ml-2">Tipo</label>
-                  <select className="w-full bg-[var(--bg-body)] rounded-2xl p-4 text-sm font-bold outline-none appearance-none text-[var(--text-primary)]" value={type} onChange={e => setType(e.target.value as WalletType)}>
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-[var(--text-muted)] uppercase tracking-widest ml-4">Tipo</label>
+                  <select className="w-full bg-[var(--bg-body)] rounded-[1.5rem] p-5 text-sm font-black outline-none border border-[var(--border)] focus:border-[var(--green-whatsapp)] text-[var(--text-primary)] appearance-none transition-all uppercase italic" value={type} onChange={e => setType(e.target.value as WalletType)}>
                     <option value="CONTA">Banco / Conta</option>
                     <option value="CARTEIRA">Dinheiro Vivo</option>
                     <option value="POUPANÇA">Poupança</option>
@@ -368,85 +438,87 @@ const WalletTab: React.FC<WalletTabProps> = ({ uid, freeBalance, goals, wallets:
                     <option value="OUTRO">Outro</option>
                   </select>
                 </div>
-                <div className="space-y-1">
-                  <label className="text-[9px] font-black text-[var(--text-muted)] uppercase ml-2">Saldo Atual</label>
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-[var(--text-muted)] uppercase tracking-widest ml-4">Saldo Atual</label>
                   <MoneyInput 
-                    className="w-full bg-[var(--bg-body)] rounded-2xl p-4 text-sm font-bold outline-none border border-transparent focus:border-[var(--green-whatsapp)] text-[var(--text-primary)]" 
+                    className="w-full bg-[var(--bg-body)] rounded-[1.5rem] p-5 text-sm font-black outline-none border border-[var(--border)] focus:border-[var(--green-whatsapp)] text-[var(--text-primary)] transition-all text-center" 
                     placeholder="R$ 0,00" 
                     value={Number(balance) || 0} 
                     onChange={val => setBalance(val.toString())} 
                   />
                 </div>
               </div>
-              <div className="space-y-1">
-                <label className="text-[9px] font-black text-[var(--text-muted)] uppercase ml-2">Observação (Opcional)</label>
-                <input className="w-full bg-[var(--bg-body)] rounded-2xl p-4 text-sm font-bold outline-none border border-transparent focus:border-[var(--green-whatsapp)] text-[var(--text-primary)]" placeholder="Ex: Conta principal, reserva..." value={note} onChange={e => setNote(e.target.value)} />
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-[var(--text-muted)] uppercase tracking-widest ml-4">Observação (Opcional)</label>
+                <input className="w-full bg-[var(--bg-body)] rounded-[1.5rem] p-5 text-sm font-black outline-none border border-[var(--border)] focus:border-[var(--green-whatsapp)] text-[var(--text-primary)] transition-all" placeholder="Ex: Conta principal, reserva..." value={note} onChange={e => setNote(e.target.value)} />
               </div>
-              <div className="space-y-1">
-                <label className="text-[9px] font-black text-[var(--text-muted)] uppercase ml-2">Cor de Identificação</label>
-                <div className="flex gap-2">
+              <div className="space-y-3">
+                <label className="text-[10px] font-black text-[var(--text-muted)] uppercase tracking-widest ml-4">Cor de Identificação</label>
+                <div className="flex justify-between px-2">
                   {['#00a884', '#128c7e', '#34b7f1', '#ffbc2c', '#ea0038', '#a62c67'].map(c => (
-                    <button key={c} onClick={() => setColor(c)} className={`w-8 h-8 rounded-full border-2 ${color === c ? 'border-white scale-110' : 'border-transparent opacity-50'}`} style={{ backgroundColor: c }} />
+                    <button key={c} onClick={() => setColor(c)} className={`w-10 h-10 rounded-full border-4 transition-all ${color === c ? 'border-white scale-110 shadow-lg' : 'border-transparent opacity-40 hover:opacity-100'}`} style={{ backgroundColor: c }} />
                   ))}
                 </div>
               </div>
             </div>
 
-            <div className="flex gap-3 pt-4">
-              <button onClick={() => setEditingWallet(null)} className="flex-1 py-4 rounded-2xl font-black text-[10px] uppercase text-[var(--text-muted)] hover:bg-white/5 transition-all">Cancelar</button>
-              <button onClick={handleUpdateWallet} disabled={isLoading} className="flex-1 bg-[var(--green-whatsapp)] text-white py-4 rounded-2xl font-black text-[10px] uppercase shadow-xl active:scale-95 transition-all">
+            <div className="flex flex-col gap-3 pt-4">
+              <button onClick={handleUpdateWallet} disabled={isLoading} className="w-full bg-[var(--green-whatsapp)] text-white py-5 rounded-[1.5rem] font-black text-[11px] uppercase tracking-[0.2em] shadow-xl shadow-[var(--green-whatsapp)]/20 active:scale-95 transition-all">
                 {isLoading ? 'Salvando...' : 'Salvar Alterações'}
               </button>
+              <button onClick={() => setEditingWallet(null)} className="w-full py-4 rounded-[1.5rem] font-black text-[10px] uppercase text-[var(--text-muted)] hover:bg-white/5 transition-all">Cancelar</button>
             </div>
           </div>
         </div>
       )}
 
       {isTransferring && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[300] flex items-center justify-center p-4 animate-fade">
-          <div className="bg-[var(--surface)] w-full max-w-md rounded-[2.5rem] border border-[var(--border)] p-8 space-y-6 shadow-2xl">
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-xl z-[300] flex items-center justify-center p-4 animate-fade">
+          <div className="bg-[var(--surface)] w-full max-w-md rounded-[3rem] border border-[var(--border)] p-10 space-y-8 shadow-2xl relative overflow-hidden">
+            <div className="absolute top-0 left-0 w-full h-1.5 bg-amber-500 opacity-50"></div>
+
             <header className="text-center">
-              <h3 className="text-xl font-black italic text-[var(--green-whatsapp)] uppercase tracking-tighter">Transferência Interna</h3>
-              <p className="text-[10px] text-[var(--text-muted)] font-bold uppercase tracking-widest mt-1">Mover saldo entre contas</p>
+              <h3 className="text-2xl font-black italic text-[var(--text-primary)] uppercase tracking-tighter">Transferência</h3>
+              <p className="text-[10px] text-amber-500 font-black uppercase tracking-[0.3em] mt-2">Mover saldo entre contas</p>
             </header>
 
-            <div className="space-y-4">
+            <div className="space-y-6">
               <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1">
-                  <label className="text-[9px] font-black text-[var(--text-muted)] uppercase ml-2">Origem</label>
-                  <select className="w-full bg-[var(--bg-body)] rounded-2xl p-4 text-sm font-bold outline-none appearance-none text-[var(--text-primary)]" value={fromId} onChange={e => setFromId(e.target.value)}>
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-[var(--text-muted)] uppercase tracking-widest ml-4">Origem</label>
+                  <select className="w-full bg-[var(--bg-body)] rounded-[1.5rem] p-5 text-xs font-black outline-none border border-[var(--border)] focus:border-amber-500 text-[var(--text-primary)] appearance-none transition-all uppercase italic" value={fromId} onChange={e => setFromId(e.target.value)}>
                     <option value="">Selecione...</option>
                     {wallets.map(w => <option key={w.id} value={w.id}>{w.name} (R$ {w.balance})</option>)}
                   </select>
                 </div>
-                <div className="space-y-1">
-                  <label className="text-[9px] font-black text-[var(--text-muted)] uppercase ml-2">Destino</label>
-                  <select className="w-full bg-[var(--bg-body)] rounded-2xl p-4 text-sm font-bold outline-none appearance-none text-[var(--text-primary)]" value={toId} onChange={e => setToId(e.target.value)}>
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-[var(--text-muted)] uppercase tracking-widest ml-4">Destino</label>
+                  <select className="w-full bg-[var(--bg-body)] rounded-[1.5rem] p-5 text-xs font-black outline-none border border-[var(--border)] focus:border-amber-500 text-[var(--text-primary)] appearance-none transition-all uppercase italic" value={toId} onChange={e => setToId(e.target.value)}>
                     <option value="">Selecione...</option>
                     {wallets.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
                   </select>
                 </div>
               </div>
-              <div className="space-y-1">
-                <label className="text-[9px] font-black text-[var(--text-muted)] uppercase ml-2">Valor</label>
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-[var(--text-muted)] uppercase tracking-widest ml-4">Valor</label>
                 <MoneyInput 
-                  className="w-full bg-[var(--bg-body)] rounded-2xl p-4 text-sm font-bold outline-none border border-transparent focus:border-[var(--green-whatsapp)] text-[var(--text-primary)]" 
+                  className="w-full bg-[var(--bg-body)] rounded-[1.5rem] p-5 text-sm font-black outline-none border border-[var(--border)] focus:border-amber-500 text-[var(--text-primary)] transition-all text-center" 
                   placeholder="R$ 0,00" 
                   value={Number(transferAmount) || 0} 
                   onChange={val => setTransferAmount(val.toString())} 
                 />
               </div>
-              <div className="space-y-1">
-                <label className="text-[9px] font-black text-[var(--text-muted)] uppercase ml-2">Observação (Opcional)</label>
-                <input className="w-full bg-[var(--bg-body)] rounded-2xl p-4 text-sm font-bold outline-none border border-transparent focus:border-[var(--green-whatsapp)] text-[var(--text-primary)]" placeholder="Ex: Saque para gastos..." value={transferNote} onChange={e => setTransferNote(e.target.value)} />
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-[var(--text-muted)] uppercase tracking-widest ml-4">Observação (Opcional)</label>
+                <input className="w-full bg-[var(--bg-body)] rounded-[1.5rem] p-5 text-sm font-black outline-none border border-[var(--border)] focus:border-amber-500 text-[var(--text-primary)] transition-all" placeholder="Ex: Saque para gastos..." value={transferNote} onChange={e => setTransferNote(e.target.value)} />
               </div>
             </div>
 
-            <div className="flex gap-3 pt-4">
-              <button onClick={() => setIsTransferring(false)} className="flex-1 py-4 rounded-2xl font-black text-[10px] uppercase text-[var(--text-muted)] hover:bg-white/5 transition-all">Cancelar</button>
-              <button onClick={handleTransfer} disabled={isLoading} className="flex-1 bg-[var(--green-whatsapp)] text-white py-4 rounded-2xl font-black text-[10px] uppercase shadow-xl active:scale-95 transition-all">
-                {isLoading ? 'Processando...' : 'Confirmar'}
+            <div className="flex flex-col gap-3 pt-4">
+              <button onClick={handleTransfer} disabled={isLoading} className="w-full bg-amber-500 text-white py-5 rounded-[1.5rem] font-black text-[11px] uppercase tracking-[0.2em] shadow-xl shadow-amber-500/20 active:scale-95 transition-all">
+                {isLoading ? 'Processando...' : 'Confirmar Transferência'}
               </button>
+              <button onClick={() => setIsTransferring(false)} className="w-full py-4 rounded-[1.5rem] font-black text-[10px] uppercase text-[var(--text-muted)] hover:bg-white/5 transition-all">Cancelar</button>
             </div>
           </div>
         </div>

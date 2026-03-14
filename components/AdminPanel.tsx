@@ -4,6 +4,7 @@ import { CustomerData, SubscriptionPlan, AdminConfig, AuditLog } from '../types'
 import { db } from '../services/firebaseConfig';
 import { collection, onSnapshot, query, orderBy, limit, doc, getDoc } from 'firebase/firestore';
 import { dispatchEvent } from '../services/eventDispatcher';
+import { Notification, ConfirmModal } from './UI';
 
 const AdminPanel: React.FC<{ currentAdminId: string }> = ({ currentAdminId }) => {
   const [customers, setCustomers] = useState<CustomerData[]>([]);
@@ -11,6 +12,9 @@ const AdminPanel: React.FC<{ currentAdminId: string }> = ({ currentAdminId }) =>
   const [config, setConfig] = useState<AdminConfig | null>(null);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+  const [confirmUpdate, setConfirmUpdate] = useState<{ uid: string; updates: any } | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   
   // States para Forms
   const [msgTitle, setMsgTitle] = useState('');
@@ -68,47 +72,79 @@ const AdminPanel: React.FC<{ currentAdminId: string }> = ({ currentAdminId }) =>
     return { total, active, blocked, premium };
   }, [customers]);
 
-  const handleUpdateUser = async (targetUid: string, updates: any) => {
-    if (!window.confirm("Confirmar alteração?")) return;
-    setIsLoading(true);
-    await dispatchEvent(currentAdminId, {
-      type: 'ADMIN_UPDATE_USER',
-      payload: { targetUid, updates, adminId: currentAdminId },
-      source: 'admin',
-      createdAt: new Date()
-    });
-    setIsLoading(false);
+  const handleUpdateUser = (targetUid: string, updates: any) => {
+    setConfirmUpdate({ uid: targetUid, updates });
   };
 
-  const handleDeleteUser = async (targetUid: string) => {
-    if (!window.confirm("⚠️ AVISO CRÍTICO: Excluir este usuário permanentemente? Esta ação não pode ser desfeita.")) return;
+  const confirmUpdateUser = async () => {
+    if (!confirmUpdate) return;
+    const { uid, updates } = confirmUpdate;
+    setConfirmUpdate(null);
     setIsLoading(true);
-    await dispatchEvent(currentAdminId, {
-      type: 'ADMIN_DELETE_USER',
-      payload: { targetUid, adminId: currentAdminId },
-      source: 'admin',
-      createdAt: new Date()
-    });
-    setIsLoading(false);
+    try {
+      await dispatchEvent(currentAdminId, {
+        type: 'ADMIN_UPDATE_USER',
+        payload: { targetUid: uid, updates, adminId: currentAdminId },
+        source: 'admin',
+        createdAt: new Date()
+      });
+      setNotification({ message: "Usuário atualizado com sucesso!", type: 'success' });
+    } catch (e) {
+      console.error(e);
+      setNotification({ message: "Erro ao atualizar usuário.", type: 'error' });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleDeleteUser = (targetUid: string) => {
+    setConfirmDelete(targetUid);
+  };
+
+  const confirmDeleteUserAction = async () => {
+    if (!confirmDelete) return;
+    const targetUid = confirmDelete;
+    setConfirmDelete(null);
+    setIsLoading(true);
+    try {
+      await dispatchEvent(currentAdminId, {
+        type: 'ADMIN_DELETE_USER',
+        payload: { targetUid, adminId: currentAdminId },
+        source: 'admin',
+        createdAt: new Date()
+      });
+      setNotification({ message: "Usuário excluído permanentemente!", type: 'success' });
+    } catch (e) {
+      console.error(e);
+      setNotification({ message: "Erro ao excluir usuário.", type: 'error' });
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleSendBroadcast = async () => {
     if (!msgTitle || !msgBody) return;
     setIsLoading(true);
-    await dispatchEvent(currentAdminId, {
-      type: 'ADMIN_SEND_BROADCAST',
-      payload: { 
-        title: msgTitle, 
-        body: msgBody, 
-        targetUid: targetUser || null,
-        adminId: currentAdminId 
-      },
-      source: 'admin',
-      createdAt: new Date()
-    });
-    setMsgTitle(''); setMsgBody(''); setTargetUser('');
-    setIsLoading(false);
-    alert("Mensagem enviada com sucesso!");
+    try {
+      await dispatchEvent(currentAdminId, {
+        type: 'ADMIN_SEND_BROADCAST',
+        payload: { 
+          title: msgTitle, 
+          body: msgBody, 
+          targetUid: targetUser || null,
+          adminId: currentAdminId 
+        },
+        source: 'admin',
+        createdAt: new Date()
+      });
+      setMsgTitle(''); setMsgBody(''); setTargetUser('');
+      setNotification({ message: "Mensagem enviada com sucesso!", type: 'success' });
+    } catch (e) {
+      console.error(e);
+      setNotification({ message: "Erro ao enviar mensagem.", type: 'error' });
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleUpdateConfig = async (newConfig: Partial<AdminConfig>) => {
@@ -351,6 +387,30 @@ const AdminPanel: React.FC<{ currentAdminId: string }> = ({ currentAdminId }) =>
           )}
         </main>
       </div>
+
+      <ConfirmModal
+        isOpen={!!confirmUpdate}
+        onClose={() => setConfirmUpdate(null)}
+        onConfirm={confirmUpdateUser}
+        title="Confirmar Alteração?"
+        message="Deseja realmente aplicar estas alterações ao perfil do usuário?"
+      />
+
+      <ConfirmModal
+        isOpen={!!confirmDelete}
+        onClose={() => setConfirmDelete(null)}
+        onConfirm={confirmDeleteUserAction}
+        title="EXCLUIR USUÁRIO?"
+        message="⚠️ AVISO CRÍTICO: Excluir este usuário permanentemente? Esta ação não pode ser desfeita."
+      />
+
+      {notification && (
+        <Notification
+          message={notification.message}
+          type={notification.type}
+          onClose={() => setNotification(null)}
+        />
+      )}
     </div>
   );
 };

@@ -68,3 +68,64 @@ export const EmptyState: React.FC<{ title: string; desc: string; icon: string; o
     {onAction && <Button onClick={onAction}>Começar Agora</Button>}
   </div>
 );
+
+// --- NOTIFICATION ---
+export const Notification: React.FC<{ message: string; type?: 'success' | 'error' | 'info'; onClose: () => void }> = ({ message, type = 'info', onClose }) => {
+  React.useEffect(() => {
+    const timer = setTimeout(onClose, 5000);
+    return () => clearTimeout(timer);
+  }, [onClose]);
+
+  const styles = {
+    success: "bg-[#10B981] text-white",
+    error: "bg-[#EF4444] text-white",
+    info: "bg-[#3B82F6] text-white"
+  };
+
+  return (
+    <div className={`fixed top-4 right-4 z-[1000] px-6 py-4 rounded-2xl shadow-2xl flex items-center gap-3 animate-in slide-in-from-right-10 duration-300 ${styles[type]}`}>
+      <span className="text-sm font-bold">{message}</span>
+      <button onClick={onClose} className="hover:opacity-70 transition-opacity">✕</button>
+    </div>
+  );
+};
+
+// --- CONFIRM MODAL ---
+export const ConfirmModal: React.FC<{ 
+  isOpen: boolean; 
+  title: string; 
+  message: string; 
+  onConfirm: () => void; 
+  onCancel: () => void;
+  confirmText?: string;
+  cancelText?: string;
+  variant?: 'danger' | 'primary';
+}> = ({ isOpen, title, message, onConfirm, onCancel, confirmText = "Confirmar", cancelText = "Cancelar", variant = 'primary' }) => {
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-[999] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade">
+      <div className="bg-[#111827] border border-[#1F2937] w-full max-w-sm rounded-[2.5rem] p-8 space-y-6 shadow-2xl">
+        <div className="text-center space-y-2">
+          <h3 className="text-xl font-black text-white uppercase italic tracking-tighter">{title}</h3>
+          <p className="text-sm text-[#9CA3AF] leading-relaxed">{message}</p>
+        </div>
+        <div className="flex flex-col gap-3">
+          <Button 
+            variant={variant === 'danger' ? 'danger' : 'primary'} 
+            fullWidth 
+            onClick={onConfirm}
+          >
+            {confirmText}
+          </Button>
+          <button 
+            onClick={onCancel}
+            className="w-full py-3 text-[10px] font-black uppercase text-[#9CA3AF] hover:text-white transition-colors"
+          >
+            {cancelText}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};

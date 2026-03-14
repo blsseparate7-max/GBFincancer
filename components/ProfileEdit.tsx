@@ -2,6 +2,7 @@ import React, { useState, useRef } from 'react';
 import { db, storage } from '../services/firebaseConfig';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { doc, updateDoc } from 'firebase/firestore';
+import { Notification } from './UI';
 
 interface ProfileEditProps {
   user: any;
@@ -14,10 +15,14 @@ const ProfileEdit: React.FC<ProfileEditProps> = ({ user, onUpdate, onLogout }) =
   const [loading, setLoading] = useState(false);
   const [photoURL, setPhotoURL] = useState(user.photoURL || '');
   const [uploading, setUploading] = useState(false);
+  const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleSave = async () => {
-    if (!name.trim()) return alert("Nome é obrigatório.");
+    if (!name.trim()) {
+      setNotification({ message: "Nome é obrigatório.", type: 'error' });
+      return;
+    }
     setLoading(true);
     try {
       const userRef = doc(db, "users", user.uid);
@@ -26,10 +31,10 @@ const ProfileEdit: React.FC<ProfileEditProps> = ({ user, onUpdate, onLogout }) =
         photoURL: photoURL 
       });
       onUpdate({ name: name.trim(), photoURL });
-      alert("Perfil atualizado com sucesso!");
+      setNotification({ message: "Perfil atualizado com sucesso!", type: 'success' });
     } catch (e) {
       console.error(e);
-      alert("Erro ao salvar alterações.");
+      setNotification({ message: "Erro ao salvar alterações.", type: 'error' });
     } finally {
       setLoading(false);
     }
@@ -40,13 +45,13 @@ const ProfileEdit: React.FC<ProfileEditProps> = ({ user, onUpdate, onLogout }) =
     if (!file) return;
 
     if (!file.type.startsWith('image/')) {
-      alert("Por favor, selecione uma imagem.");
+      setNotification({ message: "Por favor, selecione uma imagem.", type: 'error' });
       return;
     }
 
     // Limite de 2MB para evitar custos/lentidão excessiva
     if (file.size > 2 * 1024 * 1024) {
-      alert("A imagem deve ter no máximo 2MB.");
+      setNotification({ message: "A imagem deve ter no máximo 2MB.", type: 'error' });
       return;
     }
 
@@ -58,7 +63,7 @@ const ProfileEdit: React.FC<ProfileEditProps> = ({ user, onUpdate, onLogout }) =
       setPhotoURL(url);
     } catch (error) {
       console.error("Erro no upload:", error);
-      alert("Erro ao enviar imagem para o servidor.");
+      setNotification({ message: "Erro ao enviar imagem para o servidor.", type: 'error' });
     } finally {
       setUploading(false);
     }
@@ -160,6 +165,14 @@ const ProfileEdit: React.FC<ProfileEditProps> = ({ user, onUpdate, onLogout }) =
            Desconectar Aparelho
          </button>
       </div>
+
+      {notification && (
+        <Notification
+          message={notification.message}
+          type={notification.type}
+          onClose={() => setNotification(null)}
+        />
+      )}
     </div>
   );
 };

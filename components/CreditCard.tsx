@@ -1,6 +1,7 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { Transaction, CreditCardInfo, Wallet } from '../types';
+import { ConfirmModal, Notification } from './UI';
 import { db } from '../services/firebaseConfig';
 import { collection, onSnapshot, query, doc } from 'firebase/firestore';
 import { dispatchEvent } from '../services/eventDispatcher';
@@ -119,12 +120,15 @@ const CreditCard: React.FC<CreditCardProps> = ({ transactions, uid, cards, walle
       setCardName(''); setCardBank(''); setCardLimit(''); setCardDueDay('10'); setCardClosingDay('');
       setShowAddForm(false);
     } else {
-      alert("Erro ao adicionar cartão: " + (res.error || "Erro desconhecido"));
+      setNotification({ message: "Erro ao adicionar cartão: " + (res.error || "Erro desconhecido"), type: 'error' });
     }
     setIsLoading(false);
   };
 
   const [activeMenu, setActiveMenu] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<{ isOpen: boolean; card?: any; message: string }>({ isOpen: false, message: '' });
+  const [confirmDeleteTransaction, setConfirmDeleteTransaction] = useState<{ isOpen: boolean; id: string | null }>({ isOpen: false, id: null });
+  const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -147,40 +151,64 @@ const CreditCard: React.FC<CreditCardProps> = ({ transactions, uid, cards, walle
     if (res.success) {
       setIsEditing(null);
     } else {
-      alert("Erro ao atualizar cartão.");
+      setNotification({ message: "Erro ao atualizar cartão.", type: 'error' });
     }
     setIsLoading(false);
   };
 
-  const handleDeleteCard = async (card: any) => {
+  const handleDeleteCard = (card: any) => {
     const hasPending = card.used > 0 || card.invoiceAmount > 0;
     const message = hasPending 
       ? "Este cartão possui compras registradas ou fatura pendente. Deseja realmente excluir?" 
       : "Deseja realmente excluir este cartão?";
 
-    if (!window.confirm(message)) return;
-
-    await dispatchEvent(uid, {
-      type: 'DELETE_CARD',
-      payload: { id: card.id },
-      source: 'ui',
-      createdAt: new Date()
-    });
+    setConfirmDelete({ isOpen: true, card, message });
   };
 
-  const handleDeleteTransaction = async (id: string) => {
-    if (!window.confirm("Deseja excluir este lançamento do cartão?")) return;
-    await dispatchEvent(uid, {
-      type: 'DELETE_ITEM',
-      payload: { id, collection: 'transactions' },
-      source: 'ui',
-      createdAt: new Date()
-    });
+  const confirmDeleteCard = async () => {
+    const card = confirmDelete.card;
+    if (!card) return;
+
+    try {
+      await dispatchEvent(uid, {
+        type: 'DELETE_CARD',
+        payload: { id: card.id },
+        source: 'ui',
+        createdAt: new Date()
+      });
+      setNotification({ message: "Cartão excluído com sucesso!", type: 'success' });
+    } catch (err) {
+      setNotification({ message: "Erro ao excluir cartão.", type: 'error' });
+    } finally {
+      setConfirmDelete({ isOpen: false, message: '' });
+    }
+  };
+
+  const handleDeleteTransaction = (id: string) => {
+    setConfirmDeleteTransaction({ isOpen: true, id });
+  };
+
+  const confirmDeleteTransactionAction = async () => {
+    if (!confirmDeleteTransaction.id) return;
+    
+    try {
+      await dispatchEvent(uid, {
+        type: 'DELETE_ITEM',
+        payload: { id: confirmDeleteTransaction.id, collection: 'transactions' },
+        source: 'ui',
+        createdAt: new Date()
+      });
+      setNotification({ message: "Lançamento excluído com sucesso!", type: 'success' });
+    } catch (err) {
+      setNotification({ message: "Erro ao excluir lançamento.", type: 'error' });
+    } finally {
+      setConfirmDeleteTransaction({ isOpen: false, id: null });
+    }
   };
 
   const handleOpenPayment = (card: any, cycle: string, amount: number) => {
     if (amount <= 0) {
-      alert("Fatura zerada. Parabéns!");
+      setNotification({ message: "Fatura zerada. Parabéns!", type: 'success' });
       return;
     }
     setPayAmount(amount.toString());
@@ -193,18 +221,18 @@ const CreditCard: React.FC<CreditCardProps> = ({ transactions, uid, cards, walle
     const card = cardAnalysis.find(c => c.id === isPaying);
     
     if (!card || isNaN(amount) || amount <= 0) {
-      alert("Informe um valor válido.");
+      setNotification({ message: "Informe um valor válido.", type: 'error' });
       return;
     }
 
     if (!selectedWalletId) {
-      alert("Por favor, selecione de onde sairá o dinheiro.");
+      setNotification({ message: "Por favor, selecione de onde sairá o dinheiro.", type: 'error' });
       return;
     }
 
     const wallet = wallets.find(w => w.id === selectedWalletId);
     if (wallet && amount > wallet.balance) {
-      alert(`Saldo insuficiente na carteira ${wallet.name}! Você tem ${format(wallet.balance)} disponível.`);
+      setNotification({ message: `Saldo insuficiente na carteira ${wallet.name}! Você tem ${format(wallet.balance)} disponível.`, type: 'error' });
       return;
     }
 
@@ -228,8 +256,9 @@ const CreditCard: React.FC<CreditCardProps> = ({ transactions, uid, cards, walle
       setPayAmount('');
       setPayCycle('');
       setSelectedWalletId(null);
+      setNotification({ message: "Pagamento processado com sucesso!", type: 'success' });
     } else {
-      alert("Erro ao processar pagamento.");
+      setNotification({ message: "Erro ao processar pagamento.", type: 'error' });
     }
     setIsLoading(false);
   };
@@ -247,6 +276,37 @@ const CreditCard: React.FC<CreditCardProps> = ({ transactions, uid, cards, walle
 
   return (
     <div className="p-6 space-y-6 animate-fade pb-32 min-h-full">
+      {/* Notifications */}
+      {notification && (
+        <Notification 
+          message={notification.message} 
+          type={notification.type} 
+          onClose={() => setNotification(null)} 
+        />
+      )}
+
+      {/* Confirm Delete Modal */}
+      <ConfirmModal 
+        isOpen={confirmDelete.isOpen}
+        title="Excluir Cartão"
+        message={confirmDelete.message}
+        onConfirm={confirmDeleteCard}
+        onCancel={() => setConfirmDelete({ isOpen: false, message: '' })}
+        variant="danger"
+        confirmText="Excluir"
+      />
+
+      {/* Confirm Delete Transaction Modal */}
+      <ConfirmModal 
+        isOpen={confirmDeleteTransaction.isOpen}
+        title="Excluir Lançamento"
+        message="Deseja realmente excluir este lançamento do cartão?"
+        onConfirm={confirmDeleteTransactionAction}
+        onCancel={() => setConfirmDeleteTransaction({ isOpen: false, id: null })}
+        variant="danger"
+        confirmText="Excluir"
+      />
+
       <header className="mb-4">
         <h2 className="text-[10px] font-black text-[var(--green-whatsapp)] uppercase tracking-[0.4em] mb-1">Gestão de Crédito</h2>
         <h1 className="text-3xl font-black text-[var(--text-primary)] uppercase italic tracking-tighter">Carteira Digital</h1>

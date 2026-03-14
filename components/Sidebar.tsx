@@ -63,11 +63,14 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, expanded, se
 
   return (
     <aside className={`bg-[var(--surface)] border-r border-[var(--border)] transition-all duration-300 flex flex-col h-full text-[var(--text-primary)] shadow-2xl relative ${expanded ? 'w-72' : 'w-0 overflow-hidden'}`}>
-      <div className="p-4 flex items-center justify-between h-[64px] shrink-0 border-b border-[var(--border)] bg-[var(--bg-body)]">
-        <div className="flex items-center gap-2 overflow-hidden">
-          <div className="w-8 h-8 bg-[var(--green-whatsapp)] rounded-lg flex items-center justify-center text-white font-black italic text-xs shadow-lg shadow-[var(--green-whatsapp)]/20 border border-white/10 shrink-0">GB</div>
+      <div className="p-6 flex items-center justify-between h-[80px] shrink-0 border-b border-[var(--border)]">
+        <div className="flex items-center gap-3 overflow-hidden">
+          <div className="w-10 h-10 bg-[var(--green-whatsapp)] rounded-2xl flex items-center justify-center text-white font-black italic text-sm shadow-xl shadow-[var(--green-whatsapp)]/20 border border-white/10 shrink-0">GB</div>
           {expanded && (
-            <span className="font-black italic text-[var(--green-whatsapp)] text-xl tracking-tighter animate-fade whitespace-nowrap">GBFinancer</span>
+            <div className="flex flex-col">
+              <span className="font-black italic text-[var(--text-primary)] text-lg tracking-tighter leading-none">GBFinancer</span>
+              <span className="text-[8px] font-black text-[var(--green-whatsapp)] uppercase tracking-[0.3em] mt-1">Premium Edition</span>
+            </div>
           )}
         </div>
         
@@ -77,11 +80,11 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, expanded, se
         </button>
       </div>
 
-      <nav className="flex-1 overflow-y-auto p-3 space-y-6">
+      <nav className="flex-1 overflow-y-auto p-4 space-y-8 no-scrollbar">
         {isAdmin && (
           <button
             onClick={() => { setActiveTab('admin'); if(onClose) onClose(); }}
-            className={`w-full flex items-center gap-4 p-3 rounded-xl transition-all border-2 ${activeTab === 'admin' ? 'bg-[var(--green-whatsapp-dark)] text-white border-[var(--green-whatsapp-dark)]' : 'border-[var(--green-whatsapp-dark)]/20 text-[var(--green-whatsapp)] hover:bg-black/5'}`}
+            className={`w-full flex items-center gap-4 p-4 rounded-3xl transition-all border-2 ${activeTab === 'admin' ? 'bg-[var(--green-whatsapp)] text-white border-[var(--green-whatsapp)] shadow-lg' : 'border-[var(--green-whatsapp)]/20 text-[var(--green-whatsapp)] hover:bg-[var(--green-whatsapp)]/5'}`}
           >
             <span className="text-xl min-w-[24px] text-center">👑</span>
             {expanded && <span className="text-[11px] font-black uppercase whitespace-nowrap tracking-widest">Gestão CEO</span>}
@@ -89,9 +92,9 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, expanded, se
         )}
 
         {groups.map((group, gIdx) => (
-          <div key={gIdx} className="space-y-1">
+          <div key={gIdx} className="space-y-2">
             {expanded && (
-              <h3 className="px-4 text-[9px] font-black uppercase tracking-[0.2em] text-[var(--text-muted)] mb-2 opacity-50">
+              <h3 className="px-4 text-[10px] font-black uppercase tracking-[0.25em] text-[var(--text-muted)] mb-3 opacity-40">
                 {group.label}
               </h3>
             )}
@@ -99,25 +102,21 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, expanded, se
               <button
                 key={item.id}
                 onClick={() => { setActiveTab(item.id); if(onClose) onClose(); }}
-                className={`w-full flex items-center gap-4 p-3.5 rounded-2xl transition-all ${activeTab === item.id ? 'bg-[var(--border)] text-[var(--green-whatsapp)] shadow-lg border border-[var(--border)]' : 'text-[var(--text-muted)] hover:bg-black/5 hover:text-[var(--text-primary)]'}`}
+                className={`w-full flex items-center gap-4 p-4 rounded-3xl transition-all relative group ${activeTab === item.id ? 'bg-[var(--bg-body)] text-[var(--green-whatsapp)] shadow-inner border border-[var(--border)]' : 'text-[var(--text-muted)] hover:bg-black/5 hover:text-[var(--text-primary)]'}`}
               >
-                <span className={`text-xl min-w-[24px] text-center transition-transform ${activeTab === item.id ? 'scale-110 opacity-100' : 'opacity-60'}`}>{item.icon}</span>
-                {expanded && <span className="text-[13px] font-bold whitespace-nowrap tracking-tight">{item.label}</span>}
+                <span className={`text-xl min-w-[24px] text-center transition-transform ${activeTab === item.id ? 'scale-110' : 'opacity-50 group-hover:opacity-100'}`}>{item.icon}</span>
+                {expanded && <span className="text-[14px] font-bold whitespace-nowrap tracking-tight">{item.label}</span>}
+                {activeTab === item.id && (
+                  <div className="absolute left-0 w-1 h-6 bg-[var(--green-whatsapp)] rounded-r-full" />
+                )}
               </button>
             ))}
           </div>
         ))}
       </nav>
       
-      <div className="p-4 border-t border-[var(--border)] space-y-3 bg-[var(--bg-body)]">
-        <button 
-          onClick={() => window.alert('Envie seu feedback para o desenvolvedor!')}
-          className={`w-full flex items-center gap-3 p-3 rounded-xl bg-[var(--green-whatsapp)]/10 text-[var(--green-whatsapp)] border border-[var(--green-whatsapp)]/20 hover:bg-[var(--green-whatsapp)]/20 transition-all ${!expanded && 'hidden'}`}
-        >
-          <span className="text-lg">💬</span>
-          <span className="text-[10px] font-black uppercase tracking-widest">Feedback Beta</span>
-        </button>
-        <p className={`text-[9px] font-black uppercase tracking-[0.2em] text-[var(--text-muted)] italic text-center ${!expanded && 'hidden'}`}>Audit IA 3.1 PRO</p>
+      <div className="p-6 border-t border-[var(--border)] space-y-4">
+        <p className={`text-[9px] font-black uppercase tracking-[0.3em] text-[var(--text-muted)] italic text-center opacity-50 ${!expanded && 'hidden'}`}>Audit IA 3.1 PRO • v2.0</p>
       </div>
     </aside>
   );

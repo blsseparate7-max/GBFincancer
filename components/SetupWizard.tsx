@@ -25,6 +25,7 @@ import {
   Clock,
   CalendarDays
 } from 'lucide-react';
+import { Notification } from './UI';
 
 interface SetupWizardProps {
   user: UserSession;
@@ -37,6 +38,7 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ user, onComplete }) => {
   const [sources, setSources] = useState<IncomeSource[]>([]);
   const [bills, setBills] = useState<any[]>([]);
   const [goals, setGoals] = useState<any[]>([]);
+  const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 
   // Form states for new source
   const [showSourceForm, setShowSourceForm] = useState(false);
@@ -331,7 +333,13 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ user, onComplete }) => {
             </div>
 
             <button 
-              onClick={() => sources.length > 0 ? setStep(3) : alert("Adicione pelo menos uma fonte de renda")}
+              onClick={() => {
+                if (sources.length > 0) {
+                  setStep(3);
+                } else {
+                  setNotification({ message: "Adicione pelo menos uma fonte de renda", type: 'error' });
+                }
+              }}
               className="w-full bg-[#00A884] text-white font-black py-5 rounded-2xl shadow-xl active:scale-95 transition-all uppercase tracking-widest text-xs flex items-center justify-center gap-3"
             >
               Próximo: Gastos Fixos <ArrowRight size={18} />
@@ -549,6 +557,14 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ user, onComplete }) => {
           {renderStep()}
         </div>
       </div>
+
+      {notification && (
+        <Notification
+          message={notification.message}
+          type={notification.type}
+          onClose={() => setNotification(null)}
+        />
+      )}
     </div>
   );
 };

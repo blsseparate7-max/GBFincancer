@@ -17,9 +17,14 @@ interface ChatProps {
   wallets: Wallet[];
   categories: UserCategory[];
   goals: SavingGoal[];
+  onToggleSidebar: () => void;
+  onOpenProfile: () => void;
 }
 
-const ChatInterface: React.FC<ChatProps> = ({ user, messages, setMessages, transactions, limits, reminders, cards, wallets, categories, goals }) => {
+const ChatInterface: React.FC<ChatProps> = ({ 
+  user, messages, setMessages, transactions, limits, reminders, 
+  cards, wallets, categories, goals, onToggleSidebar, onOpenProfile 
+}) => {
   const [isLoading, setIsLoading] = useState(false);
   const [pendingAction, setPendingAction] = useState<any>(null);
   const [salaryCheckDone, setSalaryCheckDone] = useState(false);
@@ -325,11 +330,47 @@ const ChatInterface: React.FC<ChatProps> = ({ user, messages, setMessages, trans
   };
 
   return (
-    <div className="flex flex-col h-full w-full bg-[var(--chat-bg)] overflow-hidden">
+    <div className="flex-1 flex flex-col w-full bg-transparent overflow-hidden relative min-h-0">
+      {/* Header do Chat (Estilo WhatsApp) */}
+      <div className="shrink-0 h-16 bg-[var(--surface)] border-b border-[var(--border)] flex items-center px-4 gap-3 z-20 shadow-sm">
+        <button 
+          onClick={onToggleSidebar}
+          className="w-10 h-10 flex items-center justify-center bg-[var(--green-whatsapp)] text-white rounded-full hover:bg-[var(--green-whatsapp-dark)] transition-all active:scale-90 shadow-lg shrink-0"
+        >
+          <span className="text-xl font-black italic">$</span>
+        </button>
+
+        <div className="flex flex-1 items-center gap-3 min-w-0">
+          <div className="w-10 h-10 rounded-full bg-[var(--green-whatsapp)] flex items-center justify-center text-white shadow-md shrink-0">
+            <span className="font-black text-xs">GB</span>
+          </div>
+          <div className="flex flex-col truncate">
+            <span className="text-[var(--text-primary)] font-black text-sm leading-tight truncate">Assistente GB</span>
+            <div className="flex items-center gap-1">
+              <div className="w-1.5 h-1.5 rounded-full bg-[var(--green-whatsapp)] animate-pulse" />
+              <span className="text-[var(--green-whatsapp)] text-[10px] font-bold uppercase tracking-widest">Online agora</span>
+            </div>
+          </div>
+        </div>
+
+        <button 
+          onClick={onOpenProfile}
+          className="w-10 h-10 bg-[var(--bg-body)] rounded-full border border-[var(--border)] flex items-center justify-center overflow-hidden shadow-md active:scale-95 transition-all shrink-0"
+        >
+          {user.photoURL ? (
+            <img src={user.photoURL} alt="Perfil" className="w-full h-full object-cover" />
+          ) : (
+            <div className="w-full h-full flex items-center justify-center bg-[var(--green-whatsapp)]/20">
+              <span className="text-sm font-black text-[var(--green-whatsapp)]">{user.name.charAt(0).toUpperCase()}</span>
+            </div>
+          )}
+        </button>
+      </div>
+
       {/* Mensagens */}
       <div 
         ref={scrollRef} 
-        className="flex-1 min-h-0 overflow-y-auto px-4 py-4 space-y-3 overscroll-contain relative z-10"
+        className="flex-1 min-h-0 overflow-y-auto px-4 py-4 space-y-3 overscroll-contain relative z-10 no-scrollbar"
         style={{ scrollBehavior: 'smooth' }}
       >
         {messages.length === 0 && !isLoading && (

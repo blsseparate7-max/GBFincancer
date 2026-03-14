@@ -30,6 +30,8 @@ import ContextualOnboarding from './components/ContextualOnboarding';
 import DebtAssistant from './components/DebtAssistant';
 import { normalizeCard, normalizeGoal, normalizeReminder, normalizeLimit, normalizeWallet, normalizeUserCategory, normalizeTransaction, assertSchema } from './services/normalizationService';
 
+import { motion, AnimatePresence } from 'motion/react';
+
 const App: React.FC = () => {
   useEffect(() => {
     console.log("GB: Aplicativo iniciado com sucesso!");
@@ -283,7 +285,22 @@ const App: React.FC = () => {
     }
 
     switch (activeTab) {
-      case 'chat': return <ChatInterface user={session} messages={messages} setMessages={setMessages} transactions={transactions} limits={limits} reminders={reminders} cards={cards} wallets={wallets} categories={categories} goals={goals} />;
+      case 'chat': return (
+        <ChatInterface 
+          user={session} 
+          messages={messages} 
+          setMessages={setMessages} 
+          transactions={transactions} 
+          limits={limits} 
+          reminders={reminders} 
+          cards={cards} 
+          wallets={wallets} 
+          categories={categories} 
+          goals={goals} 
+          onToggleSidebar={handleToggleSidebar}
+          onOpenProfile={() => setActiveTab('profile')}
+        />
+      );
       case 'extrato': return <Extrato uid={session.uid} cards={cards} categories={categories} />;
       case 'categories': return <CategoriesTab uid={session.uid} categories={categories} loading={loadingCategories} />;
       case 'dash': return <Dashboard transactions={transactions} goals={goals} limits={limits} wallets={wallets} reminders={reminders} uid={session.uid} loading={loadingCards || loadingGoals || loadingLimits || loadingWallets} />;
@@ -350,21 +367,34 @@ const App: React.FC = () => {
       </div>
 
       <div className="flex-1 flex flex-col min-w-0 relative h-full overflow-hidden">
-        <Header 
-          activeTab={activeTab} 
-          userName={session.name} 
-          photoURL={session.photoURL} 
-          onToggleSidebar={handleToggleSidebar} 
-          onNavigate={(t) => {
-            setActiveTab(t);
-            setSidebarExpanded(false);
-          }} 
-          onLogout={() => signOut(auth)} 
-        />
-        <main className={`flex-1 min-w-0 relative bg-[var(--chat-bg)] flex flex-col ${activeTab === 'chat' ? 'overflow-hidden' : 'overflow-y-auto overflow-x-hidden'}`}>
+        {activeTab !== 'chat' && (
+          <Header 
+            activeTab={activeTab} 
+            userName={session.name} 
+            photoURL={session.photoURL} 
+            onToggleSidebar={handleToggleSidebar} 
+            onNavigate={(t) => {
+              setActiveTab(t);
+              setSidebarExpanded(false);
+            }} 
+            onLogout={() => signOut(auth)} 
+          />
+        )}
+        <main className={`flex-1 min-w-0 relative bg-[var(--chat-bg)] flex flex-col ${activeTab === 'chat' ? 'h-full overflow-hidden' : 'overflow-y-auto overflow-x-hidden'}`}>
           <div className="absolute inset-0 whatsapp-pattern pointer-events-none"></div>
-          <div className="relative z-10 flex-1 flex flex-col">
-            {renderContent()}
+          <div className="relative z-10 flex-1 flex flex-col min-h-0">
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={activeTab + onboardingStep}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                transition={{ duration: 0.2, ease: "easeOut" }}
+                className="flex-1 flex flex-col min-h-0"
+              >
+                {renderContent()}
+              </motion.div>
+            </AnimatePresence>
             {session && onboardingStep === 'none' && (
               <ContextualOnboarding 
                 uid={session.uid} 

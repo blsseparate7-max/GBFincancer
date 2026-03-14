@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { Debt, Transaction, Wallet, UserSession, DebtType, DebtStatus, SavingGoal, CreditCardInfo } from '../types';
 import { dispatchEvent } from '../services/eventDispatcher';
 import MoneyInput from './MoneyInput';
+import { Notification, ConfirmModal } from './UI';
 import { collection, onSnapshot, query, orderBy } from 'firebase/firestore';
 import { db } from '../services/firebaseConfig';
 import { normalizeDebt } from '../services/normalizationService';
@@ -42,6 +43,8 @@ const DebtAssistant: React.FC<DebtAssistantProps> = ({ uid, transactions, wallet
   const [editingDebt, setEditingDebt] = useState<Debt | null>(null);
   const [filterStatus, setFilterStatus] = useState<DebtStatus | 'TODAS'>('TODAS');
   const [extraSimulation, setExtraSimulation] = useState(0);
+  const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
 
   // Form state for debt
   const [debtForm, setDebtForm] = useState({
@@ -158,7 +161,7 @@ const DebtAssistant: React.FC<DebtAssistantProps> = ({ uid, transactions, wallet
 
   const handleSaveDebt = async () => {
     if (!debtForm.name || debtForm.totalAmount <= 0) {
-      alert("Preencha o nome e o valor total.");
+      setNotification({ message: "Preencha o nome e o valor total.", type: 'error' });
       return;
     }
 
@@ -204,14 +207,21 @@ const DebtAssistant: React.FC<DebtAssistantProps> = ({ uid, transactions, wallet
   };
 
   const handleDeleteDebt = async (id: string) => {
-    if (window.confirm("Excluir esta dívida permanentemente?")) {
-      await dispatchEvent(uid, {
-        type: 'DELETE_DEBT',
-        payload: { id },
-        source: 'ui',
-        createdAt: new Date()
-      });
-    }
+    setConfirmDelete(id);
+  };
+
+  const confirmDeleteAction = async () => {
+    if (!confirmDelete) return;
+    
+    await dispatchEvent(uid, {
+      type: 'DELETE_DEBT',
+      payload: { id: confirmDelete },
+      source: 'ui',
+      createdAt: new Date()
+    });
+    
+    setConfirmDelete(null);
+    setNotification({ message: "Dívida excluída com sucesso!", type: 'success' });
   };
 
   const filteredDebts = debts.filter(d => filterStatus === 'TODAS' || d.status === filterStatus);
@@ -499,7 +509,10 @@ const DebtAssistant: React.FC<DebtAssistantProps> = ({ uid, transactions, wallet
                             const extra = 100;
                             const currentMonths = Math.ceil(debt.remainingAmount / debt.installmentAmount);
                             const newMonths = Math.ceil(debt.remainingAmount / (debt.installmentAmount + extra));
-                            alert(`Simulação: Pagando +R$ ${extra}/mês, você quita em ${newMonths} meses (Economia de ${currentMonths - newMonths} meses).`);
+                            setNotification({ 
+                              message: `Simulação: Pagando +R$ ${extra}/mês, você quita em ${newMonths} meses (Economia de ${currentMonths - newMonths} meses).`,
+                              type: 'info'
+                            });
                           }}
                           className="flex-1 py-3 bg-[var(--bg-body)] border border-[var(--border)] rounded-xl text-[10px] font-black uppercase text-[var(--text-muted)] hover:text-[var(--green-whatsapp)] hover:border-[var(--green-whatsapp)] transition-all flex flex-col items-center gap-1"
                         >
@@ -511,7 +524,10 @@ const DebtAssistant: React.FC<DebtAssistantProps> = ({ uid, transactions, wallet
                             const extra = 200;
                             const currentMonths = Math.ceil(debt.remainingAmount / debt.installmentAmount);
                             const newMonths = Math.ceil(debt.remainingAmount / (debt.installmentAmount + extra));
-                            alert(`Simulação: Pagando +R$ ${extra}/mês, você quita em ${newMonths} meses (Economia de ${currentMonths - newMonths} meses).`);
+                            setNotification({ 
+                              message: `Simulação: Pagando +R$ ${extra}/mês, você quita em ${newMonths} meses (Economia de ${currentMonths - newMonths} meses).`,
+                              type: 'info'
+                            });
                           }}
                           className="flex-1 py-3 bg-[var(--bg-body)] border border-[var(--border)] rounded-xl text-[10px] font-black uppercase text-[var(--text-muted)] hover:text-[var(--green-whatsapp)] hover:border-[var(--green-whatsapp)] transition-all flex flex-col items-center gap-1"
                         >
@@ -638,6 +654,22 @@ const DebtAssistant: React.FC<DebtAssistantProps> = ({ uid, transactions, wallet
           </div>
         </div>
       )}
+
+      {notification && (
+        <Notification 
+          message={notification.message} 
+          type={notification.type} 
+          onClose={() => setNotification(null)} 
+        />
+      )}
+
+      <ConfirmModal 
+        isOpen={!!confirmDelete}
+        title="Excluir Dívida"
+        message="Tem certeza que deseja excluir esta dívida permanentemente? Esta ação não pode ser desfeita."
+        onConfirm={confirmDeleteAction}
+        onCancel={() => setConfirmDelete(null)}
+      />
     </div>
   );
 };

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { UserCategory } from '../types';
 import { dispatchEvent } from '../services/eventDispatcher';
 import { Tag, Plus, Edit2, Trash2, Check, X, Palette } from 'lucide-react';
+import { Notification, ConfirmModal } from './UI';
 
 interface CategoriesTabProps {
   uid: string;
@@ -18,6 +19,8 @@ const CategoriesTab: React.FC<CategoriesTabProps> = ({ uid, categories, loading 
   const [color, setColor] = useState('#128C7E');
   const [type, setType] = useState<'INCOME' | 'EXPENSE'>('EXPENSE');
   const [isSaving, setIsSaving] = useState(false);
+  const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<UserCategory | null>(null);
 
   const icons = ['Tag', 'ShoppingBag', 'Coffee', 'Car', 'Home', 'Heart', 'Zap', 'DollarSign', 'Briefcase', 'Plane', 'Book', 'Gift', 'Music', 'Smartphone', 'Utensils', 'Dumbbell'];
   const colors = ['#128C7E', '#075E54', '#34B7F1', '#25D366', '#DC2626', '#EA580C', '#D97706', '#65A30D', '#059669', '#0891B2', '#2563EB', '#4F46E5', '#7C3AED', '#9333EA', '#C026D3', '#DB2777'];
@@ -60,16 +63,23 @@ const CategoriesTab: React.FC<CategoriesTabProps> = ({ uid, categories, loading 
         });
       }
       setIsModalOpen(false);
+      setNotification({ message: "Categoria salva com sucesso!", type: 'success' });
     } catch (e) {
       console.error(e);
-      alert("Erro ao salvar categoria.");
+      setNotification({ message: "Erro ao salvar categoria.", type: 'error' });
     } finally {
       setIsSaving(false);
     }
   };
 
-  const handleDelete = async (cat: UserCategory) => {
-    if (!window.confirm(`Deseja realmente excluir a categoria "${cat.name}"? Todas as transações vinculadas a ela serão movidas para "Outros".`)) return;
+  const handleDelete = (cat: UserCategory) => {
+    setConfirmDelete(cat);
+  };
+
+  const confirmDeleteCategory = async () => {
+    if (!confirmDelete) return;
+    const cat = confirmDelete;
+    setConfirmDelete(null);
 
     try {
       await dispatchEvent(uid, {
@@ -78,9 +88,10 @@ const CategoriesTab: React.FC<CategoriesTabProps> = ({ uid, categories, loading 
         source: 'ui',
         createdAt: new Date()
       });
+      setNotification({ message: "Categoria excluída com sucesso!", type: 'success' });
     } catch (e) {
       console.error(e);
-      alert("Erro ao excluir categoria.");
+      setNotification({ message: "Erro ao excluir categoria.", type: 'error' });
     }
   };
 
@@ -230,6 +241,22 @@ const CategoriesTab: React.FC<CategoriesTabProps> = ({ uid, categories, loading 
             </div>
           </div>
         </div>
+      )}
+      
+      <ConfirmModal
+        isOpen={!!confirmDelete}
+        onClose={() => setConfirmDelete(null)}
+        onConfirm={confirmDeleteCategory}
+        title="Excluir Categoria?"
+        message={`Deseja realmente excluir a categoria "${confirmDelete?.name}"? Todas as transações vinculadas a ela serão movidas para "Outros".`}
+      />
+
+      {notification && (
+        <Notification
+          message={notification.message}
+          type={notification.type}
+          onClose={() => setNotification(null)}
+        />
       )}
     </div>
   );
