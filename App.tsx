@@ -28,6 +28,7 @@ import Extrato from './components/Extrato';
 import CategoriesTab from './components/CategoriesTab';
 import ContextualOnboarding from './components/ContextualOnboarding';
 import DebtAssistant from './components/DebtAssistant';
+import QADiagnostic from './components/QADiagnostic';
 import { normalizeCard, normalizeGoal, normalizeReminder, normalizeLimit, normalizeWallet, normalizeUserCategory, normalizeTransaction, assertSchema } from './services/normalizationService';
 
 import { motion, AnimatePresence } from 'motion/react';
@@ -195,33 +196,43 @@ const App: React.FC = () => {
     const { dispatchEvent } = await import('./services/eventDispatcher');
     const { syncUserData } = await import('./services/databaseService');
 
-    // 1. Salvar Perfil de Renda e Marcar Onboarding como visto
-    await syncUserData(session.uid, { 
-      incomeProfile: data.incomeProfile,
-      onboardingSeen: true 
-    });
+    let defaultWalletId = null;
 
-    // 2. Criar Carteiras e Lembretes para Fontes de Renda
+    // 1. Criar Carteiras e Lembretes para Fontes de Renda
     if (data.incomeProfile?.sources) {
       for (const source of data.incomeProfile.sources) {
         if (source.amountExpected && source.frequency !== 'VARIABLE') {
           const dueDay = source.dates && source.dates.length > 0 ? source.dates[0] : 1;
           
-          // Criar Carteira se informada
+          // Verificar se a carteira já existe ou criar uma nova
           let targetWalletId = null;
           if (source.targetWalletName) {
-            const walletRes = await dispatchEvent(session.uid, {
-              type: 'CREATE_WALLET',
-              payload: {
-                name: source.targetWalletName,
-                type: 'CONTA',
-                balance: 0,
-                color: '#00A884',
-                icon: 'Wallet'
-              },
-              source: 'ui',
-              createdAt: new Date()
-            });
+            const existingWallet = wallets.find(w => w.name.toLowerCase() === source.targetWalletName.toLowerCase());
+            
+            if (existingWallet) {
+              targetWalletId = existingWallet.id;
+            } else {
+              const walletRes = await dispatchEvent(session.uid, {
+                type: 'CREATE_WALLET',
+                payload: {
+                  name: source.targetWalletName,
+                  type: 'CONTA',
+                  balance: 0,
+                  color: '#00A884',
+                  icon: 'Wallet'
+                },
+                source: 'ui',
+                createdAt: new Date()
+              });
+              // Como CREATE_WALLET não retorna o ID diretamente no dispatchEvent simplificado, 
+              // vamos assumir que o listener vai atualizar as wallets em breve.
+              // Para o onboarding, vamos apenas guardar o nome se necessário.
+            }
+
+            // Define a primeira carteira de recebimento como padrão
+            if (!defaultWalletId) {
+              defaultWalletId = targetWalletId || source.targetWalletName;
+            }
           }
 
           await dispatchEvent(session.uid, {
@@ -233,7 +244,7 @@ const App: React.FC = () => {
               category: 'Recebimento',
               type: 'RECEIVE',
               recurring: true,
-              targetWalletName: source.targetWalletName // Passamos o nome para o chat identificar depois
+              targetWalletName: source.targetWalletName
             },
             source: 'ui',
             createdAt: new Date()
@@ -241,6 +252,13 @@ const App: React.FC = () => {
         }
       }
     }
+
+    // 2. Salvar Perfil de Renda, Carteira Padrão e Marcar Onboarding como visto
+    await syncUserData(session.uid, { 
+      incomeProfile: data.incomeProfile,
+      defaultReceivingWallet: defaultWalletId,
+      onboardingSeen: true 
+    });
 
     // 3. Salvar Contas Fixas
     for (const bill of data.bills) {
@@ -259,7 +277,7 @@ const App: React.FC = () => {
       });
     }
 
-    // 4. Salvar Metas Sugeridas (Não criar automaticamente)
+    // 4. Salvar Metas Sugeridas
     if (data.goals && data.goals.length > 0) {
       await syncUserData(session.uid, { 
         suggestedGoals: data.goals 
@@ -316,6 +334,9 @@ const App: React.FC = () => {
       case 'debts': return <DebtAssistant uid={session.uid} transactions={transactions} wallets={wallets} user={session} goals={goals} cards={cards} />;
       case 'profile': return <ProfileEdit user={session} onUpdate={(d) => setSession(p => p ? {...p, ...d} : null)} onLogout={() => signOut(auth)} />;
       case 'config': return <Settings user={session} onLogout={() => signOut(auth)} />;
+      case 'qa':
+        if (session.role !== 'ADMIN') return <div className="p-8 text-center text-red-500 font-bold">Acesso restrito</div>;
+        return <QADiagnostic session={session} />;
       case 'admin': return session.role === 'ADMIN' ? <AdminPanel currentAdminId={session.uid} /> : null;
       case 'wallets': {
         const income = transactions

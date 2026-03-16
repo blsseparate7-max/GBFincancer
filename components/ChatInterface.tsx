@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { UserSession, Message, Transaction, CategoryLimit, Bill, CreditCardInfo, Wallet, UserCategory, SavingGoal } from '../types';
 import { parseMessage } from '../services/geminiService';
+import { parseStatementFile } from '../services/statementService';
 import { dispatchEvent } from '../services/eventDispatcher';
 import { fetchChatContext } from '../services/databaseService';
 import { formatCurrency, calculateMonthlySummary } from '../services/summaryService';
@@ -27,6 +28,7 @@ const ChatInterface: React.FC<ChatProps> = ({
 }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [pendingAction, setPendingAction] = useState<any>(null);
+  const [pendingEvents, setPendingEvents] = useState<any[]>([]);
   const [salaryCheckDone, setSalaryCheckDone] = useState(false);
   const [pendingSalaryReminder, setPendingSalaryReminder] = useState<Bill | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -204,28 +206,13 @@ const ChatInterface: React.FC<ChatProps> = ({
 
       const result = await parseMessage(text.trim(), user.name, finalContext);
       
-      if (result.event && (result.event.type === 'ADD_EXPENSE' || result.event.type === 'ADD_INCOME' || result.event.type === 'ADD_CARD_CHARGE')) {
-        // Se for uma movimentação financeira, coloca em modo rascunho para perguntar a origem/destino
-        setPendingAction(result.event);
+      if (result.events && result.events.length > 0) {
+        // Se houver múltiplos eventos, colocamos na fila de confirmação
+        setPendingEvents(result.events);
         
         const aiMsg: Message = { 
           id: (Date.now() + 1).toString(), 
-          text: result.reply || "Entendido. Antes de registrar, de onde saiu esse dinheiro?", 
-          sender: 'ai', 
-          timestamp: new Date() 
-        };
-        setMessages(prev => [...prev, aiMsg]);
-      } else if (result.event) {
-        // Outros eventos (criar categoria, meta, etc) despacha direto
-        await dispatchEvent(user.uid, {
-          ...result.event,
-          source: 'chat',
-          createdAt: new Date()
-        });
-
-        const aiMsg: Message = { 
-          id: (Date.now() + 1).toString(), 
-          text: result.reply || "Feito! Já atualizei seus dados.", 
+          text: result.reply || `Encontrei ${result.events.length} lançamentos. Pode confirmar para mim?`, 
           sender: 'ai', 
           timestamp: new Date() 
         };
@@ -250,6 +237,129 @@ const ChatInterface: React.FC<ChatProps> = ({
       setIsLoading(false);
       isProcessingRef.current = false;
     }
+  };
+
+  const handleSendFile = async (file: File) => {
+    if (isLoading) return;
+    
+    setIsLoading(true);
+    const userMsg: Message = { 
+      id: Date.now().toString(), 
+      text: `📎 Enviou arquivo: ${file.name}`, 
+      sender: 'user', 
+      timestamp: new Date() 
+    };
+    setMessages(prev => [...prev, userMsg]);
+
+    try {
+      const result = await parseStatementFile(file);
+      
+      if (result.transactions && result.transactions.length > 0) {
+        // Converter transações do extrato em eventos do chat
+        const events = result.transactions.map((t: any) => {
+          // Detecção de duplicidade básica
+          const isDuplicate = transactions.some(prev => 
+            prev.amount === t.amount && 
+            prev.date === t.date && 
+            prev.description.toLowerCase().includes(t.description.toLowerCase())
+          );
+
+          return {
+            type: t.isCardCharge ? 'ADD_CARD_CHARGE' : (t.type === 'INCOME' ? 'ADD_INCOME' : 'ADD_EXPENSE'),
+            payload: {
+              amount: t.amount,
+              description: t.description,
+              category: t.category || 'Outros',
+              date: t.date,
+              paymentMethod: t.isCardCharge ? 'CARD' : 'PIX',
+              isDuplicate
+            }
+          };
+        });
+
+        setPendingEvents(events);
+
+        const aiMsg: Message = { 
+          id: (Date.now() + 1).toString(), 
+          text: `Li seu extrato! Encontrei ${events.length} lançamentos. Confira a prévia abaixo para confirmarmos.`, 
+          sender: 'ai', 
+          timestamp: new Date() 
+        };
+        setMessages(prev => [...prev, aiMsg]);
+      } else {
+        setMessages(prev => [...prev, {
+          id: Date.now().toString(),
+          text: "Não consegui encontrar transações nesse arquivo. Pode verificar se é um extrato válido?",
+          sender: 'ai',
+          timestamp: new Date()
+        }]);
+      }
+    } catch (error) {
+      console.error(error);
+      setMessages(prev => [...prev, {
+        id: Date.now().toString(),
+        text: "Houve um erro ao processar seu arquivo. Tente novamente ou envie uma foto mais nítida.",
+        sender: 'ai',
+        timestamp: new Date()
+      }]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const confirmAllEvents = async (walletId: string | 'CARD') => {
+    if (pendingEvents.length === 0) return;
+
+    setIsLoading(true);
+    try {
+      for (const event of pendingEvents) {
+        const eventToDispatch = { ...event };
+        
+        if (walletId === 'CARD') {
+          if (eventToDispatch.type === 'ADD_EXPENSE') {
+            eventToDispatch.type = 'ADD_CARD_CHARGE';
+          }
+          eventToDispatch.payload.paymentMethod = 'CARD';
+          eventToDispatch.payload.cardId = eventToDispatch.payload.cardId || 'default';
+        } else {
+          if (eventToDispatch.type === 'ADD_INCOME') {
+            eventToDispatch.payload.targetWalletId = walletId;
+          } else {
+            eventToDispatch.payload.sourceWalletId = walletId;
+            eventToDispatch.payload.paymentMethod = 'PIX';
+          }
+        }
+
+        await dispatchEvent(user.uid, {
+          ...eventToDispatch,
+          source: 'chat',
+          createdAt: new Date()
+        });
+      }
+
+      const walletName = walletId === 'CARD' ? 'Cartão de Crédito' : wallets.find(w => w.id === walletId)?.name || 'Carteira';
+      
+      setMessages(prev => [...prev, {
+        id: Date.now().toString(),
+        text: `✅ Tudo pronto! Registrei os ${pendingEvents.length} lançamentos na sua conta (${walletName}).`,
+        sender: 'ai',
+        timestamp: new Date()
+      }]);
+
+      setPendingEvents([]);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const removePendingEvent = (index: number) => {
+    setPendingEvents(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const updatePendingEvent = (index: number, updates: any) => {
+    setPendingEvents(prev => prev.map((ev, i) => i === index ? { ...ev, payload: { ...ev.payload, ...updates } } : ev));
   };
 
   const confirmPendingAction = async (walletId: string | 'CARD') => {
@@ -413,6 +523,76 @@ const ChatInterface: React.FC<ChatProps> = ({
           </div>
         )}
 
+        {pendingEvents.length > 0 && (
+          <div className="flex flex-col items-start gap-2 animate-fade-in-up">
+            <div className="bg-[var(--surface)] border border-[var(--border)] rounded-3xl p-5 shadow-xl w-full max-w-[95%]">
+              <div className="flex items-center justify-between mb-4">
+                <span className="text-[10px] font-black text-[var(--green-whatsapp)] uppercase tracking-widest">Prévia de Lançamentos ({pendingEvents.length})</span>
+                <button onClick={() => setPendingEvents([])} className="text-[var(--text-muted)] hover:text-rose-500 transition-colors">✕</button>
+              </div>
+
+              <div className="max-h-[300px] overflow-y-auto space-y-3 mb-6 pr-2 no-scrollbar">
+                {pendingEvents.map((ev, idx) => (
+                  <div key={idx} className={`bg-[var(--bg-body)] p-3 rounded-2xl border ${ev.payload.isDuplicate ? 'border-amber-500/50' : 'border-[var(--border)]'} relative group`}>
+                    {ev.payload.isDuplicate && (
+                      <div className="absolute -top-2 left-4 bg-amber-500 text-white text-[7px] font-black px-1.5 py-0.5 rounded-full uppercase tracking-tighter shadow-sm">
+                        Possível Duplicado
+                      </div>
+                    )}
+                    <button 
+                      onClick={() => removePendingEvent(idx)}
+                      className="absolute top-2 right-2 text-[var(--text-muted)] hover:text-rose-500 opacity-0 group-hover:opacity-100 transition-all"
+                    >
+                      ✕
+                    </button>
+                    <div className="flex justify-between items-start mb-1">
+                      <span className="text-[10px] font-bold text-[var(--text-muted)] uppercase">{ev.payload.date || 'Hoje'}</span>
+                      <span className={`text-sm font-black ${ev.type === 'ADD_INCOME' ? 'text-[var(--green-whatsapp)]' : 'text-rose-500'}`}>
+                        {ev.type === 'ADD_INCOME' ? '+' : '-'}{formatCurrency(ev.payload.amount)}
+                      </span>
+                    </div>
+                    <div className="text-xs font-bold text-[var(--text-primary)] mb-1">{ev.payload.description}</div>
+                    <div className="flex gap-2">
+                      <select 
+                        value={ev.payload.category}
+                        onChange={(e) => updatePendingEvent(idx, { category: e.target.value })}
+                        className="bg-transparent text-[9px] font-black uppercase italic text-[var(--green-whatsapp)] outline-none cursor-pointer"
+                      >
+                        {categories.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+                        {!categories.find(c => c.name === ev.payload.category) && <option value={ev.payload.category}>{ev.payload.category}</option>}
+                      </select>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <p className="text-[10px] font-black text-[var(--text-muted)] uppercase mb-3 text-center">
+                Confirmar todos em qual conta?
+              </p>
+
+              <div className="grid grid-cols-2 gap-2">
+                {wallets.map(w => (
+                  <button 
+                    key={w.id}
+                    onClick={() => confirmAllEvents(w.id)}
+                    className="bg-[var(--bg-body)] text-[var(--text-primary)] border border-[var(--border)] hover:bg-[var(--green-whatsapp)] hover:text-white rounded-2xl py-3 px-2 text-[10px] font-black uppercase transition-all active:scale-95 flex flex-col items-center gap-1"
+                  >
+                    <span className="text-lg">{w.icon || '💰'}</span>
+                    <span className="truncate w-full text-center">{w.name}</span>
+                  </button>
+                ))}
+                <button 
+                  onClick={() => confirmAllEvents('CARD')}
+                  className="bg-[var(--bg-body)] hover:bg-rose-500 hover:text-white border border-[var(--border)] rounded-2xl py-3 px-2 text-[10px] font-black uppercase transition-all active:scale-95 flex flex-col items-center gap-1"
+                >
+                  <span className="text-lg">💳</span>
+                  <span>Cartão</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {pendingAction && (
           <div className="flex flex-col items-start gap-2 animate-fade-in-up">
             <div className="bg-[var(--surface)] border border-[var(--border)] rounded-3xl p-5 shadow-xl w-full max-w-[90%]">
@@ -483,7 +663,8 @@ const ChatInterface: React.FC<ChatProps> = ({
       {/* Composer */}
       <ChatComposer 
         onSendText={(text) => handleSend(text)} 
-        isLoading={isLoading || !!pendingAction}
+        onSendFile={(file) => handleSendFile(file)}
+        isLoading={isLoading || !!pendingAction || pendingEvents.length > 0}
       />
     </div>
   );

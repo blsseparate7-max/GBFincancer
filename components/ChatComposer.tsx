@@ -5,11 +5,12 @@ import { Notification } from './UI';
 
 interface ChatComposerProps {
   onSendText: (text: string) => void;
+  onSendFile?: (file: File) => void;
   isLoading: boolean;
   placeholder?: string;
 }
 
-const ChatComposer: React.FC<ChatComposerProps> = ({ onSendText, isLoading, placeholder = "Mensagem" }) => {
+const ChatComposer: React.FC<ChatComposerProps> = ({ onSendText, onSendFile, isLoading, placeholder = "Mensagem" }) => {
   const [text, setText] = useState('');
   const [isRecording, setIsRecording] = useState(false);
   const [isLocked, setIsLocked] = useState(false);
@@ -20,6 +21,7 @@ const ChatComposer: React.FC<ChatComposerProps> = ({ onSendText, isLoading, plac
   const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const recognitionRef = useRef<any>(null);
   const textBeforeRecordingRef = useRef<string>('');
   const timerRef = useRef<NodeJS.Timeout | null>(null);
@@ -159,8 +161,28 @@ const ChatComposer: React.FC<ChatComposerProps> = ({ onSendText, isLoading, plac
     }
   };
 
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file && onSendFile) {
+      onSendFile(file);
+    }
+    // Reset input
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const triggerFileInput = () => {
+    fileInputRef.current?.click();
+  };
+
   return (
     <div className="flex flex-col w-full bg-[var(--surface)] p-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] z-50 border-t border-[var(--border)]">
+      <input 
+        type="file" 
+        ref={fileInputRef} 
+        onChange={handleFileChange} 
+        className="hidden" 
+        accept=".pdf,.csv,.ofx,.txt,.jpg,.jpeg,.png"
+      />
       <div className="flex items-end gap-2 relative min-h-[48px]">
         
         {/* Left side icons (Emoji, Attachment) - Hidden when recording unless locked */}
@@ -169,7 +191,10 @@ const ChatComposer: React.FC<ChatComposerProps> = ({ onSendText, isLoading, plac
             <button className="p-2 text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors">
               <Smile size={24} />
             </button>
-            <button className="p-2 text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors">
+            <button 
+              onClick={triggerFileInput}
+              className="p-2 text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
+            >
               <Paperclip size={24} className="rotate-45" />
             </button>
           </div>

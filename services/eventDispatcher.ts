@@ -108,12 +108,17 @@ export const dispatchEvent = async (uid: string, event: FinanceEvent) => {
           sourceWalletId: sourceWalletId || null,
           date: chargeDate.toISOString(),
           invoiceCycle,
+          isPaid: false,
           createdAt: serverTimestamp()
         });
 
-        // 3. Aumenta a dívida no documento do cartão se ele existir
+        // 3. Atualiza o cartão (Regra da Vida Real)
         if (cardSnap.exists()) {
           await updateDoc(cardRef, {
+            usedLimit: increment(amount),
+            availableLimit: increment(-amount),
+            currentInvoiceAmount: increment(amount),
+            // Compatibilidade com campos antigos se houver
             usedAmount: increment(amount),
             availableAmount: increment(-amount),
             invoiceAmount: increment(amount),
@@ -146,9 +151,13 @@ export const dispatchEvent = async (uid: string, event: FinanceEvent) => {
           await updateWalletBalance(uid, sourceWalletId, -amount);
         }
 
-        // 2. Diminui a dívida do cartão
+        // 2. Atualiza o cartão (Regra da Vida Real)
         const cardRef = doc(userRef, "cards", cardId);
         await updateDoc(cardRef, {
+          usedLimit: increment(-amount),
+          availableLimit: increment(amount),
+          currentInvoiceAmount: increment(-amount),
+          // Compatibilidade
           usedAmount: increment(-amount),
           availableAmount: increment(amount),
           invoiceAmount: increment(-amount),
@@ -380,12 +389,19 @@ export const dispatchEvent = async (uid: string, event: FinanceEvent) => {
 
       case 'ADD_CARD': {
         const { name, bank, limit, dueDay, closingDay } = event.payload;
+        const limitVal = Number(limit);
         await addDoc(collection(userRef, "cards"), {
           name,
           bank: bank || '',
-          limit: Number(limit),
+          limitTotal: limitVal,
+          usedLimit: 0,
+          availableLimit: limitVal,
+          currentInvoiceAmount: 0,
+          // Compatibilidade
+          limit: limitVal,
           usedAmount: 0,
-          availableAmount: Number(limit),
+          availableAmount: limitVal,
+          invoiceAmount: 0,
           dueDay: Number(dueDay),
           closingDay: closingDay ? Number(closingDay) : null,
           createdAt: serverTimestamp(),
@@ -401,13 +417,16 @@ export const dispatchEvent = async (uid: string, event: FinanceEvent) => {
         
         if (cardSnap.exists()) {
           const cardData = cardSnap.data();
-          const usedAmount = cardData.usedAmount || 0;
+          const usedLimit = cardData.usedLimit || cardData.usedAmount || 0;
           const newLimit = Number(limit);
           
           await updateDoc(cardRef, {
             name: name || cardData.name,
+            limitTotal: newLimit,
+            availableLimit: newLimit - usedLimit,
+            // Compatibilidade
             limit: newLimit,
-            availableAmount: newLimit - usedAmount,
+            availableAmount: newLimit - usedLimit,
             dueDay: Number(dueDay),
             closingDay: closingDay ? Number(closingDay) : (cardData.closingDay || null),
             updatedAt: serverTimestamp()
@@ -471,10 +490,15 @@ export const dispatchEvent = async (uid: string, event: FinanceEvent) => {
             if (oldCardId === newCardId) {
               if (oldAmount !== newAmount) {
                 const cardRef = doc(userRef, "cards", oldCardId);
+                const diff = newAmount - oldAmount;
                 await updateDoc(cardRef, {
-                  usedAmount: increment(newAmount - oldAmount),
-                  availableAmount: increment(-(newAmount - oldAmount)),
-                  invoiceAmount: increment(newAmount - oldAmount),
+                  usedLimit: increment(diff),
+                  availableLimit: increment(-diff),
+                  currentInvoiceAmount: increment(diff),
+                  // Compatibilidade
+                  usedAmount: increment(diff),
+                  availableAmount: increment(-diff),
+                  invoiceAmount: increment(diff),
                   updatedAt: serverTimestamp()
                 });
               }
@@ -483,6 +507,10 @@ export const dispatchEvent = async (uid: string, event: FinanceEvent) => {
               if (oldCardId) {
                 const oldCardRef = doc(userRef, "cards", oldCardId);
                 await updateDoc(oldCardRef, {
+                  usedLimit: increment(-oldAmount),
+                  availableLimit: increment(oldAmount),
+                  currentInvoiceAmount: increment(-oldAmount),
+                  // Compatibilidade
                   usedAmount: increment(-oldAmount),
                   availableAmount: increment(oldAmount),
                   invoiceAmount: increment(-oldAmount),
@@ -492,6 +520,10 @@ export const dispatchEvent = async (uid: string, event: FinanceEvent) => {
               if (newCardId) {
                 const newCardRef = doc(userRef, "cards", newCardId);
                 await updateDoc(newCardRef, {
+                  usedLimit: increment(newAmount),
+                  availableLimit: increment(-newAmount),
+                  currentInvoiceAmount: increment(newAmount),
+                  // Compatibilidade
                   usedAmount: increment(newAmount),
                   availableAmount: increment(-newAmount),
                   invoiceAmount: increment(newAmount),
@@ -504,6 +536,10 @@ export const dispatchEvent = async (uid: string, event: FinanceEvent) => {
             if (newCardId) {
               const newCardRef = doc(userRef, "cards", newCardId);
               await updateDoc(newCardRef, {
+                usedLimit: increment(newAmount),
+                availableLimit: increment(-newAmount),
+                currentInvoiceAmount: increment(newAmount),
+                // Compatibilidade
                 usedAmount: increment(newAmount),
                 availableAmount: increment(-newAmount),
                 invoiceAmount: increment(newAmount),
@@ -515,6 +551,10 @@ export const dispatchEvent = async (uid: string, event: FinanceEvent) => {
             if (oldCardId) {
               const oldCardRef = doc(userRef, "cards", oldCardId);
               await updateDoc(oldCardRef, {
+                usedLimit: increment(-oldAmount),
+                availableLimit: increment(oldAmount),
+                currentInvoiceAmount: increment(-oldAmount),
+                // Compatibilidade
                 usedAmount: increment(-oldAmount),
                 availableAmount: increment(oldAmount),
                 invoiceAmount: increment(-oldAmount),
@@ -551,10 +591,15 @@ export const dispatchEvent = async (uid: string, event: FinanceEvent) => {
           // Se for gasto no cartão, estorna o limite do cartão também
           if (oldData.paymentMethod === 'CARD' && oldData.cardId) {
             const cardRef = doc(userRef, "cards", oldData.cardId);
+            const amount = Number(oldData.amount);
             await updateDoc(cardRef, {
-              usedAmount: increment(-Number(oldData.amount)),
-              availableAmount: increment(Number(oldData.amount)),
-              invoiceAmount: increment(-Number(oldData.amount)),
+              usedLimit: increment(-amount),
+              availableLimit: increment(amount),
+              currentInvoiceAmount: increment(-amount),
+              // Compatibilidade
+              usedAmount: increment(-amount),
+              availableAmount: increment(amount),
+              invoiceAmount: increment(-amount),
               updatedAt: serverTimestamp()
             });
           }

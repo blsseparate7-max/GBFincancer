@@ -194,6 +194,7 @@ export interface UserSession {
   lgpdAcceptedAt?: any;
   lgpdVersion?: string;
   incomeProfile?: IncomeProfile;
+  defaultReceivingWallet?: string;
   suggestedGoals?: any[];
   status?: 'active' | 'blocked' | 'deleted';
   lastLogin?: any;
@@ -233,6 +234,7 @@ export interface CustomerData {
   lgpdAcceptedAt?: any;
   lgpdVersion?: string;
   incomeProfile?: IncomeProfile;
+  defaultReceivingWallet?: string;
   suggestedGoals?: any[];
   createdAt?: any;
   lastLogin?: any;

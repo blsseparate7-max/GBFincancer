@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 
-interface MoneyInputProps {
+interface MoneyInputProps extends React.InputHTMLAttributes<HTMLInputElement> {
   value: number;
   onChange: (value: number) => void;
   placeholder?: string;
@@ -14,7 +14,8 @@ const MoneyInput: React.FC<MoneyInputProps> = ({
   onChange, 
   placeholder = 'R$ 0,00', 
   className = '',
-  autoFocus = false
+  autoFocus = false,
+  ...props
 }) => {
   const [displayValue, setDisplayValue] = useState('');
 
@@ -57,6 +58,7 @@ const MoneyInput: React.FC<MoneyInputProps> = ({
       placeholder={placeholder}
       className={className}
       autoFocus={autoFocus}
+      {...props}
     />
   );
 };

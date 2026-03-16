@@ -35,10 +35,34 @@ const CreditCard: React.FC<CreditCardProps> = ({ transactions, uid, cards, walle
   const [payCycle, setPayCycle] = useState('');
   const [selectedWalletId, setSelectedWalletId] = useState<string | null>(null);
 
+  const [editingData, setEditingData] = useState<{ name: string; limit: number; dueDay: number; closingDay: number } | null>(null);
+
+  const handleUpdateCard = async (cardId: string) => {
+    if (!editingData) return;
+    setIsLoading(true);
+    const res = await dispatchEvent(uid, {
+      type: 'UPDATE_CARD',
+      payload: { 
+        id: cardId, 
+        name: editingData.name, 
+        limit: editingData.limit, 
+        dueDay: editingData.dueDay, 
+        closingDay: editingData.closingDay 
+      },
+      source: 'ui',
+      createdAt: new Date()
+    });
+    if (res.success) {
+      setIsEditing(null);
+      setEditingData(null);
+    } else {
+      setNotification({ message: "Erro ao atualizar cartão.", type: 'error' });
+    }
+    setIsLoading(false);
+  };
+
   const cardAnalysis = useMemo(() => {
     const now = new Date();
-    const currentMonth = now.getMonth();
-    const currentYear = now.getFullYear();
 
     return cards.map(card => {
       const closingDay = card.closingDay || 10;
@@ -74,10 +98,12 @@ const CreditCard: React.FC<CreditCardProps> = ({ transactions, uid, cards, walle
       const prevAmount = prevInvoiceExpenses.filter(t => !t.isPaid).reduce((sum, t) => sum + t.amount, 0);
       const nextAmount = nextInvoiceExpenses.filter(t => !t.isPaid).reduce((sum, t) => sum + t.amount, 0);
 
-      const used = Number(card.usedAmount) || 0;
+      // Total de tudo que não foi pago no cartão (Dívida total acumulada)
+      const totalUnpaid = allCardExpenses.filter(t => !t.isPaid).reduce((sum, t) => sum + t.amount, 0);
+
+      const used = totalUnpaid; // Usamos o total não pago como o valor usado real
       const limit = Number(card.limit) || 0;
-      const available = Number(card.availableAmount) || 0;
-      const invoiceAmount = Number(card.invoiceAmount) || 0;
+      const available = limit - used;
       const pct = limit > 0 ? Math.min(100, (used / limit) * 100) : 0;
       
       return { 
@@ -85,7 +111,6 @@ const CreditCard: React.FC<CreditCardProps> = ({ transactions, uid, cards, walle
         used, 
         available, 
         limit, 
-        invoiceAmount,
         pct, 
         expenses: allCardExpenses,
         currentCycle,
@@ -94,12 +119,28 @@ const CreditCard: React.FC<CreditCardProps> = ({ transactions, uid, cards, walle
         currentAmount,
         prevAmount,
         nextAmount,
+        totalUnpaid,
         currentInvoiceExpenses,
         prevInvoiceExpenses,
         nextInvoiceExpenses
       };
     });
   }, [cards, transactions]);
+
+  const [activeMenu, setActiveMenu] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<{ isOpen: boolean; card?: any; message: string }>({ isOpen: false, message: '' });
+  const [confirmDeleteTransaction, setConfirmDeleteTransaction] = useState<{ isOpen: boolean; id: string | null }>({ isOpen: false, id: null });
+  const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (activeMenu && !(event.target as Element).closest('.relative')) {
+        setActiveMenu(null);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [activeMenu]);
 
   const handleAddCard = async () => {
     if (!cardName || !cardLimit || !cardDueDay) return;
@@ -121,37 +162,6 @@ const CreditCard: React.FC<CreditCardProps> = ({ transactions, uid, cards, walle
       setShowAddForm(false);
     } else {
       setNotification({ message: "Erro ao adicionar cartão: " + (res.error || "Erro desconhecido"), type: 'error' });
-    }
-    setIsLoading(false);
-  };
-
-  const [activeMenu, setActiveMenu] = useState<string | null>(null);
-  const [confirmDelete, setConfirmDelete] = useState<{ isOpen: boolean; card?: any; message: string }>({ isOpen: false, message: '' });
-  const [confirmDeleteTransaction, setConfirmDeleteTransaction] = useState<{ isOpen: boolean; id: string | null }>({ isOpen: false, id: null });
-  const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
-
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (activeMenu && !(event.target as Element).closest('.relative')) {
-        setActiveMenu(null);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [activeMenu]);
-
-  const handleUpdateCard = async (cardId: string, newName: string, newLimit: number, newDueDay: number, newClosingDay: number) => {
-    setIsLoading(true);
-    const res = await dispatchEvent(uid, {
-      type: 'UPDATE_CARD',
-      payload: { id: cardId, name: newName, limit: newLimit, dueDay: newDueDay, closingDay: newClosingDay },
-      source: 'ui',
-      createdAt: new Date()
-    });
-    if (res.success) {
-      setIsEditing(null);
-    } else {
-      setNotification({ message: "Erro ao atualizar cartão.", type: 'error' });
     }
     setIsLoading(false);
   };
@@ -391,7 +401,12 @@ const CreditCard: React.FC<CreditCardProps> = ({ transactions, uid, cards, walle
                     <div className="p-4 bg-[var(--bg-body)]/50 rounded-3xl border border-[var(--border)]">
                       <p className="text-[9px] font-black text-[var(--text-muted)] uppercase tracking-widest mb-1">Fatura Aberta ({card.currentCycle})</p>
                       <div className="flex justify-between items-end">
-                        <h3 className="text-3xl font-black text-rose-500">{format(card.currentAmount)}</h3>
+                        <div className="flex flex-col">
+                          <h3 className="text-3xl font-black text-rose-500">{format(card.currentAmount)}</h3>
+                          {card.totalUnpaid > card.currentAmount && (
+                            <span className="text-[8px] font-black text-rose-400 uppercase mt-0.5">Total Pendente: {format(card.totalUnpaid)}</span>
+                          )}
+                        </div>
                         <button 
                           onClick={() => handleOpenPayment(card, card.currentCycle, card.currentAmount)}
                           className="bg-[var(--green-whatsapp)] hover:bg-[var(--green-whatsapp-dark)] text-white px-4 py-2 rounded-xl text-[9px] font-black uppercase transition-all active:scale-95"
@@ -462,30 +477,26 @@ const CreditCard: React.FC<CreditCardProps> = ({ transactions, uid, cards, walle
                     <div className="space-y-2">
                       <label className="text-[9px] font-black text-[var(--text-muted)] uppercase ml-1">Nome do Cartão</label>
                       <input 
-                        id={`name-edit-${card.id}`}
                         className="bg-[var(--bg-body)] border border-[var(--border)] rounded-2xl p-4 w-full text-sm font-bold outline-none focus:border-[var(--green-whatsapp)] text-[var(--text-primary)] transition-all"
-                        defaultValue={card.name}
+                        value={editingData?.name ?? card.name}
+                        onChange={(e) => setEditingData(prev => ({ ...(prev || { name: card.name, limit: card.limit, dueDay: card.dueDay, closingDay: card.closingDay || 5 }), name: e.target.value }))}
                       />
                     </div>
                     <div className="space-y-2">
                       <label className="text-[9px] font-black text-[var(--text-muted)] uppercase ml-1">Novo Limite Total</label>
                       <MoneyInput 
                         className="bg-[var(--bg-body)] border border-[var(--border)] rounded-2xl p-4 w-full text-center text-xl font-black outline-none focus:border-[var(--green-whatsapp)] text-[var(--text-primary)] transition-all"
-                        value={card.limit}
-                        onChange={(val) => {
-                          const input = document.getElementById(`limit-edit-${card.id}`) as HTMLInputElement;
-                          if (input) input.value = val.toString();
-                        }}
-                        id={`limit-edit-${card.id}`}
+                        value={editingData?.limit ?? card.limit}
+                        onChange={(val) => setEditingData(prev => ({ ...(prev || { name: card.name, limit: card.limit, dueDay: card.dueDay, closingDay: card.closingDay || 5 }), limit: val }))}
                       />
                     </div>
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-2">
                         <label className="text-[9px] font-black text-[var(--text-muted)] uppercase ml-1">Dia de Fechamento</label>
                         <select 
-                          id={`closing-edit-${card.id}`}
                           className="bg-[var(--bg-body)] border border-[var(--border)] rounded-2xl p-4 w-full text-center text-sm font-black outline-none appearance-none text-[var(--text-primary)] focus:border-[var(--green-whatsapp)] transition-all"
-                          defaultValue={card.closingDay}
+                          value={editingData?.closingDay ?? card.closingDay ?? 5}
+                          onChange={(e) => setEditingData(prev => ({ ...(prev || { name: card.name, limit: card.limit, dueDay: card.dueDay, closingDay: card.closingDay || 5 }), closingDay: parseInt(e.target.value) }))}
                         >
                           {Array.from({length: 31}, (_, i) => i + 1).map(d => (
                             <option key={d} value={d} className="bg-[var(--surface)]">{d}</option>
@@ -495,9 +506,9 @@ const CreditCard: React.FC<CreditCardProps> = ({ transactions, uid, cards, walle
                       <div className="space-y-2">
                         <label className="text-[9px] font-black text-[var(--text-muted)] uppercase ml-1">Dia de Vencimento</label>
                         <select 
-                          id={`day-edit-${card.id}`}
                           className="bg-[var(--bg-body)] border border-[var(--border)] rounded-2xl p-4 w-full text-center text-sm font-black outline-none appearance-none text-[var(--text-primary)] focus:border-[var(--green-whatsapp)] transition-all"
-                          defaultValue={card.dueDay}
+                          value={editingData?.dueDay ?? card.dueDay}
+                          onChange={(e) => setEditingData(prev => ({ ...(prev || { name: card.name, limit: card.limit, dueDay: card.dueDay, closingDay: card.closingDay || 5 }), dueDay: parseInt(e.target.value) }))}
                         >
                           {Array.from({length: 31}, (_, i) => i + 1).map(d => (
                             <option key={d} value={d} className="bg-[var(--surface)]">{d}</option>
@@ -508,16 +519,10 @@ const CreditCard: React.FC<CreditCardProps> = ({ transactions, uid, cards, walle
                   </div>
 
                   <div className="flex gap-3 w-full">
-                    <button onClick={() => setIsEditing(null)} className="flex-1 py-4 text-[10px] font-black uppercase bg-[var(--bg-body)] rounded-2xl hover:bg-[var(--surface)] transition-all text-[var(--text-muted)] border border-[var(--border)]">Cancelar</button>
+                    <button onClick={() => { setIsEditing(null); setEditingData(null); }} className="flex-1 py-4 text-[10px] font-black uppercase bg-[var(--bg-body)] rounded-2xl hover:bg-[var(--surface)] transition-all text-[var(--text-muted)] border border-[var(--border)]">Cancelar</button>
                     <button 
                       disabled={isLoading}
-                      onClick={() => {
-                        const name = (document.getElementById(`name-edit-${card.id}`) as HTMLInputElement).value;
-                        const val = (document.getElementById(`limit-edit-${card.id}`) as HTMLInputElement).value;
-                        const day = (document.getElementById(`day-edit-${card.id}`) as HTMLSelectElement).value;
-                        const closing = (document.getElementById(`closing-edit-${card.id}`) as HTMLSelectElement).value;
-                        handleUpdateCard(card.id, name, parseFloat(val), parseInt(day), parseInt(closing));
-                      }}
+                      onClick={() => handleUpdateCard(card.id)}
                       className="flex-1 py-4 text-[10px] font-black uppercase bg-[var(--green-whatsapp)] text-white rounded-2xl shadow-lg shadow-[var(--green-whatsapp)]/20"
                     >
                       {isLoading ? '...' : 'Salvar'}

@@ -23,44 +23,47 @@ const getAI = () => {
 const FINANCE_PARSER_SCHEMA = {
   type: Type.OBJECT,
   properties: {
-    event: {
-      type: Type.OBJECT,
-      properties: {
-        type: { 
-          type: Type.STRING, 
-          enum: [
-            'ADD_EXPENSE', 'ADD_INCOME', 'CREATE_GOAL', 'ADD_TO_GOAL', 
-            'UPDATE_LIMIT', 'CREATE_REMINDER', 'ADD_CARD_CHARGE', 
-            'PAY_CARD', 'TRANSFER_WALLET', 'CREATE_CATEGORY', 
-            'UPDATE_CATEGORY', 'DELETE_CATEGORY', 'MOVE_TRANSACTION_CATEGORY'
-          ] 
-        },
-        payload: { 
-          type: Type.OBJECT,
-          properties: {
-            amount: { type: Type.NUMBER },
-            category: { type: Type.STRING },
-            description: { type: Type.STRING },
-            paymentMethod: { type: Type.STRING, enum: ['CASH', 'PIX', 'CARD'] },
-            cardId: { type: Type.STRING },
-            dueDay: { type: Type.NUMBER },
-            name: { type: Type.STRING },
-            targetAmount: { type: Type.NUMBER },
-            location: { type: Type.STRING },
-            goalId: { type: Type.STRING },
-            fromWalletId: { type: Type.STRING },
-            toWalletId: { type: Type.STRING },
-            note: { type: Type.STRING },
-            type: { type: Type.STRING, enum: ['PAY', 'RECEIVE'] },
-            id: { type: Type.STRING },
-            newName: { type: Type.STRING },
-            oldName: { type: Type.STRING },
-            transactionId: { type: Type.STRING },
-            newCategory: { type: Type.STRING }
+    events: {
+      type: Type.ARRAY,
+      items: {
+        type: Type.OBJECT,
+        properties: {
+          type: { 
+            type: Type.STRING, 
+            enum: [
+              'ADD_EXPENSE', 'ADD_INCOME', 'CREATE_GOAL', 'ADD_TO_GOAL', 
+              'UPDATE_LIMIT', 'CREATE_REMINDER', 'ADD_CARD_CHARGE', 
+              'PAY_CARD', 'TRANSFER_WALLET', 'CREATE_CATEGORY', 
+              'UPDATE_CATEGORY', 'DELETE_CATEGORY', 'MOVE_TRANSACTION_CATEGORY'
+            ] 
+          },
+          payload: { 
+            type: Type.OBJECT,
+            properties: {
+              amount: { type: Type.NUMBER },
+              category: { type: Type.STRING },
+              description: { type: Type.STRING },
+              paymentMethod: { type: Type.STRING, enum: ['CASH', 'PIX', 'CARD'] },
+              cardId: { type: Type.STRING },
+              dueDay: { type: Type.NUMBER },
+              name: { type: Type.STRING },
+              targetAmount: { type: Type.NUMBER },
+              location: { type: Type.STRING },
+              goalId: { type: Type.STRING },
+              fromWalletId: { type: Type.STRING },
+              toWalletId: { type: Type.STRING },
+              note: { type: Type.STRING },
+              type: { type: Type.STRING, enum: ['PAY', 'RECEIVE'] },
+              id: { type: Type.STRING },
+              newName: { type: Type.STRING },
+              oldName: { type: Type.STRING },
+              transactionId: { type: Type.STRING },
+              newCategory: { type: Type.STRING }
+            }
           }
-        }
-      },
-      required: ["type", "payload"]
+        },
+        required: ["type", "payload"]
+      }
     },
     reply: { type: Type.STRING }
   },
@@ -147,19 +150,23 @@ export const parseMessage = async (text: string, userName: string, context?: { r
       4. Se o usuário perguntar sobre cartões, use "usado" e "disponivel" de "CARTÕES DE CRÉDITO".
       5. Se o usuário perguntar sobre saldo, use "CARTEIRAS".
 
-      OBJETIVO: Analisar a mensagem e retornar um JSON com "reply" e opcionalmente "event".
+      OBJETIVO: Analisar a mensagem e retornar um JSON com "reply" e opcionalmente uma lista de "events".
+      
+      MÚLTIPLOS LANÇAMENTOS:
+      - O usuário pode enviar várias transações em uma única mensagem (ex: "gastei 50 no mercado e 20 no lanche").
+      - Você deve identificar CADA UMA e retornar no array "events".
       
       GESTÃO FINANCEIRA:
-      1. GASTO NO CARTÃO: "gastei 50 no cartão", "comprei 100 no crédito" -> event: { type: "ADD_CARD_CHARGE", payload: { amount: 50, category: "...", description: "...", cardId: "ID_DO_CARTAO" } }
+      1. GASTO NO CARTÃO: "gastei 50 no cartão", "comprei 100 no crédito" -> { type: "ADD_CARD_CHARGE", payload: { amount: 50, category: "...", description: "...", cardId: "ID_DO_CARTAO" } }
          - SEMPRE use ADD_CARD_CHARGE para gastos no crédito. Se houver mais de um cartão, escolha o mais provável ou o primeiro se não especificado.
-      2. GASTO GERAL (PIX/DINHEIRO): "paguei 20 no pix", "gastei 10 em dinheiro" -> event: { type: "ADD_EXPENSE", payload: { amount: 20, category: "...", description: "...", paymentMethod: "PIX" } }
-      3. RECEITA: "recebi 1000", "ganhei 50" -> event: { type: "ADD_INCOME", payload: { amount: 1000, category: "...", description: "..." } }
+      2. GASTO GERAL (PIX/DINHEIRO): "paguei 20 no pix", "gastei 10 em dinheiro" -> { type: "ADD_EXPENSE", payload: { amount: 20, category: "...", description: "...", paymentMethod: "PIX" } }
+      3. RECEITA: "recebi 1000", "ganhei 50" -> { type: "ADD_INCOME", payload: { amount: 1000, category: "...", description: "..." } }
       
       GESTÃO DE CATEGORIAS:
-      1. CRIAR: "criar categoria [NOME]" -> event: { type: "CREATE_CATEGORY", payload: { name: "[NOME]", type: "EXPENSE" } }
-      2. RENOMEAR: "renomear [ANTIGO] para [NOVO]" -> event: { type: "UPDATE_CATEGORY", payload: { id: "ID_DA_CATEGORIA", name: "[NOVO]", oldName: "[ANTIGO]" } }
-      3. MOVER GASTO: "mover gasto [DESC/VALOR] para [CATEGORIA]" -> event: { type: "MOVE_TRANSACTION_CATEGORY", payload: { transactionId: "ID_DA_TRANSACAO", newCategory: "[NOME_CATEGORIA]" } }
-      4. REMOVER: "remover categoria [NOME]" -> event: { type: "DELETE_CATEGORY", payload: { id: "ID_DA_CAT", name: "[NOME]" } }
+      1. CRIAR: "criar categoria [NOME]" -> { type: "CREATE_CATEGORY", payload: { name: "[NOME]", type: "EXPENSE" } }
+      2. RENOMEAR: "renomear [ANTIGO] para [NOVO]" -> { type: "UPDATE_CATEGORY", payload: { id: "ID_DA_CATEGORIA", name: "[NOVO]", oldName: "[ANTIGO]" } }
+      3. MOVER GASTO: "mover gasto [DESC/VALOR] para [CATEGORIA]" -> { type: "MOVE_TRANSACTION_CATEGORY", payload: { transactionId: "ID_DA_TRANSACAO", newCategory: "[NOME_CATEGORIA]" } }
+      4. REMOVER: "remover categoria [NOME]" -> { type: "DELETE_CATEGORY", payload: { id: "ID_DA_CAT", name: "[NOME]" } }
          - Se houver gastos na categoria (veja no RESUMO), avise o usuário no "reply" que os gastos serão movidos para "Outros".
       
       CONSULTAS:

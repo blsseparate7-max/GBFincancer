@@ -6,15 +6,31 @@ import { db } from './firebaseConfig';
  * Migra silenciosamente um cartão se faltarem campos essenciais.
  */
 export const migrateCardIfNeeded = async (uid: string, cardId: string, data: any) => {
-  const needsMigration = data.dueDay === undefined || data.closingDay === undefined || data.limitTotal === undefined || data.invoiceAmount === undefined;
+  const needsMigration = data.dueDay === undefined || 
+                        data.closingDay === undefined || 
+                        data.limitTotal === undefined || 
+                        data.usedLimit === undefined ||
+                        data.availableLimit === undefined ||
+                        data.currentInvoiceAmount === undefined;
+
   if (needsMigration) {
     try {
       const cardRef = doc(db, "users", uid, "cards", cardId);
+      const limitVal = data.limitTotal !== undefined ? data.limitTotal : (data.limit || 0);
+      const usedVal = data.usedLimit !== undefined ? data.usedLimit : (data.usedAmount || 0);
+      const invoiceVal = data.currentInvoiceAmount !== undefined ? data.currentInvoiceAmount : (data.invoiceAmount !== undefined ? data.invoiceAmount : usedVal);
+
       await updateDoc(cardRef, {
         dueDay: data.dueDay || 10,
         closingDay: data.closingDay || 7,
-        limitTotal: data.limitTotal || data.limit || 0,
-        invoiceAmount: data.invoiceAmount !== undefined ? data.invoiceAmount : (data.usedAmount || 0),
+        limitTotal: limitVal,
+        usedLimit: usedVal,
+        availableLimit: data.availableLimit !== undefined ? data.availableLimit : (limitVal - usedVal),
+        currentInvoiceAmount: invoiceVal,
+        // Compatibilidade
+        limit: limitVal,
+        usedAmount: usedVal,
+        invoiceAmount: invoiceVal,
         updatedAt: new Date()
       });
       console.log(`GB: Cartão ${cardId} migrado com sucesso.`);
@@ -70,16 +86,17 @@ export const normalizeCard = (docSnap: any, uid?: string): CreditCardInfo => {
   }
 
   const limitTotal = data.limitTotal !== undefined ? data.limitTotal : (data.limit || 0);
-  const usedAmount = data.usedAmount || 0;
+  const usedLimit = data.usedLimit !== undefined ? data.usedLimit : (data.usedAmount || 0);
+  const currentInvoiceAmount = data.currentInvoiceAmount !== undefined ? data.currentInvoiceAmount : (data.invoiceAmount !== undefined ? data.invoiceAmount : usedLimit);
   
   return {
     id,
     name: data.name || 'Cartão sem nome',
     bank: data.bank || 'Banco não informado',
     limit: limitTotal,
-    usedAmount: usedAmount,
-    availableAmount: data.availableAmount !== undefined ? data.availableAmount : (limitTotal - usedAmount),
-    invoiceAmount: data.invoiceAmount !== undefined ? data.invoiceAmount : usedAmount,
+    usedAmount: usedLimit,
+    availableAmount: data.availableLimit !== undefined ? data.availableLimit : (data.availableAmount !== undefined ? data.availableAmount : (limitTotal - usedLimit)),
+    invoiceAmount: currentInvoiceAmount,
     dueDay: data.dueDay || 10,
     closingDay: data.closingDay || 7,
     updatedAt: data.updatedAt || null
@@ -250,7 +267,7 @@ export const normalizeTransaction = (docSnap: any): any => {
     date: data.date || data.timestamp || new Date().toISOString(),
     createdAt: data.createdAt || null,
     cardId: data.cardId || null,
-    isPaid: data.isPaid !== undefined ? data.isPaid : true,
+    isPaid: data.isPaid !== undefined ? data.isPaid : (data.paymentMethod === 'CARD' ? false : true),
     invoiceCycle: data.invoiceCycle || null
   };
 };
