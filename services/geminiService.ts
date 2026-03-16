@@ -58,7 +58,8 @@ const FINANCE_PARSER_SCHEMA = {
               newName: { type: Type.STRING },
               oldName: { type: Type.STRING },
               transactionId: { type: Type.STRING },
-              newCategory: { type: Type.STRING }
+              newCategory: { type: Type.STRING },
+              installments: { type: Type.NUMBER, description: "Número de parcelas para compras no cartão de crédito" }
             }
           }
         },
@@ -176,6 +177,11 @@ export const parseMessage = async (text: string, userName: string, context?: { r
          - Se o saldo total (CARTEIRAS) estiver próximo de zero, alerte.
       3. PREVISÃO:
          - Se o usuário perguntar "como vou terminar o mês?", use os dados para estimar se o saldo será positivo ou negativo.
+      4. PARCELAMENTO (CARTÃO DE CRÉDITO):
+         - Se o usuário disser algo como "gastei 100 em 3x" ou "comprei 300 no cartão em 6x", você deve identificar que é uma compra parcelada.
+         - O evento deve ser ADD_CARD_CHARGE.
+         - O "amount" deve ser o VALOR TOTAL da compra.
+         - O campo "installments" deve conter o número de parcelas (ex: 3 ou 6).
 
       OBJETIVO: Analisar a mensagem e retornar um JSON com "reply" e opcionalmente uma lista de "events".
       

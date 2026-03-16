@@ -81,4 +81,10 @@ body {
 .animate-fade { animation: fadeIn 0.2s ease-out; }
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 
+.animate-slide-up { animation: slideUp 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+@keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+
+.animate-slide-down { animation: slideDown 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+@keyframes slideDown { from { transform: translateY(-100%); } to { transform: translateY(0); } }
+
 * { box-sizing: border-box; }

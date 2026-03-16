@@ -42,6 +42,9 @@ export interface Transaction {
   targetWalletId?: string;
   isPaid?: boolean;
   invoiceCycle?: string;
+  installmentNumber?: number;
+  totalInstallments?: number;
+  originalAmount?: number;
 }
 
 export interface CategoryLimit {

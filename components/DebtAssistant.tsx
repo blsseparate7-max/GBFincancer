@@ -229,8 +229,8 @@ const DebtAssistant: React.FC<DebtAssistantProps> = ({ uid, transactions, wallet
   if (loading) return <div className="p-10 text-center animate-pulse font-black uppercase tracking-widest text-[var(--text-muted)]">Analisando passivos...</div>;
 
   return (
-    <div className="p-4 space-y-6 animate-fade pb-32 max-w-7xl mx-auto min-h-full">
-      <header className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
+    <div className="p-3 md:p-6 space-y-6 animate-fade pb-32 max-w-7xl mx-auto">
+      <header className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4 px-1">
         <div>
           <h2 className="text-[10px] font-black text-rose-500 uppercase tracking-[0.4em] mb-1">Mapa da Liberdade</h2>
           <h1 className="text-2xl font-black text-[var(--text-primary)] uppercase italic tracking-tighter">Estou Endividado</h1>
@@ -546,9 +546,9 @@ const DebtAssistant: React.FC<DebtAssistantProps> = ({ uid, transactions, wallet
 
       {/* Modal Adicionar/Editar Dívida */}
       {showAddModal && (
-        <div className="fixed inset-0 z-[1000] bg-black/40 backdrop-blur-md flex items-center justify-center p-6">
-          <div className="bg-[var(--surface)] w-full max-w-lg rounded-3xl p-8 shadow-2xl relative animate-fade max-h-[90vh] overflow-y-auto no-scrollbar">
-            <button onClick={() => setShowAddModal(false)} className="absolute top-8 right-8 text-[var(--text-muted)] font-black text-xl hover:text-rose-500 transition-colors">✕</button>
+        <div className="fixed inset-0 z-[1000] bg-black/40 backdrop-blur-md flex items-end md:items-center justify-center p-0 md:p-6">
+          <div className="bg-[var(--surface)] w-full max-w-lg rounded-t-[2.5rem] md:rounded-3xl p-6 md:p-8 shadow-2xl relative animate-slide-up md:animate-fade max-h-[92vh] overflow-y-auto no-scrollbar">
+            <button onClick={() => setShowAddModal(false)} className="absolute top-6 right-6 md:top-8 md:right-8 text-[var(--text-muted)] font-black text-xl hover:text-rose-500 transition-colors">✕</button>
             <h3 className="text-xl font-black text-[var(--text-primary)] uppercase italic mb-1 text-center">{editingDebt ? 'Editar Dívida' : 'Nova Dívida'}</h3>
             <p className="text-[9px] text-[var(--text-muted)] font-black uppercase mb-6 text-center tracking-widest opacity-60 italic">Diagnóstico para sua liberdade financeira</p>
             

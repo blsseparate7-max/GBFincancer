@@ -689,7 +689,14 @@ const CreditCard: React.FC<CreditCardProps> = ({ transactions, uid, cards, walle
                     <div key={t.id} className="bg-[var(--surface)] p-5 rounded-3xl flex justify-between items-center shadow-sm border border-[var(--border)]/30 relative overflow-hidden group">
                       {t.isPaid && <div className="absolute top-0 left-0 w-1 h-full bg-[var(--green-whatsapp)]"></div>}
                       <div className="flex-1">
-                        <p className={`text-sm font-bold ${t.isPaid ? 'text-gray-400 line-through' : 'text-[var(--text-primary)]'}`}>{t.description || 'Gasto no Cartão'}</p>
+                        <p className={`text-sm font-bold ${t.isPaid ? 'text-gray-400 line-through' : 'text-[var(--text-primary)]'}`}>
+                          {t.description || 'Gasto no Cartão'}
+                          {t.totalInstallments && t.totalInstallments > 1 && (
+                            <span className="ml-2 text-[10px] text-amber-500 font-black">
+                              ({t.installmentNumber}/{t.totalInstallments})
+                            </span>
+                          )}
+                        </p>
                         <p className="text-[9px] text-[var(--text-muted)] uppercase font-bold mt-0.5">
                           {t.category} • {new Date(t.date).toLocaleDateString()}
                           <span className="ml-2 px-1.5 py-0.5 bg-gray-100 rounded text-[8px]">{t.invoiceCycle || 'Sem Ciclo'}</span>

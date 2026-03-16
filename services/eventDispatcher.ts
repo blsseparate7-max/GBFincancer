@@ -69,9 +69,11 @@ export const dispatchEvent = async (uid: string, event: FinanceEvent) => {
       }
 
       case 'ADD_CARD_CHARGE': {
-        let { amount, category, description, cardId, date, sourceWalletId } = event.payload;
+        let { amount, category, description, cardId, date, sourceWalletId, installments } = event.payload;
         const normalizedCat = normalizeCategoryName(category);
         const chargeDate = date ? new Date(date) : now;
+        const numInstallments = installments || 1;
+        const installmentAmount = amount / numInstallments;
         
         // 1. Busca info do cartão para calcular o ciclo
         let cardRef = doc(userRef, "cards", cardId || 'default');
@@ -87,41 +89,52 @@ export const dispatchEvent = async (uid: string, event: FinanceEvent) => {
           }
         }
 
-        let invoiceCycle = '';
-        
         if (cardSnap.exists()) {
           const cardData = cardSnap.data();
           const closingDay = cardData.closingDay || 10;
-          
-          const d = new Date(chargeDate);
-          if (d.getDate() > closingDay) {
-            d.setMonth(d.getMonth() + 1);
+
+          for (let i = 0; i < numInstallments; i++) {
+            const currentInstallmentDate = new Date(chargeDate);
+            currentInstallmentDate.setMonth(chargeDate.getMonth() + i);
+            
+            const d = new Date(currentInstallmentDate);
+            if (d.getDate() > closingDay) {
+              d.setMonth(d.getMonth() + 1);
+            }
+            const invoiceCycle = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+
+            const installmentDesc = numInstallments > 1 
+              ? `${description} (${i + 1}/${numInstallments})`
+              : description;
+
+            // 2. Registra a transação com o ciclo de fatura
+            await addDoc(collection(userRef, "transactions"), {
+              amount: installmentAmount, 
+              category: normalizedCat, 
+              description: installmentDesc, 
+              paymentMethod: 'CARD',
+              type: 'EXPENSE',
+              cardId: cardId || 'default',
+              sourceWalletId: sourceWalletId || null,
+              date: currentInstallmentDate.toISOString(),
+              invoiceCycle,
+              isPaid: false,
+              createdAt: serverTimestamp(),
+              installmentNumber: i + 1,
+              totalInstallments: numInstallments,
+              originalAmount: amount
+            });
           }
-          invoiceCycle = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-        }
 
-        // 2. Registra a transação com o ciclo de fatura
-        await addDoc(collection(userRef, "transactions"), {
-          amount, category: normalizedCat, description, paymentMethod: 'CARD',
-          type: 'EXPENSE',
-          cardId: cardId || 'default',
-          sourceWalletId: sourceWalletId || null,
-          date: chargeDate.toISOString(),
-          invoiceCycle,
-          isPaid: false,
-          createdAt: serverTimestamp()
-        });
-
-        // 3. Atualiza o cartão (Regra da Vida Real)
-        if (cardSnap.exists()) {
+          // 3. Atualiza o cartão (Regra da Vida Real)
           await updateDoc(cardRef, {
             usedLimit: increment(amount),
             availableLimit: increment(-amount),
-            currentInvoiceAmount: increment(amount),
-            // Compatibilidade com campos antigos se houver
+            currentInvoiceAmount: increment(numInstallments > 1 ? installmentAmount : amount),
+            // Compatibilidade
             usedAmount: increment(amount),
             availableAmount: increment(-amount),
-            invoiceAmount: increment(amount),
+            invoiceAmount: increment(numInstallments > 1 ? installmentAmount : amount),
             updatedAt: serverTimestamp()
           });
         }
@@ -259,9 +272,11 @@ export const dispatchEvent = async (uid: string, event: FinanceEvent) => {
             }
           }
 
-          // Se for recorrente, cria o do próximo mês
+          // Se for recorrente, cria o do próximo mês baseado na data de vencimento atual
           if (billData.recurring) {
-            const nextMonth = new Date(now.getFullYear(), now.getMonth() + 1, billData.dueDay);
+            const currentDueDate = billData.dueDate ? new Date(billData.dueDate) : new Date();
+            const nextMonth = new Date(currentDueDate.getFullYear(), currentDueDate.getMonth() + 1, billData.dueDay);
+            
             // Ajuste para meses com menos dias (ex: 31 de Jan -> 28/29 de Fev)
             if (nextMonth.getDate() !== billData.dueDay) {
               nextMonth.setDate(0);
