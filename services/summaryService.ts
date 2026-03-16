@@ -91,6 +91,56 @@ export const calculateMonthlySummary = (transactions: Transaction[]) => {
   };
 };
 
+export const calculateForecast = (transactions: Transaction[], reminders: any[], wallets: any[]) => {
+  const now = new Date();
+  const currentMonth = now.getMonth();
+  const currentYear = now.getFullYear();
+  const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
+  const remainingDays = daysInMonth - now.getDate();
+
+  // Saldo Atual
+  const currentBalance = wallets
+    .filter(w => w.isActive !== false)
+    .reduce((sum, w) => sum + (Number(w.balance) || 0), 0);
+
+  // Gastos do mês até agora
+  const monthExpenses = transactions
+    .filter(t => {
+      const d = new Date(t.date);
+      return d.getMonth() === currentMonth && d.getFullYear() === currentYear && t.type === 'EXPENSE';
+    })
+    .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+
+  // Média diária de gastos (baseado nos dias que já passaram)
+  const daysPassed = now.getDate();
+  const dailyAverage = monthExpenses / (daysPassed || 1);
+
+  // Contas pendentes até o fim do mês
+  const pendingBills = reminders
+    .filter(r => !r.isPaid && r.type === 'PAY')
+    .reduce((sum, r) => sum + (Number(r.amount) || 0), 0);
+
+  // Recebimentos pendentes até o fim do mês
+  const pendingIncome = reminders
+    .filter(r => !r.isPaid && r.type === 'RECEIVE')
+    .reduce((sum, r) => sum + (Number(r.amount) || 0), 0);
+
+  // Previsão: Saldo Atual + Recebimentos Pendentes - Contas Pendentes - (Média Diária * Dias Restantes)
+  const estimatedExpenses = dailyAverage * remainingDays;
+  const forecast = currentBalance + pendingIncome - pendingBills - estimatedExpenses;
+
+  return {
+    currentBalance,
+    monthExpenses,
+    dailyAverage,
+    pendingBills,
+    pendingIncome,
+    estimatedExpenses,
+    forecast,
+    isRisk: forecast < 0
+  };
+};
+
 export const formatCurrency = (value: number) => {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
 };

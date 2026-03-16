@@ -130,52 +130,59 @@ export const parseMessage = async (text: string, userName: string, context?: { r
       `CARTEIRAS: ${JSON.stringify(context.wallets.map(w => ({ id: w.id, nome: w.name, saldo: w.balance })))}` :
       'Sem carteiras.';
 
+    // Contexto de Médias por Categoria (para detecção de gastos suspeitos)
+    const categoryAverages = context?.transactions ? 
+      (() => {
+        const sums: Record<string, number> = {};
+        const counts: Record<string, number> = {};
+        context.transactions.forEach(t => {
+          if (t.type === 'EXPENSE') {
+            const cat = t.category || 'Outros';
+            sums[cat] = (sums[cat] || 0) + t.amount;
+            counts[cat] = (counts[cat] || 0) + 1;
+          }
+        });
+        const averages: Record<string, number> = {};
+        Object.keys(sums).forEach(cat => {
+          averages[cat] = sums[cat] / counts[cat];
+        });
+        return `MÉDIAS DE GASTO POR CATEGORIA: ${JSON.stringify(averages)}`;
+      })() : '';
+
     const response = await ai.models.generateContent({
       model: 'gemini-3.1-pro-preview',
-      contents: `Você é o GB, mentor financeiro de ${userName}. Hoje é ${today}.
+      contents: `Você é o GB, mentor financeiro premium de ${userName}. Hoje é ${today}.
       
       ${categoriesContext}
       ${goalsContext}
       ${limitsContext}
       ${categorySummary}
+      ${categoryAverages}
       ${recentTransactions}
       ${remindersContext}
       ${cardsContext}
       ${walletsContext}
 
       REGRAS DE OURO (FONTE DA VERDADE):
-      1. Você deve SEMPRE priorizar os dados acima sobre qualquer conversa anterior. Se o dado diz que está PAGO, está PAGO.
+      1. Você deve SEMPRE priorizar os dados acima sobre qualquer conversa anterior.
       2. Se o usuário perguntar sobre pendências, verifique os LEMBRETES onde "pago" é false.
-      3. Se o usuário perguntar sobre metas, use o progresso real de "METAS DE ECONOMIA".
-      4. Se o usuário perguntar sobre cartões, use "usado" e "disponivel" de "CARTÕES DE CRÉDITO".
-      5. Se o usuário perguntar sobre saldo, use "CARTEIRAS".
+      
+      INTELIGÊNCIA FINANCEIRA (UPGRADES):
+      1. DETECÇÃO DE GASTOS SUSPEITOS:
+         - Se o usuário registrar um gasto (ADD_EXPENSE ou ADD_CARD_CHARGE) que seja muito maior que a média da categoria (veja MÉDIAS DE GASTO POR CATEGORIA), inclua um aviso no "reply".
+         - Se detectar gasto duplicado (mesmo valor, categoria e descrição no mesmo dia), avise.
+      2. ALERTA DE RISCO:
+         - Se os gastos do mês (RESUMO GASTOS MÊS ATUAL) estiverem próximos de 80% da renda (se houver lembretes de RECEIVE), alerte.
+         - Se o saldo total (CARTEIRAS) estiver próximo de zero, alerte.
+      3. PREVISÃO:
+         - Se o usuário perguntar "como vou terminar o mês?", use os dados para estimar se o saldo será positivo ou negativo.
 
       OBJETIVO: Analisar a mensagem e retornar um JSON com "reply" e opcionalmente uma lista de "events".
       
-      MÚLTIPLOS LANÇAMENTOS:
-      - O usuário pode enviar várias transações em uma única mensagem (ex: "gastei 50 no mercado e 20 no lanche").
-      - Você deve identificar CADA UMA e retornar no array "events".
-      
-      GESTÃO FINANCEIRA:
-      1. GASTO NO CARTÃO: "gastei 50 no cartão", "comprei 100 no crédito" -> { type: "ADD_CARD_CHARGE", payload: { amount: 50, category: "...", description: "...", cardId: "ID_DO_CARTAO" } }
-         - SEMPRE use ADD_CARD_CHARGE para gastos no crédito. Se houver mais de um cartão, escolha o mais provável ou o primeiro se não especificado.
-      2. GASTO GERAL (PIX/DINHEIRO): "paguei 20 no pix", "gastei 10 em dinheiro" -> { type: "ADD_EXPENSE", payload: { amount: 20, category: "...", description: "...", paymentMethod: "PIX" } }
-      3. RECEITA: "recebi 1000", "ganhei 50" -> { type: "ADD_INCOME", payload: { amount: 1000, category: "...", description: "..." } }
-      
-      GESTÃO DE CATEGORIAS:
-      1. CRIAR: "criar categoria [NOME]" -> { type: "CREATE_CATEGORY", payload: { name: "[NOME]", type: "EXPENSE" } }
-      2. RENOMEAR: "renomear [ANTIGO] para [NOVO]" -> { type: "UPDATE_CATEGORY", payload: { id: "ID_DA_CATEGORIA", name: "[NOVO]", oldName: "[ANTIGO]" } }
-      3. MOVER GASTO: "mover gasto [DESC/VALOR] para [CATEGORIA]" -> { type: "MOVE_TRANSACTION_CATEGORY", payload: { transactionId: "ID_DA_TRANSACAO", newCategory: "[NOME_CATEGORIA]" } }
-      4. REMOVER: "remover categoria [NOME]" -> { type: "DELETE_CATEGORY", payload: { id: "ID_DA_CAT", name: "[NOME]" } }
-         - Se houver gastos na categoria (veja no RESUMO), avise o usuário no "reply" que os gastos serão movidos para "Outros".
-      
-      CONSULTAS:
-      - Se o usuário perguntar quanto gastou em X, use os dados de "RESUMO GASTOS MÊS ATUAL" para responder no "reply" de forma clara.
-      - Exemplo de resposta para resumo: "📊 Categoria Alimentação\nTotal no mês: R$ 480\nLançamentos: 8\nParticipação: 18%"
-      
-      REGRAS:
-      - Sempre verifique se a categoria existe em "CATEGORIAS DO USUÁRIO" antes de renomear ou remover.
-      - Para mover gastos, procure o ID da transação em "TRANSAÇÕES RECENTES". Se não encontrar, peça ao usuário para ser mais específico ou informe que só consegue mover gastos recentes pelo chat.
+      ESTILO DE RESPOSTA (PREMIUM):
+      - Seja curto, profissional e visual.
+      - Use emojis de forma elegante.
+      - Máximo de 5 blocos de informação em resumos.
       
       MENSAGEM DO USUÁRIO: "${text}"`,
       config: {

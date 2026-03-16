@@ -53,52 +53,54 @@ const ChatInterface: React.FC<ChatProps> = ({
     }
 
     const generateSummary = () => {
-      const summary = calculateMonthlySummary(transactions);
-      const totalSaved = goals.reduce((sum, g) => sum + (Number(g.currentAmount) || 0), 0);
-      
-      // Saldo atual disponível (soma das carteiras ativas) - mesma lógica do Dashboard
+      const now = new Date();
+      const currentMonth = now.getMonth();
+      const currentYear = now.getFullYear();
+
+      // Saldo atual disponível (soma das carteiras ativas)
       const balance = wallets
         .filter(w => w.isActive !== false)
         .reduce((sum, w) => sum + (Number(w.balance) || 0), 0);
 
-      const sobraMensal = summary.income - summary.expense;
+      // Contas Pendentes (Mês Atual ou Atrasadas)
+      const pendingBills = reminders.filter(b => {
+        const d = new Date(b.dueDate);
+        return !b.isPaid && 
+          b.type === 'PAY' && 
+          b.isActive !== false &&
+          (d.getFullYear() < currentYear || (d.getFullYear() === currentYear && d.getMonth() <= currentMonth));
+      });
+      const pendingTotal = pendingBills.reduce((sum, b) => sum + (Number(b.amount) || 0), 0);
 
-      // Contas a vencer (próximos 7 dias)
-      const now = new Date();
-      const nextWeek = new Date();
-      nextWeek.setDate(now.getDate() + 7);
+      // Contas Pagas (Mês Atual)
+      const paidBills = reminders.filter(b => 
+        b.isPaid && 
+        b.type === 'PAY' && 
+        b.isActive !== false &&
+        b.paidAt && new Date(b.paidAt).getMonth() === currentMonth &&
+        new Date(b.paidAt).getFullYear() === currentYear
+      );
+      const paidTotal = paidBills.reduce((sum, b) => sum + (Number(b.amount) || 0), 0);
 
-      const upcomingBills = reminders
-        .filter(b => !b.isPaid && b.type === 'PAY')
-        .filter(b => {
-          const d = new Date(b.dueDate);
-          return d >= now && d <= nextWeek;
-        })
-        .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime())
-        .slice(0, 3);
+      // Próxima conta (Pendente mais próxima)
+      const nextBill = [...pendingBills].sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime())[0];
 
-      let billsText = "";
-      if (upcomingBills.length > 0) {
-        billsText = upcomingBills.map(b => {
-          const d = new Date(b.dueDate);
-          const diff = Math.ceil((d.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
-          const daysText = diff === 0 ? "hoje" : diff === 1 ? "amanhã" : `em ${diff} dias`;
-          return `• ${b.description} — vence ${daysText}`;
-        }).join('\n');
-      } else {
-        billsText = "Nenhuma conta próxima do vencimento.";
-      }
-
-      // Possível economia (maior gasto)
-      let economyText = "";
+      // Insight de economia (Baseado no Dashboard)
+      const summary = calculateMonthlySummary(transactions);
+      let insight = "Continue registrando para eu te dar dicas!";
       if (summary.categories.length > 0) {
-        const topCat = summary.categories[0];
-        economyText = `A categoria ${topCat.category} está entre seus maiores gastos neste mês. Reduzir um pouco essa área pode melhorar sua sobra.`;
-      } else {
-        economyText = "Continue registrando seus gastos para eu identificar onde você pode economizar!";
+        const top = summary.categories[0];
+        insight = `Sua maior despesa é **${top.category}** (${formatCurrency(top.amount)}).`;
       }
 
-      const summaryText = `💰 Resumo rápido da sua vida financeira\n\nSaldo Disponível: ${formatCurrency(balance)}\nSobra do Mês: ${formatCurrency(sobraMensal)}\n\nContas a vencer:\n${billsText}\n\nPossível economia:\n${economyText}`;
+      const summaryText = `📊 **Resumo Financeiro**\n\n` +
+        `💰 **Saldo atual:** ${formatCurrency(balance)}\n\n` +
+        `⏳ **Contas a vencer neste mês:** ${pendingBills.length}\n` +
+        `Total pendente: ${formatCurrency(pendingTotal)}\n` +
+        `${nextBill ? `Próxima: ${nextBill.description} vence em ${Math.ceil((new Date(nextBill.dueDate).getTime() - now.getTime()) / (1000 * 60 * 60 * 24))} dias` : ''}\n\n` +
+        `✅ **Contas pagas neste mês:** ${paidBills.length}\n` +
+        `Total pago: ${formatCurrency(paidTotal)}\n\n` +
+        `💡 **Insight:** ${insight}`;
 
       const summaryMsg: Message = {
         id: 'auto-summary-' + Date.now(),
@@ -116,19 +118,21 @@ const ChatInterface: React.FC<ChatProps> = ({
     return () => clearTimeout(timer);
   }, [transactions, reminders, goals, setMessages, messages]);
 
-  // Verificar se é dia de pagamento
+  // Verificar primeiro recebimento após cadastro
   useEffect(() => {
     if (salaryCheckDone || reminders.length === 0) return;
 
+    // Se o usuário tem perfil de renda mas não tem transações, é o primeiro login
+    const isFirstLogin = transactions.length === 0;
+    
     const today = new Date();
     const todayDay = today.getDate();
 
-    // Procurar por lembretes de recebimento para hoje que não estão pagos
+    // Procurar por lembretes de recebimento
     const salaryReminder = reminders.find(r => 
       !r.isPaid && 
       r.type === 'RECEIVE' && 
-      r.dueDay === todayDay &&
-      r.description.toLowerCase().includes('recebimento')
+      (isFirstLogin || r.dueDay === todayDay)
     );
 
     if (salaryReminder) {
@@ -136,7 +140,9 @@ const ChatInterface: React.FC<ChatProps> = ({
       
       const msg: Message = {
         id: 'salary-check-' + Date.now(),
-        text: `👋 Olá! Notei que hoje é dia de receber: **${salaryReminder.description}** (${formatCurrency(salaryReminder.amount)}).\n\nVocê já recebeu esse valor?`,
+        text: isFirstLogin 
+          ? `👋 Bem-vindo! Notei que você informou uma renda de **${formatCurrency(salaryReminder.amount)}**.\n\nVocê já recebeu esse valor este mês?`
+          : `👋 Olá! Notei que hoje é dia de receber: **${salaryReminder.description}** (${formatCurrency(salaryReminder.amount)}).\n\nVocê já recebeu esse valor?`,
         sender: 'ai',
         timestamp: new Date()
       };
@@ -144,7 +150,47 @@ const ChatInterface: React.FC<ChatProps> = ({
     }
 
     setSalaryCheckDone(true);
-  }, [reminders, salaryCheckDone]);
+  }, [reminders, transactions, salaryCheckDone]);
+
+  // Alerta de Risco Financeiro Proativo
+  useEffect(() => {
+    if (transactions.length === 0 || wallets.length === 0) return;
+
+    const checkRisk = () => {
+      const balance = wallets
+        .filter(w => w.isActive !== false)
+        .reduce((sum, w) => sum + (Number(w.balance) || 0), 0);
+
+      const summary = calculateMonthlySummary(transactions);
+      const income = reminders
+        .filter(r => r.type === 'RECEIVE')
+        .reduce((sum, r) => sum + (Number(r.amount) || 0), 0);
+
+      let riskMsg = "";
+      
+      if (balance < 100 && balance > 0) {
+        riskMsg = "⚠️ **Alerta de Risco:** Seu saldo total está muito baixo (menos de R$ 100). Evite gastos não essenciais hoje.";
+      } else if (income > 0 && summary.expense > income * 0.8) {
+        riskMsg = "🚨 **Alerta de Risco:** Seus gastos já comprometeram mais de 80% da sua renda mensal. Recomendo cautela extra.";
+      }
+
+      if (riskMsg) {
+        // Verificar se já enviamos esse alerta recentemente
+        const hasRiskMsg = messages.some(m => m.text.includes(riskMsg.substring(0, 20)));
+        if (!hasRiskMsg) {
+          setMessages(prev => [...prev, {
+            id: 'risk-alert-' + Date.now(),
+            text: riskMsg,
+            sender: 'ai',
+            timestamp: new Date()
+          }]);
+        }
+      }
+    };
+
+    const timer = setTimeout(checkRisk, 3000);
+    return () => clearTimeout(timer);
+  }, [transactions, wallets, reminders]);
 
   const handleSalaryConfirm = (confirmed: boolean) => {
     if (!pendingSalaryReminder) return;
@@ -210,6 +256,7 @@ const ChatInterface: React.FC<ChatProps> = ({
         // Se houver múltiplos eventos, colocamos na fila de confirmação
         setPendingEvents(result.events);
         
+        // Alerta de Risco ou Gasto Suspeito pode vir no reply da IA
         const aiMsg: Message = { 
           id: (Date.now() + 1).toString(), 
           text: result.reply || `Encontrei ${result.events.length} lançamentos. Pode confirmar para mim?`, 
@@ -218,6 +265,7 @@ const ChatInterface: React.FC<ChatProps> = ({
         };
         setMessages(prev => [...prev, aiMsg]);
       } else {
+        // Se não houver eventos, mas a IA deu um reply (pode ser um alerta de risco ou previsão)
         const aiMsg: Message = { 
           id: (Date.now() + 1).toString(), 
           text: result.reply || "Entendi. Como posso ajudar mais?", 
@@ -257,12 +305,14 @@ const ChatInterface: React.FC<ChatProps> = ({
       if (result.transactions && result.transactions.length > 0) {
         // Converter transações do extrato em eventos do chat
         const events = result.transactions.map((t: any) => {
-          // Detecção de duplicidade básica
-          const isDuplicate = transactions.some(prev => 
-            prev.amount === t.amount && 
-            prev.date === t.date && 
-            prev.description.toLowerCase().includes(t.description.toLowerCase())
-          );
+          // Detecção de duplicidade mais rigorosa
+          const isDuplicate = transactions.some(prev => {
+            const sameAmount = Math.abs(prev.amount) === Math.abs(t.amount);
+            const sameDate = prev.date === t.date;
+            const similarDesc = prev.description.toLowerCase().includes(t.description.toLowerCase()) || 
+                               t.description.toLowerCase().includes(prev.description.toLowerCase());
+            return sameAmount && (sameDate || similarDesc);
+          });
 
           return {
             type: t.isCardCharge ? 'ADD_CARD_CHARGE' : (t.type === 'INCOME' ? 'ADD_INCOME' : 'ADD_EXPENSE'),
@@ -271,17 +321,20 @@ const ChatInterface: React.FC<ChatProps> = ({
               description: t.description,
               category: t.category || 'Outros',
               date: t.date,
-              paymentMethod: t.isCardCharge ? 'CARD' : 'PIX',
-              isDuplicate
+              paymentMethod: t.paymentMethod || (t.isCardCharge ? 'CARD' : 'PIX'),
+              isCardCharge: t.isCardCharge,
+              isDuplicate,
+              selected: !isDuplicate // Desmarcar duplicados por padrão
             }
           };
         });
 
         setPendingEvents(events);
 
+        const bankInfo = result.summary?.bankName ? ` do ${result.summary.bankName}` : '';
         const aiMsg: Message = { 
           id: (Date.now() + 1).toString(), 
-          text: `Li seu extrato! Encontrei ${events.length} lançamentos. Confira a prévia abaixo para confirmarmos.`, 
+          text: `Li seu extrato${bankInfo}! Encontrei ${events.length} lançamentos. Confira a prévia abaixo e selecione o que deseja importar.`, 
           sender: 'ai', 
           timestamp: new Date() 
         };
@@ -308,12 +361,17 @@ const ChatInterface: React.FC<ChatProps> = ({
   };
 
   const confirmAllEvents = async (walletId: string | 'CARD') => {
-    if (pendingEvents.length === 0) return;
+    const selectedEvents = pendingEvents.filter(ev => ev.payload.selected);
+    if (selectedEvents.length === 0) return;
 
     setIsLoading(true);
     try {
-      for (const event of pendingEvents) {
+      for (const event of selectedEvents) {
         const eventToDispatch = { ...event };
+        
+        // Se o usuário escolheu uma carteira específica, mas o lançamento foi detectado como cartão,
+        // e o usuário NÃO escolheu explicitamente 'CARD' no seletor geral,
+        // nós respeitamos a escolha do seletor geral (walletId).
         
         if (walletId === 'CARD') {
           if (eventToDispatch.type === 'ADD_EXPENSE') {
@@ -322,11 +380,13 @@ const ChatInterface: React.FC<ChatProps> = ({
           eventToDispatch.payload.paymentMethod = 'CARD';
           eventToDispatch.payload.cardId = eventToDispatch.payload.cardId || 'default';
         } else {
+          // Se for um INCOME, sempre vai para a carteira
           if (eventToDispatch.type === 'ADD_INCOME') {
             eventToDispatch.payload.targetWalletId = walletId;
           } else {
+            // Se for EXPENSE, vai para a carteira como PIX/Débito
             eventToDispatch.payload.sourceWalletId = walletId;
-            eventToDispatch.payload.paymentMethod = 'PIX';
+            eventToDispatch.payload.paymentMethod = eventToDispatch.payload.paymentMethod || 'PIX';
           }
         }
 
@@ -341,7 +401,7 @@ const ChatInterface: React.FC<ChatProps> = ({
       
       setMessages(prev => [...prev, {
         id: Date.now().toString(),
-        text: `✅ Tudo pronto! Registrei os ${pendingEvents.length} lançamentos na sua conta (${walletName}).`,
+        text: `✅ Sucesso! Importei ${selectedEvents.length} lançamentos para sua conta (${walletName}).`,
         sender: 'ai',
         timestamp: new Date()
       }]);
@@ -349,6 +409,12 @@ const ChatInterface: React.FC<ChatProps> = ({
       setPendingEvents([]);
     } catch (e) {
       console.error(e);
+      setMessages(prev => [...prev, {
+        id: Date.now().toString(),
+        text: "Ocorreu um erro ao salvar alguns lançamentos. Por favor, verifique seu extrato.",
+        sender: 'ai',
+        timestamp: new Date()
+      }]);
     } finally {
       setIsLoading(false);
     }
@@ -525,69 +591,126 @@ const ChatInterface: React.FC<ChatProps> = ({
 
         {pendingEvents.length > 0 && (
           <div className="flex flex-col items-start gap-2 animate-fade-in-up">
-            <div className="bg-[var(--surface)] border border-[var(--border)] rounded-3xl p-5 shadow-xl w-full max-w-[95%]">
-              <div className="flex items-center justify-between mb-4">
-                <span className="text-[10px] font-black text-[var(--green-whatsapp)] uppercase tracking-widest">Prévia de Lançamentos ({pendingEvents.length})</span>
-                <button onClick={() => setPendingEvents([])} className="text-[var(--text-muted)] hover:text-rose-500 transition-colors">✕</button>
+            <div className="bg-[var(--surface)] border border-[var(--border)] rounded-3xl p-4 shadow-2xl w-full max-w-[98%]">
+              <div className="flex items-center justify-between mb-4 px-1">
+                <div className="flex flex-col">
+                  <span className="text-[10px] font-black text-[var(--green-whatsapp)] uppercase tracking-widest">Prévia de Importação</span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[9px] text-[var(--text-muted)] font-bold uppercase">{pendingEvents.filter(e => e.payload.selected).length} de {pendingEvents.length} selecionados</span>
+                    <div className="flex gap-1">
+                      <button 
+                        onClick={() => setPendingEvents(prev => prev.map(e => ({ ...e, payload: { ...e.payload, selected: true } })))}
+                        className="text-[8px] font-black text-[var(--green-whatsapp)] hover:underline uppercase"
+                      >
+                        Todos
+                      </button>
+                      <span className="text-[8px] text-[var(--text-muted)]">•</span>
+                      <button 
+                        onClick={() => setPendingEvents(prev => prev.map(e => ({ ...e, payload: { ...e.payload, selected: false } })))}
+                        className="text-[8px] font-black text-rose-500 hover:underline uppercase"
+                      >
+                        Nenhum
+                      </button>
+                    </div>
+                  </div>
+                </div>
+                <button onClick={() => setPendingEvents([])} className="w-8 h-8 flex items-center justify-center bg-[var(--bg-body)] rounded-full text-[var(--text-muted)] hover:text-rose-500 transition-colors shadow-sm">✕</button>
               </div>
 
-              <div className="max-h-[300px] overflow-y-auto space-y-3 mb-6 pr-2 no-scrollbar">
+              <div className="max-h-[350px] overflow-y-auto space-y-2 mb-4 pr-1 no-scrollbar">
                 {pendingEvents.map((ev, idx) => (
-                  <div key={idx} className={`bg-[var(--bg-body)] p-3 rounded-2xl border ${ev.payload.isDuplicate ? 'border-amber-500/50' : 'border-[var(--border)]'} relative group`}>
-                    {ev.payload.isDuplicate && (
-                      <div className="absolute -top-2 left-4 bg-amber-500 text-white text-[7px] font-black px-1.5 py-0.5 rounded-full uppercase tracking-tighter shadow-sm">
-                        Possível Duplicado
-                      </div>
-                    )}
-                    <button 
-                      onClick={() => removePendingEvent(idx)}
-                      className="absolute top-2 right-2 text-[var(--text-muted)] hover:text-rose-500 opacity-0 group-hover:opacity-100 transition-all"
-                    >
-                      ✕
-                    </button>
-                    <div className="flex justify-between items-start mb-1">
-                      <span className="text-[10px] font-bold text-[var(--text-muted)] uppercase">{ev.payload.date || 'Hoje'}</span>
-                      <span className={`text-sm font-black ${ev.type === 'ADD_INCOME' ? 'text-[var(--green-whatsapp)]' : 'text-rose-500'}`}>
-                        {ev.type === 'ADD_INCOME' ? '+' : '-'}{formatCurrency(ev.payload.amount)}
-                      </span>
-                    </div>
-                    <div className="text-xs font-bold text-[var(--text-primary)] mb-1">{ev.payload.description}</div>
-                    <div className="flex gap-2">
-                      <select 
-                        value={ev.payload.category}
-                        onChange={(e) => updatePendingEvent(idx, { category: e.target.value })}
-                        className="bg-transparent text-[9px] font-black uppercase italic text-[var(--green-whatsapp)] outline-none cursor-pointer"
+                  <div 
+                    key={idx} 
+                    className={`bg-[var(--bg-body)] p-3 rounded-2xl border transition-all ${ev.payload.selected ? (ev.payload.isDuplicate ? 'border-amber-500/40 bg-amber-500/5' : 'border-[var(--border)]') : 'opacity-50 border-transparent grayscale'} relative group`}
+                  >
+                    <div className="flex gap-3 items-start">
+                      <button 
+                        onClick={() => updatePendingEvent(idx, { selected: !ev.payload.selected })}
+                        className={`mt-1 w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all ${ev.payload.selected ? 'bg-[var(--green-whatsapp)] border-[var(--green-whatsapp)] text-white' : 'border-[var(--border)] bg-transparent'}`}
                       >
-                        {categories.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
-                        {!categories.find(c => c.name === ev.payload.category) && <option value={ev.payload.category}>{ev.payload.category}</option>}
-                      </select>
+                        {ev.payload.selected && <span className="text-[10px] font-black">✓</span>}
+                      </button>
+
+                      <div className="flex-1 min-w-0">
+                        <div className="flex justify-between items-start mb-1">
+                          <input 
+                            type="text"
+                            value={ev.payload.date}
+                            onChange={(e) => updatePendingEvent(idx, { date: e.target.value })}
+                            className="bg-transparent text-[9px] font-bold text-[var(--text-muted)] uppercase w-20 outline-none focus:text-[var(--green-whatsapp)]"
+                          />
+                          <div className="flex flex-col items-end">
+                            <input 
+                              type="text"
+                              value={ev.payload.amount}
+                              onChange={(e) => updatePendingEvent(idx, { amount: parseFloat(e.target.value) || 0 })}
+                              className={`bg-transparent text-sm font-black text-right w-24 outline-none focus:ring-1 ring-[var(--green-whatsapp)] rounded px-1 ${ev.type === 'ADD_INCOME' ? 'text-[var(--green-whatsapp)]' : 'text-rose-500'}`}
+                            />
+                          </div>
+                        </div>
+
+                        <input 
+                          type="text"
+                          value={ev.payload.description}
+                          onChange={(e) => updatePendingEvent(idx, { description: e.target.value })}
+                          className="w-full bg-transparent text-xs font-bold text-[var(--text-primary)] mb-1 outline-none focus:text-[var(--green-whatsapp)]"
+                        />
+
+                        <div className="flex items-center gap-2">
+                          <select 
+                            value={ev.payload.category}
+                            onChange={(e) => updatePendingEvent(idx, { category: e.target.value })}
+                            className="bg-[var(--surface)] px-2 py-0.5 rounded-lg text-[9px] font-black uppercase italic text-[var(--green-whatsapp)] outline-none border border-[var(--border)]"
+                          >
+                            {categories.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+                            {!categories.find(c => c.name === ev.payload.category) && <option value={ev.payload.category}>{ev.payload.category}</option>}
+                          </select>
+                          
+                          {ev.payload.isCardCharge && (
+                            <span className="text-[8px] font-black bg-rose-100 text-rose-600 px-1.5 py-0.5 rounded-full uppercase">Cartão</span>
+                          )}
+                          
+                          {ev.payload.isDuplicate && (
+                            <span className="text-[8px] font-black bg-amber-100 text-amber-600 px-1.5 py-0.5 rounded-full uppercase">Duplicado?</span>
+                          )}
+                        </div>
+                      </div>
+
+                      <button 
+                        onClick={() => removePendingEvent(idx)}
+                        className="text-[var(--text-muted)] hover:text-rose-500 opacity-0 group-hover:opacity-100 transition-all p-1"
+                      >
+                        ✕
+                      </button>
                     </div>
                   </div>
                 ))}
               </div>
 
-              <p className="text-[10px] font-black text-[var(--text-muted)] uppercase mb-3 text-center">
-                Confirmar todos em qual conta?
-              </p>
+              <div className="bg-[var(--bg-body)] rounded-2xl p-4 border border-[var(--border)]">
+                <p className="text-[10px] font-black text-[var(--text-muted)] uppercase mb-3 text-center">
+                  Confirmar {pendingEvents.filter(e => e.payload.selected).length} itens em:
+                </p>
 
-              <div className="grid grid-cols-2 gap-2">
-                {wallets.map(w => (
+                <div className="grid grid-cols-2 gap-2">
+                  {wallets.map(w => (
+                    <button 
+                      key={w.id}
+                      onClick={() => confirmAllEvents(w.id)}
+                      className="bg-[var(--surface)] text-[var(--text-primary)] border border-[var(--border)] hover:border-[var(--green-whatsapp)] hover:bg-[var(--green-whatsapp)]/5 rounded-xl py-2.5 px-2 text-[10px] font-black uppercase transition-all active:scale-95 flex items-center gap-2"
+                    >
+                      <span className="text-base">{w.icon || '💰'}</span>
+                      <span className="truncate flex-1 text-left">{w.name}</span>
+                    </button>
+                  ))}
                   <button 
-                    key={w.id}
-                    onClick={() => confirmAllEvents(w.id)}
-                    className="bg-[var(--bg-body)] text-[var(--text-primary)] border border-[var(--border)] hover:bg-[var(--green-whatsapp)] hover:text-white rounded-2xl py-3 px-2 text-[10px] font-black uppercase transition-all active:scale-95 flex flex-col items-center gap-1"
+                    onClick={() => confirmAllEvents('CARD')}
+                    className="bg-[var(--surface)] hover:bg-rose-500/5 hover:border-rose-500 border border-[var(--border)] rounded-xl py-2.5 px-2 text-[10px] font-black uppercase transition-all active:scale-95 flex items-center gap-2"
                   >
-                    <span className="text-lg">{w.icon || '💰'}</span>
-                    <span className="truncate w-full text-center">{w.name}</span>
+                    <span className="text-base">💳</span>
+                    <span className="flex-1 text-left">Cartão de Crédito</span>
                   </button>
-                ))}
-                <button 
-                  onClick={() => confirmAllEvents('CARD')}
-                  className="bg-[var(--bg-body)] hover:bg-rose-500 hover:text-white border border-[var(--border)] rounded-2xl py-3 px-2 text-[10px] font-black uppercase transition-all active:scale-95 flex flex-col items-center gap-1"
-                >
-                  <span className="text-lg">💳</span>
-                  <span>Cartão</span>
-                </button>
+                </div>
               </div>
             </div>
           </div>

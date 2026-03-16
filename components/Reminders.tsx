@@ -13,7 +13,7 @@ interface RemindersProps {
 }
 
 const Reminders: React.FC<RemindersProps> = ({ bills, wallets, uid, loading }) => {
-  const [activeTab, setActiveTab] = useState<'pending' | 'history'>('pending');
+  const [activeTab, setActiveTab] = useState<'pending' | 'paid' | 'next'>('pending');
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingBill, setEditingBill] = useState<Bill | null>(null);
   const [payingBillId, setPayingBillId] = useState<string | null>(null);
@@ -41,11 +41,39 @@ const Reminders: React.FC<RemindersProps> = ({ bills, wallets, uid, loading }) =
   };
 
   const filteredBills = useMemo(() => {
+    const now = new Date();
+    const currentMonth = now.getMonth();
+    const currentYear = now.getFullYear();
+    
     const active = bills.filter(b => b.isActive !== false);
+    
     if (activeTab === 'pending') {
-      return active.filter(b => !b.isPaid).sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
+      // Pendentes: Não pagas e do mês atual ou anterior
+      return active.filter(b => {
+        const d = new Date(b.dueDate);
+        return !b.isPaid && (
+          d.getFullYear() < currentYear || 
+          (d.getFullYear() === currentYear && d.getMonth() <= currentMonth)
+        );
+      }).sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
     }
-    return active.filter(b => b.isPaid).sort((a, b) => new Date(b.paidAt || b.dueDate).getTime() - new Date(a.paidAt || a.dueDate).getTime());
+    
+    if (activeTab === 'next') {
+      // Próximo Ciclo: Não pagas e do mês seguinte (ou além)
+      return active.filter(b => {
+        const d = new Date(b.dueDate);
+        return !b.isPaid && (
+          d.getFullYear() > currentYear || 
+          (d.getFullYear() === currentYear && d.getMonth() > currentMonth)
+        );
+      }).sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
+    }
+
+    // Pagas: Pagas no mês atual
+    return active.filter(b => 
+      b.isPaid && 
+      b.paidAt && new Date(b.paidAt).getMonth() === currentMonth && new Date(b.paidAt).getFullYear() === currentYear
+    ).sort((a, b) => new Date(b.paidAt || b.dueDate).getTime() - new Date(a.paidAt || a.dueDate).getTime());
   }, [bills, activeTab]);
 
   const handleAddBill = async () => {
@@ -159,10 +187,16 @@ const Reminders: React.FC<RemindersProps> = ({ bills, wallets, uid, loading }) =
           Pendentes
         </button>
         <button 
-          onClick={() => setActiveTab('history')}
-          className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'history' ? 'bg-[var(--bg-body)] text-[var(--text-primary)] shadow-sm' : 'text-[var(--text-muted)]'}`}
+          onClick={() => setActiveTab('paid')}
+          className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'paid' ? 'bg-[var(--bg-body)] text-[var(--text-primary)] shadow-sm' : 'text-[var(--text-muted)]'}`}
         >
-          Histórico
+          Pagas
+        </button>
+        <button 
+          onClick={() => setActiveTab('next')}
+          className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'next' ? 'bg-[var(--bg-body)] text-blue-500 shadow-sm' : 'text-[var(--text-muted)]'}`}
+        >
+          Próximo Ciclo
         </button>
       </div>
 
