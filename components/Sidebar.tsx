@@ -122,6 +122,20 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, expanded, se
       </nav>
       
       <div className="p-6 border-t border-[var(--border)] space-y-4">
+        <div className="flex flex-col gap-2 items-center">
+          <button 
+            onClick={() => { setActiveTab('terms'); if(onClose) onClose(); }}
+            className="text-[9px] font-black uppercase tracking-[0.2em] text-[var(--text-muted)] hover:text-[var(--green-whatsapp)] transition-colors"
+          >
+            Termos de Uso
+          </button>
+          <button 
+            onClick={() => { setActiveTab('privacy'); if(onClose) onClose(); }}
+            className="text-[9px] font-black uppercase tracking-[0.2em] text-[var(--text-muted)] hover:text-[var(--green-whatsapp)] transition-colors"
+          >
+            Privacidade
+          </button>
+        </div>
         <p className={`text-[9px] font-black uppercase tracking-[0.3em] text-[var(--text-muted)] italic text-center opacity-50 ${!expanded && 'hidden'}`}>Audit IA 3.1 PRO • v2.0</p>
       </div>
     </aside>

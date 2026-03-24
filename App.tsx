@@ -29,6 +29,7 @@ import CategoriesTab from './components/CategoriesTab';
 import ContextualOnboarding from './components/ContextualOnboarding';
 import DebtAssistant from './components/DebtAssistant';
 import QADiagnostic from './components/QADiagnostic';
+import LegalModal from './components/LegalModal';
 import { normalizeCard, normalizeGoal, normalizeReminder, normalizeLimit, normalizeWallet, normalizeUserCategory, normalizeTransaction, assertSchema } from './services/normalizationService';
 
 import { motion, AnimatePresence } from 'motion/react';
@@ -338,6 +339,8 @@ const App: React.FC = () => {
         if (session.role !== 'ADMIN') return <div className="p-8 text-center text-red-500 font-bold">Acesso restrito</div>;
         return <QADiagnostic session={session} />;
       case 'admin': return session.role === 'ADMIN' ? <AdminPanel currentAdminId={session.uid} /> : null;
+      case 'terms': return <LegalModal type="terms" onClose={() => setActiveTab('chat')} />;
+      case 'privacy': return <LegalModal type="privacy" onClose={() => setActiveTab('chat')} />;
       case 'wallets': {
         const income = transactions
           .filter(t => t.type === 'INCOME')

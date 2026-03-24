@@ -1,7 +1,8 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { Transaction, SavingGoal, CategoryLimit, Wallet, Bill } from '../types';
 import { dispatchEvent } from '../services/eventDispatcher';
 import { normalizeCategoryName } from '../services/normalizationService';
+import OnboardingChecklist from './OnboardingChecklist';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
   PieChart, Pie, Cell, Legend, LineChart, Line 
@@ -9,10 +10,12 @@ import {
 import { 
   TrendingUp, TrendingDown, Wallet as WalletIcon, PiggyBank, 
   AlertCircle, Calendar, Lightbulb, ArrowRight, Target,
-  ChevronLeft, ChevronRight, Info, DollarSign, ArrowUpRight, ArrowDownLeft
+  ChevronLeft, ChevronRight, Info, DollarSign, ArrowUpRight, ArrowDownLeft,
+  CheckCircle2, Sparkles, Loader2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import MoneyInput from './MoneyInput';
+import { GoogleGenAI } from "@google/genai";
 
 interface DashProps {
   transactions: Transaction[];
@@ -29,8 +32,62 @@ const Dashboard: React.FC<DashProps> = ({ transactions, goals, limits, wallets, 
   const [limitCat, setLimitCat] = useState('');
   const [limitVal, setLimitVal] = useState('');
   const [selectedDay, setSelectedDay] = useState<number | null>(null);
+  const [dailyInsight, setDailyInsight] = useState<string | null>(null);
+  const [loadingInsight, setLoadingInsight] = useState(false);
 
   const format = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v);
+
+  useEffect(() => {
+    const fetchInsight = async () => {
+      if (transactions.length < 5 || dailyInsight) return;
+      setLoadingInsight(true);
+      try {
+        const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
+        const recentTrans = transactions.slice(0, 10).map(t => `${t.description}: ${t.amount}`).join(', ');
+        const response = await ai.models.generateContent({
+          model: "gemini-3-flash-preview",
+          contents: `Você é o Mentor Financeiro GB. Com base nestas transações recentes: ${recentTrans}, dê uma dica financeira curta, direta e motivadora em português. Máximo 150 caracteres.`,
+        });
+        setDailyInsight(response.text || "Continue focado nos seus objetivos!");
+      } catch (err) {
+        console.error("Insight Error:", err);
+      } finally {
+        setLoadingInsight(false);
+      }
+    };
+    fetchInsight();
+  }, [transactions, uid]);
+
+  const onboardingSteps = useMemo(() => [
+    {
+      id: 'first_trans',
+      title: 'Primeira Transação',
+      description: 'Registre seu primeiro gasto ou ganho no Mentor IA.',
+      completed: transactions.length > 0,
+      action: () => { window.location.hash = '#chat'; }
+    },
+    {
+      id: 'create_goal',
+      title: 'Definir Meta',
+      description: 'Crie um objetivo de economia para o futuro.',
+      completed: goals.length > 0,
+      action: () => { window.location.hash = '#goals'; }
+    },
+    {
+      id: 'set_limit',
+      title: 'Teto de Gastos',
+      description: 'Defina um limite para uma categoria importante.',
+      completed: limits.length > 0,
+      action: () => setShowLimitModal(true)
+    },
+    {
+      id: 'add_wallet',
+      title: 'Vincular Conta',
+      description: 'Adicione suas contas bancárias ou carteiras.',
+      completed: wallets.length > 0,
+      action: () => { window.location.hash = '#wallets'; }
+    }
+  ], [transactions.length, goals.length, limits.length, wallets.length]);
 
   const stats = useMemo(() => {
     const now = new Date();
@@ -220,6 +277,27 @@ const Dashboard: React.FC<DashProps> = ({ transactions, goals, limits, wallets, 
           </span>
         </div>
       </header>
+
+      <OnboardingChecklist steps={onboardingSteps} />
+
+      {dailyInsight && (
+        <motion.div 
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="bg-gradient-to-r from-[#00a884] to-[#008069] p-6 rounded-[2.5rem] text-white shadow-xl flex items-center gap-6 relative overflow-hidden group"
+        >
+          <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:scale-110 transition-transform">
+            <Sparkles size={80} />
+          </div>
+          <div className="w-12 h-12 bg-white/20 rounded-2xl flex items-center justify-center shrink-0">
+            <Lightbulb size={24} />
+          </div>
+          <div className="flex-1">
+            <p className="text-[9px] font-black uppercase tracking-[0.3em] mb-1 opacity-80">Dica do Mentor GB</p>
+            <p className="text-sm font-black italic leading-tight tracking-tight">"{dailyInsight}"</p>
+          </div>
+        </motion.div>
+      )}
 
       {/* 1️⃣ Card Principal – Situação Financeira */}
       <section className="bg-[var(--surface)] p-8 md:p-12 rounded-[3rem] border border-[var(--border)] shadow-2xl relative overflow-hidden group">

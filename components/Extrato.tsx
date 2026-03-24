@@ -5,7 +5,8 @@ import { Transaction, CreditCardInfo, UserCategory } from '../types';
 import { dispatchEvent } from '../services/eventDispatcher';
 import { normalizeTransaction } from '../services/normalizationService';
 import MoneyInput from './MoneyInput';
-import { Calendar, Tag, FileText, Trash2, Edit2, CreditCard, Wallet, ArrowUpCircle, ArrowDownCircle, Search, Filter, X, ChevronDown } from 'lucide-react';
+import ImportData from './ImportData';
+import { Calendar, Tag, FileText, Trash2, Edit2, CreditCard, Wallet, ArrowUpCircle, ArrowDownCircle, Search, Filter, X, ChevronDown, Upload } from 'lucide-react';
 import { Notification, ConfirmModal } from './UI';
 
 interface ExtratoProps {
@@ -23,6 +24,7 @@ const Extrato: React.FC<ExtratoProps> = ({ uid, cards, categories: userCategorie
   const [searchTerm, setSearchTerm] = useState('');
   const [filterType, setFilterType] = useState<'ALL' | 'INCOME' | 'EXPENSE'>('ALL');
   const [showFilters, setShowFilters] = useState(false);
+  const [showImport, setShowImport] = useState(false);
 
   // Advanced Filter States
   const [startDate, setStartDate] = useState('');
@@ -288,6 +290,13 @@ const Extrato: React.FC<ExtratoProps> = ({ uid, cards, categories: userCategorie
             />
           </div>
           <button 
+            onClick={() => setShowImport(true)}
+            className="px-4 rounded-2xl border bg-white/5 border-white/10 text-gray-400 hover:text-white transition-all flex items-center gap-2"
+          >
+            <Upload size={18} />
+            <span className="text-[10px] font-black uppercase hidden sm:inline">Importar</span>
+          </button>
+          <button 
             onClick={() => setShowFilters(!showFilters)}
             className={`px-4 rounded-2xl border transition-all flex items-center gap-2 relative ${showFilters ? 'bg-[var(--green-whatsapp)] border-[var(--green-whatsapp)] text-white' : 'bg-white/5 border-white/10 text-gray-400 hover:text-white'}`}
           >
@@ -537,6 +546,10 @@ const Extrato: React.FC<ExtratoProps> = ({ uid, cards, categories: userCategorie
           type={notification.type}
           onClose={() => setNotification(null)}
         />
+      )}
+
+      {showImport && (
+        <ImportData uid={uid} onClose={() => setShowImport(false)} />
       )}
     </div>
   );
