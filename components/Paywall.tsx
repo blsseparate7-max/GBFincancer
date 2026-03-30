@@ -1,65 +1,86 @@
 
-import React from 'react';
-import MercadoPagoButton from './MercadoPagoButton';
+import React, { useState } from 'react';
+import { UserSession } from '../types';
+import { handleKiwifyRedirect } from '../services/checkoutService';
+import { OAUTH_CONFIG } from '../constants';
 
 interface PaywallProps {
-  userName: string;
-  onPay: () => void;
+  user: UserSession;
   onLogout: () => void;
 }
 
-const Paywall: React.FC<PaywallProps> = ({ userName, onPay, onLogout }) => {
-  return (
-    <div className="flex flex-col min-h-full bg-[#f0f2f5] animate-in fade-in duration-500 items-center justify-center p-6">
-      <div className="w-full max-w-sm">
-        <div className="bg-[#075e54] pt-12 pb-10 px-8 text-center text-white rounded-t-[3rem] shadow-2xl relative overflow-hidden">
-          <div className="absolute top-0 left-0 w-full h-full opacity-10 pointer-events-none whatsapp-bg"></div>
-          <div className="relative z-10">
-            <div className="w-20 h-20 bg-white/10 backdrop-blur-md rounded-[2.5rem] border border-white/20 flex items-center justify-center mx-auto mb-6">
-              <svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-            </div>
-            <h2 className="text-3xl font-black italic tracking-tighter italic">Conta Bloqueada</h2>
-            <p className="text-xs opacity-70 mt-2">Olá {userName.split(' ')[0]}, sua assinatura expirou.</p>
-          </div>
-        </div>
+const Paywall: React.FC<PaywallProps> = ({ user, onLogout }) => {
+  const [isDismissed, setIsDismissed] = useState(false);
+  const checkoutId = OAUTH_CONFIG.KIWIFY_CHECKOUT_ID;
 
-        <div className="bg-white p-8 rounded-b-[3rem] shadow-xl border border-gray-100 text-center">
-          <p className="text-[10px] font-black text-emerald-600 uppercase tracking-[0.2em] mb-6">Renovação Recomendada</p>
-          
-          <div className="p-6 rounded-[2rem] border-4 border-emerald-500 bg-emerald-50 text-left mb-8">
-            <div className="flex justify-between items-center mb-1">
-              <span className="font-black text-gray-900 uppercase italic">Anual Premium</span>
-              <span className="text-xl font-black text-emerald-600">R$ 99,90</span>
-            </div>
-            <p className="text-[10px] text-gray-400 font-bold">ECONOMIZE 20% NA ANUIDADE</p>
-            <ul className="mt-4 space-y-2">
-              <li className="text-[9px] font-black text-slate-600 flex items-center gap-2">
-                <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full"></span>
-                Consultoria IA Ilimitada
-              </li>
-              <li className="text-[9px] font-black text-slate-600 flex items-center gap-2">
-                <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full"></span>
-                Acesso Multi-plataforma
-              </li>
-            </ul>
+  const handleSubscribe = () => {
+    handleKiwifyRedirect(user.uid, checkoutId);
+  };
+
+  if (isDismissed) {
+    return (
+      <div className="fixed bottom-0 left-0 right-0 z-[1000] p-4 animate-slide-up">
+        <div className="bg-rose-600 text-white p-4 rounded-2xl shadow-2xl flex items-center justify-between gap-4 border border-white/20">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 bg-white/20 rounded-lg flex items-center justify-center font-black italic">!</div>
+            <p className="text-[10px] font-black uppercase tracking-widest">Acesso Expirado - Assine para liberar todas as funções</p>
           </div>
+          <button 
+            onClick={handleSubscribe}
+            className="bg-white text-rose-600 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg"
+          >
+            Assinar Agora
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="fixed inset-0 z-[2000] flex items-center justify-center p-6 bg-[#0B141A]/90 backdrop-blur-md overflow-hidden">
+      <div className="absolute inset-0 whatsapp-pattern opacity-[0.03] pointer-events-none"></div>
+
+      <div className="w-full max-w-[420px] relative z-10 animate-fade text-center">
+        <div className="w-20 h-20 bg-rose-500 rounded-[2.2rem] flex items-center justify-center mx-auto mb-6 shadow-2xl shadow-rose-500/20 text-white text-4xl font-black italic transform -rotate-3 border-4 border-white/10">
+          !
+        </div>
+        
+        <div className="bg-[#111B21] p-8 rounded-[2.5rem] shadow-2xl border border-[#2A3942]/60 backdrop-blur-sm">
+          <header className="mb-8">
+            <h2 className="text-2xl font-black text-[#E9EDEF] tracking-tight uppercase">Seu acesso expirou</h2>
+            <p className="text-sm text-[#8696A0] font-medium mt-3 leading-relaxed">
+              Seu período de teste terminou ou sua assinatura não está ativa. 
+              Assine agora para continuar usando o sistema e manter sua vida financeira organizada.
+            </p>
+          </header>
 
           <div className="space-y-4">
-             <MercadoPagoButton />
-             <button 
-               onClick={onPay}
-               className="w-full text-[9px] font-black text-gray-400 uppercase tracking-widest hover:text-emerald-500 transition-colors"
-             >
-               Simular Liberação (Teste)
-             </button>
-             <button 
-               onClick={onLogout}
-               className="w-full text-rose-500 font-black py-4 text-[10px] uppercase tracking-widest hover:bg-rose-50 rounded-2xl transition-all"
-             >
-               Trocar de Conta
-             </button>
+            <button 
+              onClick={handleSubscribe}
+              className="w-full bg-[#00A884] text-white font-black py-4 rounded-2xl text-[12px] uppercase tracking-[0.2em] shadow-xl shadow-[#00A884]/10 active:scale-95 transition-all flex items-center justify-center gap-3"
+            >
+              Assinar agora
+            </button>
+
+            <button 
+              onClick={() => setIsDismissed(true)}
+              className="w-full bg-[#202C33] text-[#E9EDEF] font-bold py-3 rounded-2xl text-[10px] uppercase tracking-[0.1em] hover:bg-[#2A3942] transition-all"
+            >
+              Apenas visualizar (Limitado)
+            </button>
+
+            <button 
+              onClick={onLogout}
+              className="w-full bg-transparent text-[#8696A0] font-bold py-2 rounded-2xl text-[10px] uppercase tracking-[0.1em] hover:text-[#E9EDEF] transition-all"
+            >
+              Sair da conta
+            </button>
           </div>
         </div>
+
+        <p className="mt-8 text-[10px] font-black text-[#8696A0]/40 uppercase tracking-widest">
+          Dúvidas? Entre em contato com nosso suporte.
+        </p>
       </div>
     </div>
   );

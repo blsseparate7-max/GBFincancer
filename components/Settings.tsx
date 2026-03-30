@@ -1,6 +1,8 @@
 
 import React from 'react';
 import { UserSession } from '../types';
+import { handleKiwifyRedirect } from '../services/checkoutService';
+import { OAUTH_CONFIG } from '../constants';
 
 interface SettingsProps {
   user: UserSession;
@@ -8,6 +10,8 @@ interface SettingsProps {
 }
 
 const Settings: React.FC<SettingsProps> = ({ user, onLogout }) => {
+  const checkoutId = OAUTH_CONFIG.KIWIFY_CHECKOUT_ID;
+
   return (
     <div className="p-6 space-y-6 animate-fade min-h-full">
       <header className="mb-8">
@@ -16,6 +20,26 @@ const Settings: React.FC<SettingsProps> = ({ user, onLogout }) => {
       </header>
 
       <div className="bg-white rounded-3xl border border-[#d1d7db] overflow-hidden shadow-sm">
+        <div className="p-5 border-b border-[#f0f2f5]">
+          <h4 className="text-sm font-bold text-[#111b21] uppercase tracking-tighter">Sua Assinatura</h4>
+          <div className="mt-3 flex items-center justify-between">
+            <div>
+              <p className="text-[10px] text-[#667781] uppercase font-black tracking-widest">Status Atual</p>
+              <p className={`text-xs font-black uppercase ${user.subscriptionStatus === 'active' ? 'text-[#00a884]' : 'text-rose-500'}`}>
+                {user.subscriptionStatus === 'active' ? 'Ativa' : user.subscriptionStatus === 'trial' ? 'Teste Grátis' : 'Inativa'}
+              </p>
+            </div>
+            {user.subscriptionStatus !== 'active' && (
+              <button 
+                onClick={() => handleKiwifyRedirect(user.uid, checkoutId)}
+                className="bg-[#00a884] text-white text-[10px] font-black uppercase tracking-widest px-4 py-2 rounded-xl shadow-lg shadow-[#00a884]/20 active:scale-95 transition-all"
+              >
+                Assinar Agora
+              </button>
+            )}
+          </div>
+        </div>
+
         <div className="p-5 border-b border-[#f0f2f5] flex justify-between items-center">
           <div>
             <h4 className="text-sm font-bold text-[#111b21]">Notificações de Alerta</h4>

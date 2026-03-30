@@ -3,20 +3,24 @@ import { db, storage } from '../services/firebaseConfig';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { doc, updateDoc } from 'firebase/firestore';
 import { Notification } from './UI';
+import { handleKiwifyRedirect } from '../services/checkoutService';
+import { OAUTH_CONFIG } from '../constants';
 
 interface ProfileEditProps {
   user: any;
   onUpdate: (data: any) => void;
   onLogout: () => void;
+  setActiveTab: (tab: string) => void;
 }
 
-const ProfileEdit: React.FC<ProfileEditProps> = ({ user, onUpdate, onLogout }) => {
+const ProfileEdit: React.FC<ProfileEditProps> = ({ user, onUpdate, onLogout, setActiveTab }) => {
   const [name, setName] = useState(user.name || '');
   const [loading, setLoading] = useState(false);
   const [photoURL, setPhotoURL] = useState(user.photoURL || '');
   const [uploading, setUploading] = useState(false);
   const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const checkoutId = OAUTH_CONFIG.KIWIFY_CHECKOUT_ID;
 
   const handleSave = async () => {
     if (!name.trim()) {
@@ -49,7 +53,6 @@ const ProfileEdit: React.FC<ProfileEditProps> = ({ user, onUpdate, onLogout }) =
       return;
     }
 
-    // Limite de 2MB para evitar custos/lentidão excessiva
     if (file.size > 2 * 1024 * 1024) {
       setNotification({ message: "A imagem deve ter no máximo 2MB.", type: 'error' });
       return;
@@ -81,7 +84,6 @@ const ProfileEdit: React.FC<ProfileEditProps> = ({ user, onUpdate, onLogout }) =
       </header>
 
       <div className="bg-[#111b21] p-8 rounded-[3rem] shadow-2xl border border-[#2a3942] space-y-8">
-        {/* Seção de Avatar com Upload */}
         <div className="flex flex-col items-center">
           <div 
             onClick={triggerFileInput}
@@ -111,7 +113,9 @@ const ProfileEdit: React.FC<ProfileEditProps> = ({ user, onUpdate, onLogout }) =
             accept="image/*"
           />
           <p className="mt-4 text-[10px] font-black text-[#8696a0] uppercase tracking-widest">
-            {user.role === 'ADMIN' ? 'Cargo: Fundador Master' : 'Assinatura: Premium Ativo'}
+            {user.role === 'ADMIN' ? 'Cargo: Fundador Master' : 
+             user.subscriptionStatus === 'active' ? 'Assinatura: Premium Ativo' : 
+             user.subscriptionStatus === 'trial' ? 'Período de Teste' : 'Assinatura: Inativa'}
           </p>
         </div>
 
@@ -152,6 +156,36 @@ const ProfileEdit: React.FC<ProfileEditProps> = ({ user, onUpdate, onLogout }) =
             <div className="w-5 h-5 border-2 border-white/20 border-t-white rounded-full animate-spin"></div>
           ) : 'Gravar Alterações'}
         </button>
+      </div>
+
+      <div className="bg-[#111b21] p-8 rounded-[3rem] shadow-2xl border border-[#2a3942] space-y-4">
+         <h4 className="text-[10px] font-black text-[#00a884] uppercase tracking-widest mb-2 flex items-center gap-2">
+           <span className="w-1.5 h-1.5 bg-[#00a884] rounded-full"></span> Gerenciar Assinatura
+         </h4>
+         {user.subscriptionStatus !== 'active' ? (
+           <button 
+             onClick={() => handleKiwifyRedirect(user.uid, checkoutId)}
+             className="w-full bg-[#00a884] text-white font-black py-4 rounded-2xl text-[10px] uppercase tracking-widest hover:bg-[#00a884]/80 transition-all flex items-center justify-center gap-2 border border-[#00a884]/20"
+           >
+             💳 Assinar Plano Premium
+           </button>
+         ) : (
+           <div className="w-full bg-[#00a884]/10 text-[#00a884] font-black py-4 rounded-2xl text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 border border-[#00a884]/20">
+             ✅ Assinatura Ativa
+           </div>
+         )}
+      </div>
+
+      <div className="bg-[#111b21] p-8 rounded-[3rem] shadow-2xl border border-[#2a3942] space-y-4">
+         <h4 className="text-[10px] font-black text-[#00a884] uppercase tracking-widest mb-2 flex items-center gap-2">
+           <span className="w-1.5 h-1.5 bg-[#00a884] rounded-full"></span> Suporte e Ajuda
+         </h4>
+         <button 
+           onClick={() => setActiveTab('support')}
+           className="w-full bg-[#00a884]/10 text-[#00a884] font-black py-4 rounded-2xl text-[10px] uppercase tracking-widest hover:bg-[#00a884]/20 transition-all flex items-center justify-center gap-2 border border-[#00a884]/20"
+         >
+           💬 Chat de Suporte Interno
+         </button>
       </div>
 
       <div className="bg-[#111b21] p-8 rounded-[3rem] shadow-2xl border border-rose-500/20">

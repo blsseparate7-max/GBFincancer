@@ -184,6 +184,9 @@ export interface UserOnboarding {
   [key: string]: boolean | undefined;
 }
 
+export type SubscriptionStatus = 'trial' | 'active' | 'inactive';
+export type SubscriptionPlan = 'mensal' | 'anual';
+
 export interface UserSession {
   uid: string;
   userId: string;
@@ -191,7 +194,11 @@ export interface UserSession {
   email: string;
   isLoggedIn: boolean;
   role: 'USER' | 'ADMIN';
-  subscriptionStatus: 'ACTIVE' | 'EXPIRED';
+  subscriptionStatus: SubscriptionStatus;
+  plan?: SubscriptionPlan;
+  trialEndsAt?: any;
+  subscriptionEndsAt?: any;
+  paymentProvider?: 'kiwify';
   onboardingSeen?: boolean;
   lgpdAccepted?: boolean;
   lgpdAcceptedAt?: any;
@@ -222,16 +229,17 @@ export interface AuditLog {
   createdAt: any;
 }
 
-export type SubscriptionPlan = 'MONTHLY' | 'YEARLY';
-
 export interface CustomerData {
   userId: string;
   userName: string;
   email: string;
-  subscriptionStatus: 'ACTIVE' | 'EXPIRED' | 'PENDING';
+  subscriptionStatus: SubscriptionStatus;
   status?: 'active' | 'blocked' | 'deleted';
   role?: 'USER' | 'ADMIN';
   plan: SubscriptionPlan;
+  trialEndsAt?: any;
+  subscriptionEndsAt?: any;
+  paymentProvider?: 'kiwify';
   onboardingSeen?: boolean;
   lgpdAccepted?: boolean;
   lgpdAcceptedAt?: any;
@@ -242,7 +250,6 @@ export interface CustomerData {
   createdAt?: any;
   lastLogin?: any;
   localUpdatedAt?: string;
-  subscriptionExpiryDate?: string;
 }
 
 export interface UserCategory {
@@ -333,10 +340,36 @@ export interface Debt {
   updatedAt: any;
 }
 
-export interface DebtPayment {
+export type DebtPayment = {
   id: string;
   debtId: string;
   amount: number;
   date: string;
+  createdAt: any;
+}
+
+export type SupportStatus = 'ai_active' | 'waiting_admin' | 'admin_active' | 'closed';
+
+export interface SupportThread {
+  id: string;
+  userId: string | null;
+  visitorId: string | null;
+  userName: string;
+  userEmail: string;
+  status: SupportStatus;
+  lastMessage: string;
+  lastSender: 'user' | 'admin' | 'ai';
+  unreadByAdmin: boolean;
+  unreadByUser: boolean;
+  source?: string;
+  createdAt: any;
+  updatedAt: any;
+}
+
+export interface SupportMessage {
+  id: string;
+  senderId: string;
+  senderRole: 'user' | 'admin' | 'ai';
+  text: string;
   createdAt: any;
 }

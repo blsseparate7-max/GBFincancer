@@ -29,10 +29,15 @@ import CategoriesTab from './components/CategoriesTab';
 import ContextualOnboarding from './components/ContextualOnboarding';
 import DebtAssistant from './components/DebtAssistant';
 import QADiagnostic from './components/QADiagnostic';
+import SupportTab from './components/SupportTab';
+import AdminSupport from './components/AdminSupport';
 import LegalModal from './components/LegalModal';
+import Paywall from './components/Paywall';
+import LandingPage from './components/LandingPage';
 import { normalizeCard, normalizeGoal, normalizeReminder, normalizeLimit, normalizeWallet, normalizeUserCategory, normalizeTransaction, assertSchema } from './services/normalizationService';
 
 import { motion, AnimatePresence } from 'motion/react';
+import { Zap } from 'lucide-react';
 
 const App: React.FC = () => {
   useEffect(() => {
@@ -67,7 +72,11 @@ const App: React.FC = () => {
             email: firebaseUser.email || '',
             isLoggedIn: true,
             role: userData.role || 'USER',
-            subscriptionStatus: userData.subscriptionStatus || 'ACTIVE',
+            subscriptionStatus: userData.subscriptionStatus || 'inactive',
+            plan: userData.plan,
+            trialEndsAt: userData.trialEndsAt,
+            subscriptionEndsAt: userData.subscriptionEndsAt,
+            paymentProvider: userData.paymentProvider,
             onboardingSeen: userData.onboardingSeen,
             lgpdAccepted: userData.lgpdAccepted,
             status: userData.status || 'active',
@@ -289,22 +298,57 @@ const App: React.FC = () => {
     setOnboardingStep('none');
   };
 
+  const hasAccess = () => {
+    if (!session) return false;
+    if (session.role === 'ADMIN') return true;
+    
+    const now = new Date();
+
+    if (session.subscriptionStatus === 'active') {
+      if (!session.subscriptionEndsAt) return true;
+      return new Date(session.subscriptionEndsAt) > now;
+    }
+
+    if (session.subscriptionStatus === 'trial' && session.trialEndsAt) {
+      return new Date(session.trialEndsAt) > now;
+    }
+
+    return false;
+  };
+
+  const trialWarning = (() => {
+    if (!session || session.subscriptionStatus !== 'trial' || !session.trialEndsAt) return null;
+    const trialEnd = new Date(session.trialEndsAt);
+    const now = new Date();
+    const diffTime = trialEnd.getTime() - now.getTime();
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+    if (diffDays <= 0) return null;
+    if (diffDays <= 1) return "Seu acesso de teste expira em menos de 24h!";
+    if (diffDays <= 3) return `Seu período de teste termina em ${diffDays} dias`;
+    return null;
+  })();
+
   if (isInitializing) return <div className="h-dvh bg-[var(--bg-body)] flex items-center justify-center text-[var(--green-whatsapp)] font-black italic animate-pulse">GB...</div>;
-  if (!session) return <Auth onLogin={(s) => setSession(s)} />;
+  
+  if (!session && activeTab !== 'support') return <LandingPage onLogin={(s) => setSession(s)} onOpenSupport={() => setActiveTab('support')} />;
 
   const renderContent = () => {
-    if (onboardingStep === 'welcome') {
+    if (onboardingStep === 'welcome' && session) {
       return <WelcomeOnboarding userName={session.name} onFinish={handleOnboardingFinish} />;
     }
-    if (onboardingStep === 'lgpd') {
+    if (onboardingStep === 'lgpd' && session) {
       return <LGPDOnboarding onAccept={handleLGPDAccept} />;
     }
-    if (onboardingStep === 'setup') {
+    if (onboardingStep === 'setup' && session) {
       return <SetupWizard user={session} onComplete={handleSetupComplete} />;
     }
 
+    // O Paywall agora é um overlay, então renderizamos o conteúdo normalmente
+    // e o App.tsx decide se mostra o overlay por cima no return principal
+    
     switch (activeTab) {
-      case 'chat': return (
+      case 'chat': return session ? (
         <ChatInterface 
           user={session} 
           messages={messages} 
@@ -319,29 +363,32 @@ const App: React.FC = () => {
           onToggleSidebar={handleToggleSidebar}
           onOpenProfile={() => setActiveTab('profile')}
         />
-      );
-      case 'extrato': return <Extrato uid={session.uid} cards={cards} categories={categories} />;
-      case 'categories': return <CategoriesTab uid={session.uid} categories={categories} loading={loadingCategories} />;
-      case 'dash': return <Dashboard transactions={transactions} goals={goals} limits={limits} wallets={wallets} reminders={reminders} uid={session.uid} loading={loadingCards || loadingGoals || loadingLimits || loadingWallets} />;
-      case 'calendar': return <CalendarTab transactions={transactions} reminders={reminders} loading={loadingReminders} />;
-      case 'goals': return <Goals goals={goals} transactions={transactions} wallets={wallets} uid={session.uid} user={session} loading={loadingGoals} />;
-      case 'cc': return <CreditCard transactions={transactions} uid={session.uid} cards={cards} wallets={wallets} loading={loadingCards} />;
-      case 'reminders': return <Reminders bills={reminders} wallets={wallets} uid={session.uid} loading={loadingReminders} />;
-      case 'messages': return <Messages notifications={notifications} />;
-      case 'resumo': return <YearlySummary transactions={transactions} goals={goals} wallets={wallets} />;
-      case 'insights': return <Insights transactions={transactions} limits={limits} />;
-      case 'score': return <HealthScoreTab transactions={transactions} limits={limits} goals={goals} />;
-      case 'stress': return <ImpactSimulator transactions={transactions} />;
-      case 'debts': return <DebtAssistant uid={session.uid} transactions={transactions} wallets={wallets} user={session} goals={goals} cards={cards} />;
-      case 'profile': return <ProfileEdit user={session} onUpdate={(d) => setSession(p => p ? {...p, ...d} : null)} onLogout={() => signOut(auth)} />;
-      case 'config': return <Settings user={session} onLogout={() => signOut(auth)} />;
+      ) : <LandingPage onLogin={(s) => setSession(s)} onOpenSupport={() => setActiveTab('support')} />;
+      case 'extrato': return session ? <Extrato uid={session.uid} cards={cards} categories={categories} /> : null;
+      case 'categories': return session ? <CategoriesTab uid={session.uid} categories={categories} loading={loadingCategories} /> : null;
+      case 'dash': return session ? <Dashboard transactions={transactions} goals={goals} limits={limits} wallets={wallets} reminders={reminders} uid={session.uid} loading={loadingCards || loadingGoals || loadingLimits || loadingWallets} /> : null;
+      case 'calendar': return session ? <CalendarTab transactions={transactions} reminders={reminders} loading={loadingReminders} /> : null;
+      case 'goals': return session ? <Goals goals={goals} transactions={transactions} wallets={wallets} uid={session.uid} user={session} loading={loadingGoals} /> : null;
+      case 'cc': return session ? <CreditCard transactions={transactions} uid={session.uid} cards={cards} wallets={wallets} loading={loadingCards} /> : null;
+      case 'reminders': return session ? <Reminders bills={reminders} wallets={wallets} uid={session.uid} loading={loadingReminders} /> : null;
+      case 'messages': return session ? <Messages notifications={notifications} /> : null;
+      case 'resumo': return session ? <YearlySummary transactions={transactions} goals={goals} wallets={wallets} /> : null;
+      case 'insights': return session ? <Insights transactions={transactions} limits={limits} /> : null;
+      case 'score': return session ? <HealthScoreTab transactions={transactions} limits={limits} goals={goals} /> : null;
+      case 'stress': return session ? <ImpactSimulator transactions={transactions} /> : null;
+      case 'debts': return session ? <DebtAssistant uid={session.uid} transactions={transactions} wallets={wallets} user={session} goals={goals} cards={cards} /> : null;
+      case 'profile': return session ? <ProfileEdit user={session} onUpdate={(d) => setSession(p => p ? {...p, ...d} : null)} onLogout={() => signOut(auth)} setActiveTab={setActiveTab} /> : null;
+      case 'support': return <SupportTab user={session} onBackToAuth={() => setActiveTab('chat')} />;
+      case 'admin_support': return session?.role === 'ADMIN' ? <AdminSupport admin={session} /> : null;
+      case 'config': return session ? <Settings user={session} onLogout={() => signOut(auth)} /> : null;
       case 'qa':
-        if (session.role !== 'ADMIN') return <div className="p-8 text-center text-red-500 font-bold">Acesso restrito</div>;
+        if (session?.role !== 'ADMIN') return <div className="p-8 text-center text-red-500 font-bold">Acesso restrito</div>;
         return <QADiagnostic session={session} />;
-      case 'admin': return session.role === 'ADMIN' ? <AdminPanel currentAdminId={session.uid} /> : null;
+      case 'admin': return session?.role === 'ADMIN' ? <AdminPanel currentAdminId={session.uid} /> : null;
       case 'terms': return <LegalModal type="terms" onClose={() => setActiveTab('chat')} />;
       case 'privacy': return <LegalModal type="privacy" onClose={() => setActiveTab('chat')} />;
       case 'wallets': {
+        if (!session) return null;
         const income = transactions
           .filter(t => t.type === 'INCOME')
           .reduce((s, t) => s + (Number(t.amount) || 0), 0);
@@ -353,7 +400,7 @@ const App: React.FC = () => {
         
         return <WalletTab uid={session.uid} freeBalance={freeBalance} goals={goals} wallets={wallets} loading={loadingWallets || loadingGoals} />;
       }
-      default: return <ChatInterface user={session} messages={messages} setMessages={setMessages} transactions={transactions} limits={limits} reminders={reminders} goals={goals} />;
+      default: return session ? <ChatInterface user={session} messages={messages} setMessages={setMessages} transactions={transactions} limits={limits} reminders={reminders} goals={goals} /> : <LandingPage onLogin={(s) => setSession(s)} onOpenSupport={() => setActiveTab('support')} />;
     }
   };
 
@@ -373,29 +420,32 @@ const App: React.FC = () => {
       )}
 
       {/* Sidebar - Drawer Lateral */}
-      <div className={`
-        fixed lg:absolute z-[200] h-full transition-all duration-300 ease-in-out shadow-2xl
-        ${sidebarExpanded ? 'translate-x-0' : '-translate-x-full'}
-      `}>
-        <Sidebar 
-          activeTab={activeTab} 
-          setActiveTab={(t) => { 
-            setActiveTab(t); 
-            setSidebarExpanded(false); 
-          }} 
-          expanded={true} 
-          setExpanded={setSidebarExpanded} 
-          role={session.role}
-          onClose={() => setSidebarExpanded(false)}
-        />
-      </div>
+      {session && (
+        <div className={`
+          fixed lg:absolute z-[200] h-full transition-all duration-300 ease-in-out shadow-2xl
+          ${sidebarExpanded ? 'translate-x-0' : '-translate-x-full'}
+        `}>
+          <Sidebar 
+            activeTab={activeTab} 
+            setActiveTab={(t) => { 
+              setActiveTab(t); 
+              setSidebarExpanded(false); 
+            }} 
+            expanded={true} 
+            setExpanded={setSidebarExpanded} 
+            role={session.role}
+            onClose={() => setSidebarExpanded(false)}
+          />
+        </div>
+      )}
 
       <div className="flex-1 flex flex-col min-w-0 relative h-full overflow-hidden">
-        {activeTab !== 'chat' && (
+        {activeTab !== 'chat' && session && (
           <Header 
             activeTab={activeTab} 
             userName={session.name} 
             photoURL={session.photoURL} 
+            notifications={notifications}
             onToggleSidebar={handleToggleSidebar} 
             onNavigate={(t) => {
               setActiveTab(t);
@@ -407,6 +457,12 @@ const App: React.FC = () => {
         <main className={`flex-1 min-w-0 relative bg-[var(--chat-bg)] flex flex-col ${activeTab === 'chat' ? 'h-full overflow-hidden' : 'overflow-y-auto overflow-x-hidden'}`}>
           <div className="absolute inset-0 whatsapp-pattern pointer-events-none"></div>
           <div className="relative z-10 flex-1 flex flex-col min-h-0">
+            {trialWarning && (
+              <div className="bg-[#00A884] text-white text-[10px] font-black uppercase tracking-[0.2em] py-2 px-4 text-center animate-pulse shrink-0 flex items-center justify-center gap-2">
+                <Zap className="w-3 h-3" />
+                {trialWarning}
+              </div>
+            )}
             <AnimatePresence mode="wait">
               <motion.div
                 key={activeTab + onboardingStep}
@@ -429,6 +485,11 @@ const App: React.FC = () => {
             )}
           </div>
         </main>
+
+        {/* Paywall Overlay */}
+        {session && !hasAccess() && activeTab !== 'support' && activeTab !== 'profile' && activeTab !== 'config' && (
+          <Paywall user={session} onLogout={() => signOut(auth)} />
+        )}
       </div>
     </div>
   );

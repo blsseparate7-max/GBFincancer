@@ -23,6 +23,9 @@
     --ai-bubble: #202c33;
     --chat-bg: #0b141a;
     --bubble-text: #e9edef;
+    --accent-premium: #00a884;
+    --accent-secondary: #005c4b;
+    --accent-gold: #d4af37;
 }
 
 .theme-light {
@@ -37,6 +40,9 @@
     --ai-bubble: #ffffff;
     --chat-bg: #efeae2;
     --bubble-text: #111b21;
+    --accent-premium: #00a884;
+    --accent-secondary: #008069;
+    --accent-gold: #b8860b;
 }
 
 body { 

@@ -1,0 +1,187 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Document ID: userId (UID)
+    // Fields:
+    //   - userId: string (required)
+    //   - name: string (required)
+    //   - email: string (required)
+    //   - role: string (required, enum: USER, ADMIN)
+    //   - subscriptionStatus: string
+    //   - onboardingSeen: boolean
+    //   - lgpdAccepted: boolean
+    //   - status: string
+    //   - photoURL: string
+    //
+    // Collection: supportThreads
+    // Document ID: threadId (auto-generated)
+    // Fields:
+    //   - userId: string (optional)
+    //   - visitorId: string (optional)
+    //   - userName: string (required)
+    //   - userEmail: string (required)
+    //   - status: string (required, enum: ai_active, waiting_admin, admin_active, closed)
+    //   - lastMessage: string
+    //   - lastSender: string (enum: user, admin, ai)
+    //   - unreadByAdmin: boolean
+    //   - unreadByUser: boolean
+    //   - source: string (enum: direct, ai-escalation)
+    //   - createdAt: timestamp
+    //   - updatedAt: timestamp
+    //
+    // Collection: supportThreads/{threadId}/messages
+    // Document ID: messageId (auto-generated)
+    // Fields:
+    //   - senderId: string (required)
+    //   - senderRole: string (required, enum: user, admin, ai)
+    //   - text: string (required)
+    //   - createdAt: timestamp
+    //
+    // Collection: checkoutSessions
+    // Document ID: sessionId (auto-generated)
+    // Fields:
+    //   - uid: string (required)
+    //   - status: string (required, enum: pending, completed, failed)
+    //   - orderId: string
+    //   - reason: string
+    //   - createdAt: timestamp
+    //   - completedAt: timestamp
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() &&
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'ADMIN' ||
+          (request.auth.token.email == "blsseparate7@gmail.com" && request.auth.token.email_verified == true));
+    }
+
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+
+    function isValidEmail(email) {
+      return email is string && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+
+    function isValidUser(data) {
+      return hasRequiredFields(['userId', 'name', 'email']) &&
+             data.userId is string &&
+             data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
+             isValidEmail(data.email) &&
+             (!('role' in data) || data.role in ['USER', 'ADMIN']);
+    }
+
+    function isValidSupportThread(data) {
+      return hasRequiredFields(['status', 'source']) &&
+             (!('userId' in data) || data.userId is string) &&
+             (!('visitorId' in data) || data.visitorId is string) &&
+             (!('userName' in data) || data.userName is string) &&
+             (!('userEmail' in data) || isValidEmail(data.userEmail)) &&
+             data.status in ['ai_active', 'waiting_admin', 'admin_active', 'closed'] &&
+             data.source in ['direct', 'ai-escalation'] &&
+             (!('lastSender' in data) || data.lastSender in ['user', 'admin', 'ai']);
+    }
+
+    function isValidSupportMessage(data) {
+      return hasRequiredFields(['senderId', 'senderRole', 'text']) &&
+             data.senderId is string &&
+             data.senderRole in ['user', 'admin', 'ai'] &&
+             data.text is string && data.text.size() > 0 && data.text.size() < 5000;
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /users/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow list: if isAdmin();
+      allow create: if isAuthenticated() && isValidUser(request.resource.data) && (isOwner(userId) || isAdmin()) && 
+                    (isAdmin() || (
+                      request.resource.data.subscriptionStatus == 'trial' &&
+                      request.resource.data.role == 'USER'
+                    ));
+      allow update: if isAuthenticated() && isValidUser(request.resource.data) && (isOwner(userId) || isAdmin()) && 
+                    (isAdmin() || (
+                      request.resource.data.subscriptionStatus == resource.data.subscriptionStatus &&
+                      request.resource.data.role == resource.data.role &&
+                      (!('plan' in resource.data) || request.resource.data.plan == resource.data.plan) &&
+                      (!('trialEndsAt' in resource.data) || request.resource.data.trialEndsAt == resource.data.trialEndsAt) &&
+                      (!('subscriptionEndsAt' in resource.data) || request.resource.data.subscriptionEndsAt == resource.data.subscriptionEndsAt) &&
+                      (!('paymentProvider' in resource.data) || request.resource.data.paymentProvider == resource.data.paymentProvider)
+                    ));
+      allow delete: if isAdmin();
+
+      // Allow access to all subcollections for the owner and admin
+      match /{allSubcollections=**} {
+        allow read, write: if isOwner(userId) || isAdmin();
+      }
+    }
+
+    match /admin/{document=**} {
+      allow read, write: if isAdmin();
+    }
+
+    match /supportThreads/{threadId} {
+      allow read, list: if isAdmin() || 
+                    (isAuthenticated() && (resource == null || resource.data.userId == request.auth.uid)) || 
+                    (resource != null && resource.data.visitorId != null);
+      allow create: if isValidSupportThread(request.resource.data) && 
+                      (isAdmin() || 
+                       (isAuthenticated() && request.resource.data.userId == request.auth.uid) || 
+                       (request.resource.data.visitorId != null));
+      allow update: if isAdmin() || 
+                      (isAuthenticated() && resource.data.userId == request.auth.uid) || 
+                      (resource.data.visitorId != null);
+      allow delete: if isAdmin();
+
+      match /messages/{messageId} {
+        allow read, list: if isAdmin() || 
+                      (isAuthenticated() && get(/databases/$(database)/documents/supportThreads/$(threadId)).data.userId == request.auth.uid) || 
+                      (get(/databases/$(database)/documents/supportThreads/$(threadId)).data.visitorId != null);
+        allow create: if isValidSupportMessage(request.resource.data) && 
+                        (isAdmin() || 
+                         (isAuthenticated() && get(/databases/$(database)/documents/supportThreads/$(threadId)).data.userId == request.auth.uid) || 
+                         (get(/databases/$(database)/documents/supportThreads/$(threadId)).data.visitorId != null));
+      }
+    }
+
+    match /checkoutSessions/{sessionId} {
+      allow read: if isAuthenticated() && resource.data.uid == request.auth.uid;
+      allow create: if isAuthenticated() && request.resource.data.uid == request.auth.uid && 
+                    request.resource.data.status == 'pending';
+      allow update, delete: if false; // Only system/admin can update
+    }
+
+    // Default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

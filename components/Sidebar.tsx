@@ -57,12 +57,14 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, expanded, se
       items: [
         { id: 'profile', label: 'Meu Perfil', icon: '👤' },
         { id: 'config', label: 'Ajustes IA', icon: '⚙️' },
+        { id: 'support', label: 'Suporte', icon: '💬' },
       ]
     },
     ...(isAdmin ? [{
       label: 'Sistema',
       items: [
         { id: 'qa', label: 'QA / Diagnóstico', icon: '🛠️' },
+        { id: 'admin_support', label: 'Suporte Admin', icon: '🎧' },
       ]
     }] : [])
   ];

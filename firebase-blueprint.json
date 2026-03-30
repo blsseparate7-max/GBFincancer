@@ -1,0 +1,89 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile and settings",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "name": { "type": "string" },
+        "email": { "type": "string" },
+        "role": { "type": "string", "enum": ["USER", "ADMIN"] },
+        "subscriptionStatus": { "type": "string", "enum": ["trial", "active", "inactive"] },
+        "plan": { "type": "string", "enum": ["mensal", "anual"] },
+        "trialEndsAt": { "type": "string", "format": "date-time" },
+        "subscriptionEndsAt": { "type": "string", "format": "date-time" },
+        "paymentProvider": { "type": "string", "enum": ["kiwify"] },
+        "onboardingSeen": { "type": "boolean" },
+        "lgpdAccepted": { "type": "boolean" },
+        "status": { "type": "string" },
+        "photoURL": { "type": "string" }
+      },
+      "required": ["userId", "name", "email", "subscriptionStatus"]
+    },
+    "SupportThread": {
+      "title": "Support Thread",
+      "description": "A support conversation thread",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "visitorId": { "type": "string" },
+        "userName": { "type": "string" },
+        "userEmail": { "type": "string" },
+        "status": { "type": "string", "enum": ["ai_active", "waiting_admin", "admin_active", "closed"] },
+        "lastMessage": { "type": "string" },
+        "lastSender": { "type": "string", "enum": ["user", "admin", "ai"] },
+        "unreadByAdmin": { "type": "boolean" },
+        "unreadByUser": { "type": "boolean" },
+        "source": { "type": "string", "enum": ["direct", "ai-escalation"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["status", "source"]
+    },
+    "SupportMessage": {
+      "title": "Support Message",
+      "description": "A message within a support thread",
+      "type": "object",
+      "properties": {
+        "senderId": { "type": "string" },
+        "senderRole": { "type": "string", "enum": ["user", "admin", "ai"] },
+        "text": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["senderId", "senderRole", "text"]
+    },
+    "CheckoutSession": {
+      "title": "Checkout Session",
+      "description": "A session created before redirecting to payment provider",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "completed", "failed"] },
+        "orderId": { "type": "string" },
+        "reason": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "completedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "status"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profiles"
+    },
+    "/checkoutSessions/{sessionId}": {
+      "schema": "CheckoutSession",
+      "description": "Checkout sessions for payment tracking"
+    },
+    "/supportThreads/{threadId}": {
+      "schema": "SupportThread",
+      "description": "Support conversation threads"
+    },
+    "/supportThreads/{threadId}/messages/{messageId}": {
+      "schema": "SupportMessage",
+      "description": "Messages in a support thread"
+    }
+  }
+}

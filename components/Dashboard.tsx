@@ -11,7 +11,7 @@ import {
   TrendingUp, TrendingDown, Wallet as WalletIcon, PiggyBank, 
   AlertCircle, Calendar, Lightbulb, ArrowRight, Target,
   ChevronLeft, ChevronRight, Info, DollarSign, ArrowUpRight, ArrowDownLeft,
-  CheckCircle2, Sparkles, Loader2
+  CheckCircle2, Sparkles, Loader2, Plus, Trophy
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import MoneyInput from './MoneyInput';
@@ -231,13 +231,24 @@ const Dashboard: React.FC<DashProps> = ({ transactions, goals, limits, wallets, 
       value: item.value
     }));
 
-    const COLORS = ['#00a884', '#3b82f6', '#f59e0b', '#f43f5e', '#8b5cf6'];
+    const COLORS = ['#00a884', '#d4af37', '#005c4b', '#f43f5e', '#8b5cf6'];
+
+    const txCount = transactions.length;
+    const goalsCount = goals.filter(g => g.currentAmount >= g.targetAmount).length;
+    const xp = (txCount * 10) + (goalsCount * 100);
+    const level = Math.floor(Math.sqrt(xp / 50)) + 1;
+    const nextLevelXp = Math.pow(level, 2) * 50;
+    const currentLevelXp = Math.pow(level - 1, 2) * 50;
+    const progress = ((xp - currentLevelXp) / (nextLevelXp - currentLevelXp)) * 100;
+    
+    const userLevel = { level, xp, progress, nextLevelXp };
 
     return { 
       income, expense, saldoLivre, totalSaved, expenseRanking, spendingLimits, 
       projectedBalance, suggestion, upcomingBills, goalSuggestion, barData, pieData, COLORS,
       dailyStats, daysInMonth, firstDayOfMonth, currentMonth, currentYear,
-      highlights: { maxIncomeDay, maxExpenseDay, bestDay, worstDay, maxIncome, maxExpense }
+      highlights: { maxIncomeDay, maxExpenseDay, bestDay, worstDay, maxIncome, maxExpense },
+      userLevel
     };
   }, [transactions, goals, limits, wallets, reminders]);
 
@@ -302,10 +313,19 @@ const Dashboard: React.FC<DashProps> = ({ transactions, goals, limits, wallets, 
       {/* 1️⃣ Card Principal – Situação Financeira */}
       <section className="bg-[var(--surface)] p-8 md:p-12 rounded-[3rem] border border-[var(--border)] shadow-2xl relative overflow-hidden group">
         <div className="absolute top-0 right-0 w-96 h-96 bg-[var(--green-whatsapp)]/5 rounded-full -mr-48 -mt-48 transition-transform group-hover:scale-110 duration-1000" />
-        <div className="absolute bottom-0 left-0 w-64 h-64 bg-blue-500/5 rounded-full -ml-32 -mb-32 transition-transform group-hover:scale-110 duration-1000" />
+        <div className="absolute bottom-0 left-0 w-64 h-64 bg-[var(--accent-gold)]/5 rounded-full -ml-32 -mb-32 transition-transform group-hover:scale-110 duration-1000" />
         
         <div className="relative z-10 grid grid-cols-1 lg:grid-cols-12 gap-12 items-center">
           <div className="lg:col-span-7 space-y-2">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="px-3 py-1 bg-[var(--accent-gold)]/10 border border-[var(--accent-gold)]/20 rounded-full flex items-center gap-2">
+                <Trophy size={12} className="text-[var(--accent-gold)]" />
+                <span className="text-[10px] font-black text-[var(--accent-gold)] uppercase tracking-widest">Nível {stats.userLevel.level}</span>
+              </div>
+              <div className="flex-1 h-1 bg-[var(--bg-body)] rounded-full overflow-hidden max-w-[100px]">
+                <div className="h-full bg-[var(--accent-gold)]" style={{ width: `${stats.userLevel.progress}%` }} />
+              </div>
+            </div>
             <div className="flex items-center gap-2 mb-2">
               <div className="w-2 h-2 rounded-full bg-[var(--green-whatsapp)] animate-pulse" />
               <p className="text-[10px] font-black text-[var(--text-muted)] uppercase tracking-[0.2em]">Saldo Disponível em Conta</p>
@@ -332,7 +352,7 @@ const Dashboard: React.FC<DashProps> = ({ transactions, goals, limits, wallets, 
             </div>
             <div className="p-4 bg-[var(--bg-body)]/50 rounded-3xl border border-[var(--border)] backdrop-blur-sm space-y-1">
               <p className="text-[9px] font-black text-[var(--text-muted)] uppercase tracking-widest">Metas</p>
-              <p className="text-lg font-black text-blue-500 italic leading-none">{format(stats.totalSaved)}</p>
+              <p className="text-lg font-black text-[var(--accent-gold)] italic leading-none">{format(stats.totalSaved)}</p>
             </div>
           </div>
         </div>
@@ -563,26 +583,26 @@ const Dashboard: React.FC<DashProps> = ({ transactions, goals, limits, wallets, 
         {stats.goalSuggestion && (
           <motion.div 
             whileHover={{ y: -5 }}
-            className="bg-blue-500/5 p-10 rounded-[3rem] border border-blue-500/20 shadow-xl shadow-blue-500/5 flex flex-col sm:flex-row items-center justify-between gap-8 relative overflow-hidden"
+            className="bg-[var(--accent-gold)]/5 p-10 rounded-[3rem] border border-[var(--accent-gold)]/20 shadow-xl shadow-[var(--accent-gold)]/5 flex flex-col sm:flex-row items-center justify-between gap-8 relative overflow-hidden"
           >
             <div className="absolute top-0 right-0 p-4 opacity-5">
               <Target size={120} />
             </div>
             <div className="flex flex-col sm:flex-row items-start gap-8 relative z-10">
-              <div className="w-16 h-16 bg-blue-500 rounded-[1.5rem] flex items-center justify-center shrink-0 shadow-2xl shadow-blue-500/40">
+              <div className="w-16 h-16 bg-[var(--accent-gold)] rounded-[1.5rem] flex items-center justify-center shrink-0 shadow-2xl shadow-[var(--accent-gold)]/40">
                 <Target className="text-white" size={32} />
               </div>
               <div className="space-y-4">
-                <h3 className="text-xs font-black text-blue-500 uppercase tracking-[0.3em]">Aceleração de Metas</h3>
+                <h3 className="text-xs font-black text-[var(--accent-gold)] uppercase tracking-[0.3em]">Aceleração de Metas</h3>
                 <p className="text-base font-medium text-[var(--text-primary)] leading-relaxed italic">
-                  Identificamos uma folga de <span className="font-black text-blue-500 bg-blue-500/10 px-2 py-0.5 rounded-lg">{format(stats.goalSuggestion)}</span> no seu fluxo. 
+                  Identificamos uma folga de <span className="font-black text-[var(--accent-gold)] bg-[var(--accent-gold)]/10 px-2 py-0.5 rounded-lg">{format(stats.goalSuggestion)}</span> no seu fluxo. 
                   Deseja aplicar este valor agora para atingir seus objetivos mais rápido?
                 </p>
               </div>
             </div>
             <button 
               onClick={() => dispatchEvent(uid, { type: 'ADD_TO_GOAL', payload: { amount: stats.goalSuggestion, note: 'Aporte sugerido pelo Dashboard' }, source: 'ui', createdAt: new Date() })}
-              className="bg-blue-500 text-white w-16 h-16 rounded-[1.5rem] flex items-center justify-center hover:scale-110 transition-all shadow-2xl shadow-blue-500/30 active:scale-90 shrink-0"
+              className="bg-[var(--accent-gold)] text-white w-16 h-16 rounded-[1.5rem] flex items-center justify-center hover:scale-110 transition-all shadow-2xl shadow-[var(--accent-gold)]/30 active:scale-90 shrink-0"
             >
               <ArrowRight size={28} />
             </button>
@@ -686,6 +706,23 @@ const Dashboard: React.FC<DashProps> = ({ transactions, goals, limits, wallets, 
           </div>
         )}
       </AnimatePresence>
+      {/* 9️⃣ Floating Action Button for Quick Add */}
+      <motion.button
+        whileHover={{ scale: 1.1 }}
+        whileTap={{ scale: 0.9 }}
+        onClick={() => {
+          // Logic to open chat with focus or a quick modal
+          const chatInput = document.querySelector('textarea');
+          if (chatInput) {
+            chatInput.focus();
+            // We could also scroll to chat
+            chatInput.scrollIntoView({ behavior: 'smooth' });
+          }
+        }}
+        className="fixed bottom-24 right-6 w-16 h-16 bg-[var(--green-whatsapp)] text-white rounded-full shadow-2xl flex items-center justify-center z-[100] md:hidden border-4 border-[var(--bg-body)]"
+      >
+        <Plus size={32} />
+      </motion.button>
     </div>
   );
 };

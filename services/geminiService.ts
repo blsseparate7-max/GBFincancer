@@ -1,5 +1,5 @@
 
-import { GoogleGenAI, Type } from "@google/genai";
+import { GoogleGenAI, Type, ThinkingLevel } from "@google/genai";
 
 const getAI = () => {
   const v1 = (import.meta as any).env?.VITE_GEMINI_API_KEY;
@@ -151,7 +151,7 @@ export const parseMessage = async (text: string, userName: string, context?: { r
       })() : '';
 
     const response = await ai.models.generateContent({
-      model: 'gemini-3.1-pro-preview',
+      model: 'gemini-3-flash-preview',
       contents: `Você é o GB, mentor financeiro premium de ${userName}. Hoje é ${today}.
       
       ${categoriesContext}
@@ -170,18 +170,18 @@ export const parseMessage = async (text: string, userName: string, context?: { r
       
       INTELIGÊNCIA FINANCEIRA (UPGRADES):
       1. DETECÇÃO DE GASTOS SUSPEITOS:
-         - Se o usuário registrar um gasto (ADD_EXPENSE ou ADD_CARD_CHARGE) que seja muito maior que a média da categoria (veja MÉDIAS DE GASTO POR CATEGORIA), inclua um aviso no "reply".
-         - Se detectar gasto duplicado (mesmo valor, categoria e descrição no mesmo dia), avise.
+      - Se o usuário registrar um gasto (ADD_EXPENSE ou ADD_CARD_CHARGE) que seja muito maior que a média da categoria (veja MÉDIAS DE GASTO POR CATEGORIA), inclua um aviso no "reply".
+      - Se detectar gasto duplicado (mesmo valor, categoria e descrição no mesmo dia), avise.
       2. ALERTA DE RISCO:
-         - Se os gastos do mês (RESUMO GASTOS MÊS ATUAL) estiverem próximos de 80% da renda (se houver lembretes de RECEIVE), alerte.
-         - Se o saldo total (CARTEIRAS) estiver próximo de zero, alerte.
+      - Se os gastos do mês (RESUMO GASTOS MÊS ATUAL) estiverem próximos de 80% da renda (se houver lembretes de RECEIVE), alerte.
+      - Se o saldo total (CARTEIRAS) estiver próximo de zero, alerte.
       3. PREVISÃO:
-         - Se o usuário perguntar "como vou terminar o mês?", use os dados para estimar se o saldo será positivo ou negativo.
+      - Se o usuário perguntar "como vou terminar o mês?", use os dados para estimar se o saldo será positivo ou negativo.
       4. PARCELAMENTO (CARTÃO DE CRÉDITO):
-         - Se o usuário disser algo como "gastei 100 em 3x" ou "comprei 300 no cartão em 6x", você deve identificar que é uma compra parcelada.
-         - O evento deve ser ADD_CARD_CHARGE.
-         - O "amount" deve ser o VALOR TOTAL da compra.
-         - O campo "installments" deve conter o número de parcelas (ex: 3 ou 6).
+      - Se o usuário disser algo como "gastei 100 em 3x" ou "comprei 300 no cartão em 6x", você deve identificar que é uma compra parcelada.
+      - O evento deve ser ADD_CARD_CHARGE.
+      - O "amount" deve ser o VALOR TOTAL da compra.
+      - O campo "installments" deve conter o número de parcelas (ex: 3 ou 6).
 
       OBJETIVO: Analisar a mensagem e retornar um JSON com "reply" e opcionalmente uma lista de "events".
       
@@ -193,7 +193,8 @@ export const parseMessage = async (text: string, userName: string, context?: { r
       MENSAGEM DO USUÁRIO: "${text}"`,
       config: {
         responseMimeType: "application/json",
-        responseSchema: FINANCE_PARSER_SCHEMA
+        responseSchema: FINANCE_PARSER_SCHEMA,
+        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW }
       }
     });
 
