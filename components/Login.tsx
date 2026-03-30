@@ -16,7 +16,7 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
 
   return (
     <div className="flex flex-col items-center justify-center h-full bg-gradient-to-b from-[#075e54] to-[#128c7e] p-8 text-white">
-      <div className="w-20 h-20 bg-white rounded-3xl flex items-center justify-center mb-6 shadow-2xl animate-bounce">
+      <div className="w-20 h-20 bg-[var(--text-primary)] rounded-3xl flex items-center justify-center mb-6 shadow-2xl animate-bounce">
         <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#075e54" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
       </div>
       <h1 className="text-3xl font-black mb-2 tracking-tighter">GBFinancer</h1>
@@ -41,7 +41,7 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
         </div>
         <button 
           type="submit"
-          className="w-full bg-white text-[#075e54] font-black py-4 rounded-xl shadow-xl active:scale-95 transition-transform mt-4"
+          className="w-full bg-[var(--text-primary)] text-[#075e54] font-black py-4 rounded-xl shadow-xl active:scale-95 transition-transform mt-4"
         >
           ACESSAR MINHA CONTA
         </button>

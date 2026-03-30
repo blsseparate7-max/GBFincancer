@@ -250,28 +250,28 @@ const Extrato: React.FC<ExtratoProps> = ({ uid, cards, categories: userCategorie
   return (
     <div className="flex-1 flex flex-col min-h-full bg-[var(--bg-body)]">
       {/* Header / Filters */}
-      <div className="p-6 space-y-4 bg-white/5 border-b border-white/10">
+      <div className="p-6 space-y-4 bg-[var(--surface)] border-b border-[var(--border)]">
         <div className="flex justify-between items-end">
           <div>
             <h2 className="text-[10px] font-black text-[var(--green-whatsapp)] uppercase tracking-[0.4em] mb-1">Histórico Detalhado</h2>
-            <h1 className="text-3xl font-black text-white uppercase italic tracking-tighter">Extrato</h1>
+            <h1 className="text-3xl font-black text-[var(--text-primary)] uppercase italic tracking-tighter">Extrato</h1>
           </div>
           <div className="flex gap-2">
             <button 
               onClick={() => setFilterType('ALL')}
-              className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${filterType === 'ALL' ? 'bg-[var(--green-whatsapp)] text-white' : 'bg-white/5 text-gray-400'}`}
+              className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${filterType === 'ALL' ? 'bg-[var(--green-whatsapp)] text-white' : 'bg-[var(--bg-body)] border border-[var(--border)] text-[var(--text-muted)] hover:bg-white/5'}`}
             >
               Tudo
             </button>
             <button 
               onClick={() => setFilterType('INCOME')}
-              className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${filterType === 'INCOME' ? 'bg-emerald-500 text-white' : 'bg-white/5 text-gray-400'}`}
+              className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${filterType === 'INCOME' ? 'bg-emerald-500 text-white' : 'bg-[var(--bg-body)] border border-[var(--border)] text-[var(--text-muted)] hover:bg-white/5'}`}
             >
               Entradas
             </button>
             <button 
               onClick={() => setFilterType('EXPENSE')}
-              className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${filterType === 'EXPENSE' ? 'bg-red-500 text-white' : 'bg-white/5 text-gray-400'}`}
+              className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${filterType === 'EXPENSE' ? 'bg-red-500 text-white' : 'bg-[var(--bg-body)] border border-[var(--border)] text-[var(--text-muted)] hover:bg-white/5'}`}
             >
               Saídas
             </button>
@@ -280,25 +280,25 @@ const Extrato: React.FC<ExtratoProps> = ({ uid, cards, categories: userCategorie
 
         <div className="flex gap-2">
           <div className="relative flex-1">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500" size={18} />
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" size={18} />
             <input 
               type="text"
               placeholder="Buscar por descrição ou categoria..."
-              className="w-full bg-white/5 border border-white/10 rounded-2xl py-4 pl-12 pr-4 text-sm font-bold outline-none focus:border-[var(--green-whatsapp)] transition-all text-white"
+              className="w-full bg-[var(--bg-body)] border border-[var(--border)] rounded-2xl py-4 pl-12 pr-4 text-sm font-bold outline-none focus:border-[var(--green-whatsapp)] transition-all text-[var(--text-primary)]"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
             />
           </div>
           <button 
             onClick={() => setShowImport(true)}
-            className="px-4 rounded-2xl border bg-white/5 border-white/10 text-gray-400 hover:text-white transition-all flex items-center gap-2"
+            className="px-4 rounded-2xl border bg-[var(--bg-body)] border-[var(--border)] text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-all flex items-center gap-2"
           >
             <Upload size={18} />
             <span className="text-[10px] font-black uppercase hidden sm:inline">Importar</span>
           </button>
           <button 
             onClick={() => setShowFilters(!showFilters)}
-            className={`px-4 rounded-2xl border transition-all flex items-center gap-2 relative ${showFilters ? 'bg-[var(--green-whatsapp)] border-[var(--green-whatsapp)] text-white' : 'bg-white/5 border-white/10 text-gray-400 hover:text-white'}`}
+            className={`px-4 rounded-2xl border transition-all flex items-center gap-2 relative ${showFilters ? 'bg-[var(--green-whatsapp)] border-[var(--green-whatsapp)] text-white' : 'bg-[var(--bg-body)] border-[var(--border)] text-[var(--text-muted)] hover:text-[var(--text-primary)]'}`}
           >
             <Filter size={18} />
             <span className="text-[10px] font-black uppercase hidden sm:inline">Filtros</span>
@@ -309,33 +309,33 @@ const Extrato: React.FC<ExtratoProps> = ({ uid, cards, categories: userCategorie
         </div>
 
         {showFilters && (
-          <div className="p-6 bg-white/5 rounded-[2rem] border border-white/10 animate-in slide-in-from-top duration-300 relative">
+          <div className="p-6 bg-[var(--bg-body)] rounded-[2rem] border border-[var(--border)] animate-in slide-in-from-top duration-300 relative">
             <button 
               onClick={() => setShowFilters(false)}
-              className="absolute top-4 right-4 p-2 text-gray-500 hover:text-white transition-all"
+              className="absolute top-4 right-4 p-2 text-[var(--text-muted)] hover:text-white transition-all"
             >
               <X size={16} />
             </button>
             
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
               <div className="space-y-1">
-                <label className="text-[9px] font-black text-gray-500 uppercase ml-2">Início</label>
-                <input type="date" className="w-full bg-white/5 border border-white/10 rounded-xl p-3 text-xs font-bold text-white outline-none focus:border-[var(--green-whatsapp)]" value={startDate} onChange={e => setStartDate(e.target.value)} />
+                <label className="text-[9px] font-black text-[var(--text-muted)] uppercase ml-2">Início</label>
+                <input type="date" className="w-full bg-[var(--surface)] border border-[var(--border)] rounded-xl p-3 text-xs font-bold text-[var(--text-primary)] outline-none focus:border-[var(--green-whatsapp)]" value={startDate} onChange={e => setStartDate(e.target.value)} />
               </div>
               <div className="space-y-1">
-                <label className="text-[9px] font-black text-gray-500 uppercase ml-2">Fim</label>
-                <input type="date" className="w-full bg-white/5 border border-white/10 rounded-xl p-3 text-xs font-bold text-white outline-none focus:border-[var(--green-whatsapp)]" value={endDate} onChange={e => setEndDate(e.target.value)} />
+                <label className="text-[9px] font-black text-[var(--text-muted)] uppercase ml-2">Fim</label>
+                <input type="date" className="w-full bg-[var(--surface)] border border-[var(--border)] rounded-xl p-3 text-xs font-bold text-[var(--text-primary)] outline-none focus:border-[var(--green-whatsapp)]" value={endDate} onChange={e => setEndDate(e.target.value)} />
               </div>
             <div className="space-y-1">
-              <label className="text-[9px] font-black text-gray-500 uppercase ml-2">Categoria</label>
-              <select className="w-full bg-white/5 border border-white/10 rounded-xl p-3 text-xs font-bold text-white outline-none focus:border-[var(--green-whatsapp)] appearance-none" value={selectedCategory} onChange={e => setSelectedCategory(e.target.value)}>
+              <label className="text-[9px] font-black text-[var(--text-muted)] uppercase ml-2">Categoria</label>
+              <select className="w-full bg-[var(--surface)] border border-[var(--border)] rounded-xl p-3 text-xs font-bold text-[var(--text-primary)] outline-none focus:border-[var(--green-whatsapp)] appearance-none" value={selectedCategory} onChange={e => setSelectedCategory(e.target.value)}>
                 <option value="">Todas</option>
                 {categoriesList.map(c => <option key={c} value={c}>{c}</option>)}
               </select>
             </div>
             <div className="space-y-1">
-              <label className="text-[9px] font-black text-gray-500 uppercase ml-2">Método</label>
-              <select className="w-full bg-white/5 border border-white/10 rounded-xl p-3 text-xs font-bold text-white outline-none focus:border-[var(--green-whatsapp)] appearance-none" value={selectedMethod} onChange={e => setSelectedMethod(e.target.value)}>
+              <label className="text-[9px] font-black text-[var(--text-muted)] uppercase ml-2">Método</label>
+              <select className="w-full bg-[var(--surface)] border border-[var(--border)] rounded-xl p-3 text-xs font-bold text-[var(--text-primary)] outline-none focus:border-[var(--green-whatsapp)] appearance-none" value={selectedMethod} onChange={e => setSelectedMethod(e.target.value)}>
                 <option value="">Todos</option>
                 <option value="PIX">PIX</option>
                 <option value="CASH">Dinheiro</option>
@@ -344,20 +344,20 @@ const Extrato: React.FC<ExtratoProps> = ({ uid, cards, categories: userCategorie
             </div>
             {selectedMethod === 'CARD' && (
               <div className="space-y-1">
-                <label className="text-[9px] font-black text-gray-500 uppercase ml-2">Cartão</label>
-                <select className="w-full bg-white/5 border border-white/10 rounded-xl p-3 text-xs font-bold text-white outline-none focus:border-[var(--green-whatsapp)] appearance-none" value={selectedCard} onChange={e => setSelectedCard(e.target.value)}>
+                <label className="text-[9px] font-black text-[var(--text-muted)] uppercase ml-2">Cartão</label>
+                <select className="w-full bg-[var(--surface)] border border-[var(--border)] rounded-xl p-3 text-xs font-bold text-[var(--text-primary)] outline-none focus:border-[var(--green-whatsapp)] appearance-none" value={selectedCard} onChange={e => setSelectedCard(e.target.value)}>
                   <option value="">Todos</option>
                   {cards.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                 </select>
               </div>
             )}
             <div className="space-y-1">
-              <label className="text-[9px] font-black text-gray-500 uppercase ml-2">Valor Mín.</label>
-              <input type="number" className="w-full bg-white/5 border border-white/10 rounded-xl p-3 text-xs font-bold text-white outline-none focus:border-[var(--green-whatsapp)]" placeholder="0.00" value={minVal} onChange={e => setMinVal(e.target.value)} />
+              <label className="text-[9px] font-black text-[var(--text-muted)] uppercase ml-2">Valor Mín.</label>
+              <input type="number" className="w-full bg-[var(--surface)] border border-[var(--border)] rounded-xl p-3 text-xs font-bold text-[var(--text-primary)] outline-none focus:border-[var(--green-whatsapp)]" placeholder="0.00" value={minVal} onChange={e => setMinVal(e.target.value)} />
             </div>
             <div className="space-y-1">
-              <label className="text-[9px] font-black text-gray-500 uppercase ml-2">Valor Máx.</label>
-              <input type="number" className="w-full bg-white/5 border border-white/10 rounded-xl p-3 text-xs font-bold text-white outline-none focus:border-[var(--green-whatsapp)]" placeholder="99999" value={maxVal} onChange={e => setMaxVal(e.target.value)} />
+              <label className="text-[9px] font-black text-[var(--text-muted)] uppercase ml-2">Valor Máx.</label>
+              <input type="number" className="w-full bg-[var(--surface)] border border-[var(--border)] rounded-xl p-3 text-xs font-bold text-[var(--text-primary)] outline-none focus:border-[var(--green-whatsapp)]" placeholder="99999" value={maxVal} onChange={e => setMaxVal(e.target.value)} />
             </div>
             <div className="flex items-end">
               <button 
@@ -365,7 +365,7 @@ const Extrato: React.FC<ExtratoProps> = ({ uid, cards, categories: userCategorie
                   setStartDate(''); setEndDate(''); setSelectedCategory(''); setSelectedMethod('');
                   setSelectedCard(''); setMinVal(''); setMaxVal(''); setSearchTerm('');
                 }}
-                className="w-full bg-white/5 hover:bg-white/10 text-gray-400 py-3 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all"
+                className="w-full bg-[var(--surface)] hover:bg-white/10 text-[var(--text-muted)] py-3 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all border border-[var(--border)]"
               >
                 Limpar Filtros
               </button>
@@ -396,13 +396,13 @@ const Extrato: React.FC<ExtratoProps> = ({ uid, cards, categories: userCategorie
                   <div>
                     <h4 className="text-sm font-black text-white leading-tight">{t.description}</h4>
                     <div className="flex items-center gap-2 mt-1">
-                      <span className="text-[9px] font-black uppercase text-gray-500 flex items-center gap-1">
+                      <span className="text-[9px] font-black uppercase text-[var(--text-muted)] flex items-center gap-1">
                         <Tag size={10} /> {t.category}
                       </span>
-                      <span className="text-[9px] font-black uppercase text-gray-500 flex items-center gap-1">
+                      <span className="text-[9px] font-black uppercase text-[var(--text-muted)] flex items-center gap-1">
                         <Calendar size={10} /> {new Date(t.date).toLocaleDateString('pt-BR')}
                       </span>
-                      <span className="text-[9px] font-black uppercase text-gray-500 flex items-center gap-1">
+                      <span className="text-[9px] font-black uppercase text-[var(--text-muted)] flex items-center gap-1">
                         {getMethodIcon(t.paymentMethod)} {t.paymentMethod === 'CARD' ? getCardName(t.cardId) : t.paymentMethod}
                       </span>
                     </div>
@@ -413,10 +413,10 @@ const Extrato: React.FC<ExtratoProps> = ({ uid, cards, categories: userCategorie
                     {t.type === 'INCOME' ? '+' : '-'} {formatCurrency(t.amount)}
                   </p>
                   <div className="flex justify-end gap-2 mt-1 opacity-0 group-hover:opacity-100 transition-all">
-                    <Edit2 size={14} className="text-gray-500 hover:text-white" />
+                    <Edit2 size={14} className="text-[var(--text-muted)] hover:text-white" />
                     <Trash2 
                       size={14} 
-                      className="text-gray-500 hover:text-red-500" 
+                      className="text-[var(--text-muted)] hover:text-red-500" 
                       onClick={(e) => { e.stopPropagation(); handleDelete(t); }} 
                     />
                   </div>
@@ -428,7 +428,7 @@ const Extrato: React.FC<ExtratoProps> = ({ uid, cards, categories: userCategorie
               <button 
                 onClick={loadMore}
                 disabled={loadingMore}
-                className="w-full py-4 rounded-2xl border border-dashed border-white/20 text-[10px] font-black uppercase text-gray-500 hover:text-white hover:border-white/40 transition-all"
+                className="w-full py-4 rounded-2xl border border-dashed border-[var(--border)] text-[10px] font-black uppercase text-[var(--text-muted)] hover:text-white hover:border-white/40 transition-all"
               >
                 {loadingMore ? 'Carregando...' : 'Carregar mais transações'}
               </button>
@@ -446,34 +446,34 @@ const Extrato: React.FC<ExtratoProps> = ({ uid, cards, categories: userCategorie
       {/* Edit Modal */}
       {editingTrans && (
         <div className="fixed inset-0 z-[1000] bg-black/60 backdrop-blur-md flex items-center justify-center p-6 animate-fade">
-          <div className="bg-[#111b21] w-full max-w-sm rounded-[3rem] p-10 border border-white/10 shadow-2xl relative overflow-hidden">
+          <div className="bg-[var(--surface)] w-full max-w-sm rounded-[3rem] p-10 border border-[var(--border)] shadow-2xl relative overflow-hidden">
             <div className="absolute top-0 left-0 w-full h-1 bg-[var(--green-whatsapp)] opacity-50"></div>
             
             <button 
               onClick={() => setEditingTrans(null)}
-              className="absolute top-8 right-8 text-gray-500 hover:text-white transition-all"
+              className="absolute top-8 right-8 text-[var(--text-muted)] hover:text-white transition-all"
             >
               ✕
             </button>
 
-            <h3 className="text-xl font-black text-white uppercase italic mb-8 text-center">Editar Transação</h3>
+            <h3 className="text-xl font-black text-[var(--text-primary)] uppercase italic mb-8 text-center">Editar Transação</h3>
 
             <div className="space-y-5">
               <div className="space-y-1.5 text-center">
-                <label className="text-[9px] font-black text-gray-500 uppercase tracking-widest">Valor</label>
+                <label className="text-[9px] font-black text-[var(--text-muted)] uppercase tracking-widest">Valor</label>
                 <MoneyInput 
-                  className="w-full bg-white/5 border border-white/10 rounded-2xl p-6 text-3xl font-black text-center outline-none focus:border-[var(--green-whatsapp)] text-white transition-all"
+                  className="w-full bg-[var(--bg-body)] border border-[var(--border)] rounded-2xl p-6 text-3xl font-black text-center outline-none focus:border-[var(--green-whatsapp)] text-[var(--text-primary)] transition-all"
                   value={editAmount}
                   onChange={setEditAmount}
                 />
               </div>
 
               <div className="space-y-1.5">
-                <label className="text-[9px] font-black text-gray-500 uppercase ml-2 tracking-widest">Descrição</label>
+                <label className="text-[9px] font-black text-[var(--text-muted)] uppercase ml-2 tracking-widest">Descrição</label>
                 <div className="relative">
-                  <FileText className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500" size={16} />
+                  <FileText className="absolute left-4 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" size={16} />
                   <input 
-                    className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 pl-12 text-sm font-bold outline-none focus:border-[var(--green-whatsapp)] text-white transition-all"
+                    className="w-full bg-[var(--bg-body)] border border-[var(--border)] rounded-2xl p-4 pl-12 text-sm font-bold outline-none focus:border-[var(--green-whatsapp)] text-[var(--text-primary)] transition-all"
                     value={editDesc}
                     onChange={(e) => setEditDesc(e.target.value)}
                   />
@@ -482,11 +482,11 @@ const Extrato: React.FC<ExtratoProps> = ({ uid, cards, categories: userCategorie
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1.5">
-                  <label className="text-[9px] font-black text-gray-500 uppercase ml-2 tracking-widest">Categoria</label>
+                  <label className="text-[9px] font-black text-[var(--text-muted)] uppercase ml-2 tracking-widest">Categoria</label>
                   <div className="relative">
-                    <Tag className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500" size={16} />
+                    <Tag className="absolute left-4 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" size={16} />
                     <select 
-                      className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 pl-12 text-xs font-bold outline-none focus:border-[var(--green-whatsapp)] text-white transition-all appearance-none"
+                      className="w-full bg-[var(--bg-body)] border border-[var(--border)] rounded-2xl p-4 pl-12 text-xs font-bold outline-none focus:border-[var(--green-whatsapp)] text-[var(--text-primary)] transition-all appearance-none"
                       value={editCategory}
                       onChange={(e) => setEditCategory(e.target.value)}
                     >
@@ -495,16 +495,16 @@ const Extrato: React.FC<ExtratoProps> = ({ uid, cards, categories: userCategorie
                         <option key={c.id} value={c.name}>{c.name}</option>
                       ))}
                     </select>
-                    <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" size={14} />
+                    <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-[var(--text-muted)] pointer-events-none" size={14} />
                   </div>
                 </div>
                 <div className="space-y-1.5">
-                  <label className="text-[9px] font-black text-gray-500 uppercase ml-2 tracking-widest">Data</label>
+                  <label className="text-[9px] font-black text-[var(--text-muted)] uppercase ml-2 tracking-widest">Data</label>
                   <div className="relative">
-                    <Calendar className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500" size={16} />
+                    <Calendar className="absolute left-4 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" size={16} />
                     <input 
                       type="date"
-                      className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 pl-12 text-xs font-bold outline-none focus:border-[var(--green-whatsapp)] text-white transition-all"
+                      className="w-full bg-[var(--bg-body)] border border-[var(--border)] rounded-2xl p-4 pl-12 text-xs font-bold outline-none focus:border-[var(--green-whatsapp)] text-[var(--text-primary)] transition-all"
                       value={editDate}
                       onChange={(e) => setEditDate(e.target.value)}
                     />

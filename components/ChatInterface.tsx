@@ -754,7 +754,7 @@ const ChatInterface: React.FC<ChatProps> = ({
                       onClick={() => confirmPendingAction(w.id)}
                       className={`${isSuggested ? 'bg-[var(--green-whatsapp)] text-white border-white' : 'bg-[var(--bg-body)] text-[var(--text-primary)] border-[var(--border)]'} hover:bg-[var(--green-whatsapp)] hover:text-white border rounded-2xl py-3 px-2 text-[10px] font-black uppercase transition-all active:scale-95 flex flex-col items-center gap-1 relative overflow-hidden`}
                     >
-                      {isSuggested && <div className="absolute top-0 right-0 bg-white text-[var(--green-whatsapp)] text-[7px] px-1 font-black">Sugerido</div>}
+                      {isSuggested && <div className="absolute top-0 right-0 bg-[var(--text-primary)] text-[var(--green-whatsapp)] text-[7px] px-1 font-black">Sugerido</div>}
                       <span className="text-lg">{w.icon || '💰'}</span>
                       <span className="truncate w-full text-center">{w.name}</span>
                     </button>

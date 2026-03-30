@@ -69,8 +69,11 @@ service cloud.firestore {
 
     function isAdmin() {
       return isAuthenticated() &&
-        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'ADMIN' ||
-          (request.auth.token.email == "blsseparate7@gmail.com" && request.auth.token.email_verified == true));
+        (
+          (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'ADMIN') ||
+          (request.auth.token.email == "blsseparate7@gmail.com" && request.auth.token.email_verified == true)
+        );
     }
 
     function hasRequiredFields(fields) {
@@ -99,8 +102,8 @@ service cloud.firestore {
 
     function isValidSupportThread(data) {
       return hasRequiredFields(['status', 'source']) &&
-             (!('userId' in data) || data.userId is string) &&
-             (!('visitorId' in data) || data.visitorId is string) &&
+             (!('userId' in data) || data.userId == null || data.userId is string) &&
+             (!('visitorId' in data) || data.visitorId == null || data.visitorId is string) &&
              (!('userName' in data) || data.userName is string) &&
              (!('userEmail' in data) || isValidEmail(data.userEmail)) &&
              data.status in ['ai_active', 'waiting_admin', 'admin_active', 'closed'] &&
@@ -155,10 +158,11 @@ service cloud.firestore {
       allow create: if isValidSupportThread(request.resource.data) && 
                       (isAdmin() || 
                        (isAuthenticated() && request.resource.data.userId == request.auth.uid) || 
-                       (request.resource.data.visitorId != null));
-      allow update: if isAdmin() || 
-                      (isAuthenticated() && resource.data.userId == request.auth.uid) || 
-                      (resource.data.visitorId != null);
+                       (request.resource.data.visitorId != null && request.resource.data.userId == null));
+      allow update: if isValidSupportThread(request.resource.data) && 
+                      (isAdmin() || 
+                       (isAuthenticated() && resource.data.userId == request.auth.uid) || 
+                       (resource.data.visitorId != null));
       allow delete: if isAdmin();
 
       match /messages/{messageId} {
@@ -177,6 +181,11 @@ service cloud.firestore {
       allow create: if isAuthenticated() && request.resource.data.uid == request.auth.uid && 
                     request.resource.data.status == 'pending';
       allow update, delete: if false; // Only system/admin can update
+    }
+
+    match /usernames/{username} {
+      allow get: if true;
+      allow create: if isAuthenticated() && request.resource.data.uid == request.auth.uid;
     }
 
     // Default deny

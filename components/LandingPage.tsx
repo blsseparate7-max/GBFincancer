@@ -203,8 +203,6 @@ const LandingPage: React.FC<LandingPageProps> = ({ onLogin, onOpenSupport }) => 
           </div>
 
           <div className="flex items-center gap-2 opacity-40">
-            <ShieldCheck className="w-4 h-4 text-[#8696A0]" />
-            <p className="text-[10px] font-black text-[#8696A0] uppercase tracking-widest">Segurança Bancária</p>
           </div>
         </div>
         <div className="mt-12 text-center text-[9px] font-black text-[#8696A0]/20 uppercase tracking-[0.5em]">

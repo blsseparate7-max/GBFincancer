@@ -17,10 +17,10 @@ export const createCheckoutSession = async (uid: string) => {
 
 export const handleKiwifyRedirect = async (uid: string, checkoutId: string) => {
   try {
-    const sessionId = await createCheckoutSession(uid);
-    // Redireciona para a Kiwify passando o session_id como parâmetro customizado
-    // A Kiwify permite passar parâmetros na URL que são retornados no webhook
-    const checkoutUrl = `https://pay.kiwify.com.br/${checkoutId}?session_id=${sessionId}`;
+    // Redireciona para a Kiwify conforme solicitado pelo usuário
+    // O checkoutId passado por parâmetro pode ser ignorado se o usuário quer o link fixo j0VhQzs
+    const targetCheckoutId = checkoutId || 'j0VhQzs';
+    const checkoutUrl = `https://pay.kiwify.com.br/${targetCheckoutId}?uid=${uid}`;
     window.open(checkoutUrl, '_blank');
   } catch (error) {
     alert("Erro ao iniciar checkout. Tente novamente.");

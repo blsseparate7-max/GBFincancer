@@ -84,6 +84,16 @@
     "/supportThreads/{threadId}/messages/{messageId}": {
       "schema": "SupportMessage",
       "description": "Messages in a support thread"
+    },
+    "/usernames/{username}": {
+      "schema": {
+        "type": "object",
+        "properties": {
+          "uid": { "type": "string" }
+        },
+        "required": ["uid"]
+      },
+      "description": "Unique username to UID mapping"
     }
   }
 }

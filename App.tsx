@@ -65,6 +65,15 @@ const App: React.FC = () => {
         const userDoc = await getDoc(doc(db, "users", firebaseUser.uid));
         if (userDoc.exists()) {
           const userData = userDoc.data();
+          
+          // Bloqueio de conta excluída
+          if (userData.status === 'deleted' || userData.isActive === false) {
+            await signOut(auth);
+            setSession(null);
+            setIsInitializing(false);
+            return;
+          }
+
           const userSession: UserSession = {
             uid: firebaseUser.uid,
             userId: userData.userId,
@@ -366,7 +375,7 @@ const App: React.FC = () => {
       ) : <LandingPage onLogin={(s) => setSession(s)} onOpenSupport={() => setActiveTab('support')} />;
       case 'extrato': return session ? <Extrato uid={session.uid} cards={cards} categories={categories} /> : null;
       case 'categories': return session ? <CategoriesTab uid={session.uid} categories={categories} loading={loadingCategories} /> : null;
-      case 'dash': return session ? <Dashboard transactions={transactions} goals={goals} limits={limits} wallets={wallets} reminders={reminders} uid={session.uid} loading={loadingCards || loadingGoals || loadingLimits || loadingWallets} /> : null;
+      case 'dash': return session ? <Dashboard transactions={transactions} goals={goals} limits={limits} wallets={wallets} reminders={reminders} categories={categories} uid={session.uid} loading={loadingCards || loadingGoals || loadingLimits || loadingWallets} /> : null;
       case 'calendar': return session ? <CalendarTab transactions={transactions} reminders={reminders} loading={loadingReminders} /> : null;
       case 'goals': return session ? <Goals goals={goals} transactions={transactions} wallets={wallets} uid={session.uid} user={session} loading={loadingGoals} /> : null;
       case 'cc': return session ? <CreditCard transactions={transactions} uid={session.uid} cards={cards} wallets={wallets} loading={loadingCards} /> : null;
@@ -409,7 +418,7 @@ const App: React.FC = () => {
   };
 
   return (
-    <div className={`flex h-dvh w-full overflow-hidden ${activeTab === 'chat' ? 'theme-light' : ''} bg-[var(--bg-body)] text-[var(--text-primary)] transition-colors duration-300`}>
+    <div className={`flex h-dvh w-full overflow-hidden bg-[var(--bg-body)] text-[var(--text-primary)] transition-colors duration-300`}>
       
       {/* Overlay para fechar menu ao clicar fora */}
       {sidebarExpanded && (

@@ -176,7 +176,7 @@ const AdminPanel: React.FC<{ currentAdminId: string }> = ({ currentAdminId }) =>
               <button 
                 key={tab.id}
                 onClick={() => setActiveSubTab(tab.id as any)}
-                className={`w-full flex items-center gap-3 p-3.5 rounded-xl text-xs font-bold transition-all ${activeSubTab === tab.id ? 'bg-[#2a3942] text-[var(--green-whatsapp)]' : 'text-[var(--text-muted)] hover:bg-white/5'}`}
+                className={`w-full flex items-center gap-3 p-3.5 rounded-xl text-xs font-bold transition-all ${activeSubTab === tab.id ? 'bg-[var(--surface-hover)] text-[var(--green-whatsapp)]' : 'text-[var(--text-muted)] hover:bg-white/5'}`}
               >
                 <span className="text-lg">{tab.icon}</span>
                 {tab.label}
@@ -184,7 +184,7 @@ const AdminPanel: React.FC<{ currentAdminId: string }> = ({ currentAdminId }) =>
             ))}
           </nav>
 
-          <div className="p-4 bg-[#202c33] border-t border-[var(--border)]">
+          <div className="p-4 bg-[var(--bg-body)] border-t border-[var(--border)]">
             <p className="text-[9px] font-black text-[var(--text-muted)] uppercase text-center italic">Privacidade CEO: Dados Sensíveis Ocultos 🔒</p>
           </div>
         </aside>
@@ -196,7 +196,7 @@ const AdminPanel: React.FC<{ currentAdminId: string }> = ({ currentAdminId }) =>
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <div className="bg-[var(--surface)] p-6 rounded-3xl border border-[var(--border)]">
                   <p className="text-[9px] font-black text-[var(--text-muted)] uppercase mb-1">Total de Cadastros</p>
-                  <h3 className="text-3xl font-black">{stats.total}</h3>
+                  <h3 className="text-3xl font-black text-[var(--text-primary)]">{stats.total}</h3>
                 </div>
                 <div className="bg-[var(--surface)] p-6 rounded-3xl border border-[var(--border)]">
                   <p className="text-[9px] font-black text-[var(--text-muted)] uppercase mb-1">Assinaturas Ativas</p>
@@ -221,10 +221,10 @@ const AdminPanel: React.FC<{ currentAdminId: string }> = ({ currentAdminId }) =>
                     auditLogs.map(log => (
                       <div key={log.id} className="p-4 border-b border-[var(--border)] flex justify-between items-center text-[11px]">
                         <div className="flex gap-4 items-center">
-                          <span className="bg-[#2a3942] px-2 py-1 rounded-lg font-black text-[var(--green-whatsapp)]">{log.action}</span>
+                          <span className="bg-[var(--bg-body)] px-2 py-1 rounded-lg font-black text-[var(--green-whatsapp)]">{log.action}</span>
                           <span className="text-[var(--text-muted)] font-mono">{log.details}</span>
                         </div>
-                        <span className="text-[#667781]">{log.createdAt?.seconds ? new Date(log.createdAt.seconds * 1000).toLocaleString() : 'Recent'}</span>
+                        <span className="text-[var(--text-muted)]">{log.createdAt?.seconds ? new Date(log.createdAt.seconds * 1000).toLocaleString() : 'Recent'}</span>
                       </div>
                     ))
                   )}
@@ -237,7 +237,7 @@ const AdminPanel: React.FC<{ currentAdminId: string }> = ({ currentAdminId }) =>
             <div className="space-y-4 animate-fade">
               <div className="bg-[var(--surface)] rounded-3xl border border-[var(--border)] overflow-hidden">
                 <table className="w-full text-left">
-                  <thead className="bg-[#202c33] text-[9px] font-black text-[var(--text-muted)] uppercase">
+                  <thead className="bg-[var(--bg-body)] text-[9px] font-black text-[var(--text-muted)] uppercase">
                     <tr>
                       <th className="p-4">Nome</th>
                       <th className="p-4">Email</th>
@@ -251,7 +251,7 @@ const AdminPanel: React.FC<{ currentAdminId: string }> = ({ currentAdminId }) =>
                     {customers.map(user => {
                       const daysLeft = calculateDaysRemaining(user.subscriptionExpiryDate);
                       return (
-                        <tr key={user.uid} className="border-b border-[var(--border)] hover:bg-white/5 transition-all">
+                        <tr key={user.uid} className="border-b border-[var(--border)] hover:bg-white/5 transition-all text-[var(--text-primary)]">
                           <td className="p-4">
                             <div className="flex items-center gap-3">
                               <div className="w-8 h-8 rounded-full bg-[var(--green-whatsapp)]/20 flex items-center justify-center font-black text-[var(--green-whatsapp)] text-xs uppercase">
@@ -264,21 +264,21 @@ const AdminPanel: React.FC<{ currentAdminId: string }> = ({ currentAdminId }) =>
                             <p className="text-[11px] text-[var(--text-muted)]">{user.email}</p>
                           </td>
                           <td className="p-4">
-                            <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${user.subscriptionStatus === 'ACTIVE' ? 'bg-[#d9fdd3]/10 text-[var(--green-whatsapp)]' : 'bg-rose-500/10 text-rose-500'}`}>
+                            <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${user.subscriptionStatus === 'ACTIVE' ? 'bg-emerald-500/10 text-emerald-500' : 'bg-rose-500/10 text-rose-500'}`}>
                               {user.subscriptionStatus}
                             </span>
-                            <p className="text-[9px] text-[#667781] mt-1">{user.plan}</p>
+                            <p className="text-[9px] text-[var(--text-muted)] mt-1">{user.plan}</p>
                           </td>
                           <td className="p-4">
                             <div className="flex flex-col">
                               <span className={`font-black text-xs ${daysLeft > 5 ? 'text-[var(--green-whatsapp)]' : 'text-rose-500'}`}>
                                 {daysLeft} dias
                               </span>
-                              <span className="text-[9px] text-[#667781]">restantes</span>
+                              <span className="text-[9px] text-[var(--text-muted)]">restantes</span>
                             </div>
                           </td>
                           <td className="p-4">
-                            <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${user.status === 'active' ? 'bg-[#d9fdd3]/10 text-[var(--green-whatsapp)]' : 'bg-rose-500/10 text-rose-500'}`}>
+                            <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${user.status === 'active' ? 'bg-emerald-500/10 text-emerald-500' : 'bg-rose-500/10 text-rose-500'}`}>
                               {user.status}
                             </span>
                           </td>
@@ -318,15 +318,15 @@ const AdminPanel: React.FC<{ currentAdminId: string }> = ({ currentAdminId }) =>
                 <div className="space-y-4">
                   <div className="space-y-1">
                     <label className="text-[9px] font-black text-[var(--text-muted)] uppercase ml-2">Título da Mensagem</label>
-                    <input className="w-full bg-[#202c33] rounded-2xl p-4 text-sm font-bold outline-none border border-transparent focus:border-[var(--green-whatsapp)]" placeholder="Ex: Manutenção Programada" value={msgTitle} onChange={e => setMsgTitle(e.target.value)} />
+                    <input className="w-full bg-[var(--bg-body)] rounded-2xl p-4 text-sm font-bold outline-none border border-transparent focus:border-[var(--green-whatsapp)] text-[var(--text-primary)]" placeholder="Ex: Manutenção Programada" value={msgTitle} onChange={e => setMsgTitle(e.target.value)} />
                   </div>
                   <div className="space-y-1">
                     <label className="text-[9px] font-black text-[var(--text-muted)] uppercase ml-2">Corpo da Mensagem</label>
-                    <textarea className="w-full bg-[#202c33] rounded-2xl p-4 text-sm font-medium outline-none border border-transparent focus:border-[var(--green-whatsapp)] h-32" placeholder="Escreva o comunicado aqui..." value={msgBody} onChange={e => setMsgBody(e.target.value)} />
+                    <textarea className="w-full bg-[var(--bg-body)] rounded-2xl p-4 text-sm font-medium outline-none border border-transparent focus:border-[var(--green-whatsapp)] h-32 text-[var(--text-primary)]" placeholder="Escreva o comunicado aqui..." value={msgBody} onChange={e => setMsgBody(e.target.value)} />
                   </div>
                   <div className="space-y-1">
                     <label className="text-[9px] font-black text-[var(--text-muted)] uppercase ml-2">Destinatário (Vazio para Global)</label>
-                    <select className="w-full bg-[#202c33] rounded-2xl p-4 text-sm font-bold outline-none appearance-none text-[var(--text-muted)]" value={targetUser} onChange={e => setTargetUser(e.target.value)}>
+                    <select className="w-full bg-[var(--bg-body)] rounded-2xl p-4 text-sm font-bold outline-none appearance-none text-[var(--text-muted)] border border-transparent focus:border-[var(--green-whatsapp)]" value={targetUser} onChange={e => setTargetUser(e.target.value)}>
                       <option value="">TODOS OS USUÁRIOS (GLOBAL)</option>
                       {customers.map(u => <option key={u.uid} value={u.uid}>{u.userName} ({u.email})</option>)}
                     </select>
@@ -353,15 +353,15 @@ const AdminPanel: React.FC<{ currentAdminId: string }> = ({ currentAdminId }) =>
                 </header>
 
                 <div className="space-y-6">
-                  <div className="flex justify-between items-center p-4 bg-[#202c33] rounded-2xl">
+                  <div className="flex justify-between items-center p-4 bg-[var(--bg-body)] rounded-2xl">
                     <div>
-                      <h4 className="text-xs font-bold text-white">Porcentagem de Aporte</h4>
+                      <h4 className="text-xs font-bold text-[var(--text-primary)]">Porcentagem de Aporte</h4>
                       <p className="text-[9px] text-[var(--text-muted)] uppercase font-bold mt-0.5">Define a sugestão padrão do Dashboard</p>
                     </div>
                     <div className="flex items-center gap-3">
                       <input 
                         type="number" 
-                        className="bg-[var(--surface)] w-16 p-2 rounded-xl text-center font-black text-[var(--green-whatsapp)]" 
+                        className="bg-[var(--surface)] w-16 p-2 rounded-xl text-center font-black text-[var(--green-whatsapp)] border border-[var(--border)]" 
                         value={config?.defaultAportePercent || 30} 
                         onChange={e => handleUpdateConfig({ defaultAportePercent: parseInt(e.target.value) })}
                       />
@@ -369,9 +369,9 @@ const AdminPanel: React.FC<{ currentAdminId: string }> = ({ currentAdminId }) =>
                     </div>
                   </div>
 
-                  <div className="flex justify-between items-center p-4 bg-[#202c33] rounded-2xl">
+                  <div className="flex justify-between items-center p-4 bg-[var(--bg-body)] rounded-2xl">
                     <div>
-                      <h4 className="text-xs font-bold text-white">Modo Manutenção</h4>
+                      <h4 className="text-xs font-bold text-[var(--text-primary)]">Modo Manutenção</h4>
                       <p className="text-[9px] text-[var(--text-muted)] uppercase font-bold mt-0.5">Bloqueia acesso às funções financeiras</p>
                     </div>
                     <button 

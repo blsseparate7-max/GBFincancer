@@ -37,7 +37,7 @@ const Paywall: React.FC<PaywallProps> = ({ user, onLogout }) => {
   }
 
   return (
-    <div className="fixed inset-0 z-[2000] flex items-center justify-center p-6 bg-[#0B141A]/90 backdrop-blur-md overflow-hidden">
+    <div className="fixed inset-0 z-[2000] flex items-center justify-center p-6 bg-[var(--bg-body)]/90 backdrop-blur-md overflow-hidden">
       <div className="absolute inset-0 whatsapp-pattern opacity-[0.03] pointer-events-none"></div>
 
       <div className="w-full max-w-[420px] relative z-10 animate-fade text-center">
@@ -45,10 +45,10 @@ const Paywall: React.FC<PaywallProps> = ({ user, onLogout }) => {
           !
         </div>
         
-        <div className="bg-[#111B21] p-8 rounded-[2.5rem] shadow-2xl border border-[#2A3942]/60 backdrop-blur-sm">
+        <div className="bg-[var(--surface)] p-8 rounded-[2.5rem] shadow-2xl border border-[var(--border)] backdrop-blur-sm">
           <header className="mb-8">
-            <h2 className="text-2xl font-black text-[#E9EDEF] tracking-tight uppercase">Seu acesso expirou</h2>
-            <p className="text-sm text-[#8696A0] font-medium mt-3 leading-relaxed">
+            <h2 className="text-2xl font-black text-[var(--text-primary)] tracking-tight uppercase">Seu acesso expirou</h2>
+            <p className="text-sm text-[var(--text-muted)] font-medium mt-3 leading-relaxed">
               Seu período de teste terminou ou sua assinatura não está ativa. 
               Assine agora para continuar usando o sistema e manter sua vida financeira organizada.
             </p>
@@ -57,28 +57,28 @@ const Paywall: React.FC<PaywallProps> = ({ user, onLogout }) => {
           <div className="space-y-4">
             <button 
               onClick={handleSubscribe}
-              className="w-full bg-[#00A884] text-white font-black py-4 rounded-2xl text-[12px] uppercase tracking-[0.2em] shadow-xl shadow-[#00A884]/10 active:scale-95 transition-all flex items-center justify-center gap-3"
+              className="w-full bg-[var(--green-whatsapp)] text-white font-black py-4 rounded-2xl text-[12px] uppercase tracking-[0.2em] shadow-xl shadow-[var(--green-whatsapp)]/10 active:scale-95 transition-all flex items-center justify-center gap-3"
             >
               Assinar agora
             </button>
 
             <button 
               onClick={() => setIsDismissed(true)}
-              className="w-full bg-[#202C33] text-[#E9EDEF] font-bold py-3 rounded-2xl text-[10px] uppercase tracking-[0.1em] hover:bg-[#2A3942] transition-all"
+              className="w-full bg-[var(--bg-body)] text-[var(--text-primary)] font-bold py-3 rounded-2xl text-[10px] uppercase tracking-[0.1em] hover:bg-[var(--surface-hover)] transition-all border border-[var(--border)]"
             >
               Apenas visualizar (Limitado)
             </button>
 
             <button 
               onClick={onLogout}
-              className="w-full bg-transparent text-[#8696A0] font-bold py-2 rounded-2xl text-[10px] uppercase tracking-[0.1em] hover:text-[#E9EDEF] transition-all"
+              className="w-full bg-transparent text-[var(--text-muted)] font-bold py-2 rounded-2xl text-[10px] uppercase tracking-[0.1em] hover:text-[var(--text-primary)] transition-all"
             >
               Sair da conta
             </button>
           </div>
         </div>
 
-        <p className="mt-8 text-[10px] font-black text-[#8696A0]/40 uppercase tracking-widest">
+        <p className="mt-8 text-[10px] font-black text-[var(--text-muted)]/40 uppercase tracking-widest">
           Dúvidas? Entre em contato com nosso suporte.
         </p>
       </div>

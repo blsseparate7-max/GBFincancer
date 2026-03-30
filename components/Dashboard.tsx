@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useEffect } from 'react';
-import { Transaction, SavingGoal, CategoryLimit, Wallet, Bill } from '../types';
+import { Transaction, SavingGoal, CategoryLimit, Wallet, Bill, UserCategory } from '../types';
 import { dispatchEvent } from '../services/eventDispatcher';
 import { normalizeCategoryName } from '../services/normalizationService';
 import OnboardingChecklist from './OnboardingChecklist';
@@ -23,12 +23,24 @@ interface DashProps {
   limits: CategoryLimit[];
   wallets: Wallet[];
   reminders: Bill[];
+  categories: UserCategory[];
   uid: string;
   loading?: boolean;
 }
 
-const Dashboard: React.FC<DashProps> = ({ transactions, goals, limits, wallets, reminders, uid, loading }) => {
+const Dashboard: React.FC<DashProps> = ({ transactions, goals, limits, wallets, reminders, categories, uid, loading }) => {
   const [showLimitModal, setShowLimitModal] = useState(false);
+  const [showAddModal, setShowAddModal] = useState(false);
+  
+  // Transaction Form State
+  const [txType, setTxType] = useState<'INCOME' | 'EXPENSE'>('EXPENSE');
+  const [txDesc, setTxDesc] = useState('');
+  const [txAmount, setTxAmount] = useState<number>(0);
+  const [txCategory, setTxCategory] = useState('');
+  const [txDate, setTxDate] = useState(new Date().toISOString().split('T')[0]);
+  const [txWalletId, setTxWalletId] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+
   const [limitCat, setLimitCat] = useState('');
   const [limitVal, setLimitVal] = useState('');
   const [selectedDay, setSelectedDay] = useState<number | null>(null);
@@ -263,6 +275,36 @@ const Dashboard: React.FC<DashProps> = ({ transactions, goals, limits, wallets, 
     setLimitCat(''); setLimitVal(''); setShowLimitModal(false);
   };
 
+  const handleSaveTransaction = async () => {
+    if (!txDesc || txAmount <= 0 || !txCategory || !txWalletId) return;
+    setIsSaving(true);
+    try {
+      await dispatchEvent(uid, {
+        type: txType === 'INCOME' ? 'ADD_INCOME' : 'ADD_EXPENSE',
+        payload: {
+          description: txDesc,
+          amount: txAmount,
+          category: txCategory,
+          date: txDate,
+          sourceWalletId: txWalletId,
+          paymentMethod: 'CASH' // Default for manual entry
+        },
+        source: 'ui',
+        createdAt: new Date()
+      });
+      setShowAddModal(false);
+      // Reset form
+      setTxDesc('');
+      setTxAmount(0);
+      setTxCategory('');
+      setTxWalletId('');
+    } catch (error) {
+      console.error("Erro ao salvar transação:", error);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="p-6 space-y-8 animate-pulse">
@@ -277,9 +319,17 @@ const Dashboard: React.FC<DashProps> = ({ transactions, goals, limits, wallets, 
 
   return (    <div className="p-4 md:p-8 space-y-8 animate-fade pb-32 relative z-10 max-w-7xl mx-auto min-h-full">
       <header className="flex flex-col md:flex-row md:items-end justify-between gap-4">
-        <div>
-          <p className="text-[10px] font-black text-[var(--green-whatsapp)] uppercase tracking-[0.4em] mb-2">Visão Geral Estratégica</p>
-          <h1 className="text-4xl md:text-5xl font-black text-[var(--text-primary)] uppercase italic tracking-tighter leading-none">Dashboard</h1>
+        <div className="flex flex-col md:flex-row md:items-end gap-6">
+          <div>
+            <p className="text-[10px] font-black text-[var(--green-whatsapp)] uppercase tracking-[0.4em] mb-2">Visão Geral Estratégica</p>
+            <h1 className="text-4xl md:text-5xl font-black text-[var(--text-primary)] uppercase italic tracking-tighter leading-none">Dashboard</h1>
+          </div>
+          <button 
+            onClick={() => setShowAddModal(true)}
+            className="hidden md:flex items-center gap-2 px-6 py-3 bg-[var(--green-whatsapp)] text-white rounded-2xl font-black text-[11px] uppercase shadow-lg shadow-[var(--green-whatsapp)]/20 hover:scale-105 transition-all active:scale-95"
+          >
+            <Plus size={16} /> Adicionar Manualmente
+          </button>
         </div>
         <div className="flex items-center gap-2 px-4 py-2 bg-[var(--surface)] rounded-2xl border border-[var(--border)] shadow-sm">
           <Calendar size={14} className="text-[var(--green-whatsapp)]" />
@@ -300,7 +350,7 @@ const Dashboard: React.FC<DashProps> = ({ transactions, goals, limits, wallets, 
           <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:scale-110 transition-transform">
             <Sparkles size={80} />
           </div>
-          <div className="w-12 h-12 bg-white/20 rounded-2xl flex items-center justify-center shrink-0">
+          <div className="w-12 h-12 bg-white/10 rounded-2xl flex items-center justify-center shrink-0">
             <Lightbulb size={24} />
           </div>
           <div className="flex-1">
@@ -710,19 +760,130 @@ const Dashboard: React.FC<DashProps> = ({ transactions, goals, limits, wallets, 
       <motion.button
         whileHover={{ scale: 1.1 }}
         whileTap={{ scale: 0.9 }}
-        onClick={() => {
-          // Logic to open chat with focus or a quick modal
-          const chatInput = document.querySelector('textarea');
-          if (chatInput) {
-            chatInput.focus();
-            // We could also scroll to chat
-            chatInput.scrollIntoView({ behavior: 'smooth' });
-          }
-        }}
+        onClick={() => setShowAddModal(true)}
         className="fixed bottom-24 right-6 w-16 h-16 bg-[var(--green-whatsapp)] text-white rounded-full shadow-2xl flex items-center justify-center z-[100] md:hidden border-4 border-[var(--bg-body)]"
       >
         <Plus size={32} />
       </motion.button>
+
+      {/* Modal Adicionar Transação */}
+      <AnimatePresence>
+        {showAddModal && (
+          <div className="fixed inset-0 z-[200] flex items-center justify-center p-6">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowAddModal(false)}
+              className="absolute inset-0 bg-black/80 backdrop-blur-xl"
+            />
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="bg-[var(--surface)] w-full max-w-md rounded-[3rem] p-10 shadow-2xl relative border border-[var(--border)] animate-fade max-h-[90vh] overflow-y-auto"
+            >
+              <button 
+                onClick={() => setShowAddModal(false)} 
+                className="absolute top-8 right-8 w-10 h-10 bg-[var(--bg-body)] rounded-full flex items-center justify-center text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-all active:scale-90 border border-[var(--border)]"
+              >
+                ✕
+              </button>
+              
+              <div className="text-center mb-8">
+                <p className="text-[10px] font-black text-[var(--green-whatsapp)] uppercase tracking-[0.4em] mb-2">Registro Manual</p>
+                <h3 className="text-2xl font-black text-[var(--text-primary)] uppercase italic tracking-tighter leading-none">Nova Transação</h3>
+              </div>
+
+              <div className="space-y-5">
+                {/* Tipo de Transação */}
+                <div className="flex p-1 bg-[var(--bg-body)] rounded-2xl border border-[var(--border)]">
+                  <button 
+                    onClick={() => setTxType('EXPENSE')}
+                    className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${txType === 'EXPENSE' ? 'bg-rose-500 text-white shadow-lg' : 'text-[var(--text-muted)]'}`}
+                  >
+                    Gasto
+                  </button>
+                  <button 
+                    onClick={() => setTxType('INCOME')}
+                    className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${txType === 'INCOME' ? 'bg-[var(--green-whatsapp)] text-white shadow-lg' : 'text-[var(--text-muted)]'}`}
+                  >
+                    Ganho
+                  </button>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-[9px] font-black text-[var(--text-muted)] uppercase ml-4 tracking-widest">Descrição</label>
+                  <input 
+                    className="w-full bg-[var(--bg-body)] rounded-2xl p-4 text-sm font-black text-[var(--text-primary)] outline-none border border-transparent focus:border-[var(--green-whatsapp)] transition-all shadow-inner" 
+                    placeholder="Ex: Almoço, Salário..." 
+                    value={txDesc} 
+                    onChange={e => setTxDesc(e.target.value)} 
+                  />
+                </div>
+                
+                <div className="space-y-1.5">
+                  <label className="text-[9px] font-black text-[var(--text-muted)] uppercase ml-4 tracking-widest">Valor</label>
+                  <MoneyInput 
+                    className="w-full bg-[var(--bg-body)] rounded-2xl p-4 text-2xl font-black text-[var(--text-primary)] outline-none border border-transparent focus:border-[var(--green-whatsapp)] transition-all shadow-inner text-center" 
+                    placeholder="R$ 0,00" 
+                    value={txAmount} 
+                    onChange={val => setTxAmount(val)} 
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <label className="text-[9px] font-black text-[var(--text-muted)] uppercase ml-4 tracking-widest">Categoria</label>
+                    <select 
+                      className="w-full bg-[var(--bg-body)] rounded-2xl p-4 text-xs font-black text-[var(--text-primary)] outline-none border border-transparent focus:border-[var(--green-whatsapp)] transition-all shadow-inner appearance-none"
+                      value={txCategory}
+                      onChange={e => setTxCategory(e.target.value)}
+                    >
+                      <option value="">Selecionar</option>
+                      {categories.filter(c => c.type === txType).map(c => (
+                        <option key={c.id} value={c.name}>{c.name}</option>
+                      ))}
+                      <option value="Outros">Outros</option>
+                    </select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-[9px] font-black text-[var(--text-muted)] uppercase ml-4 tracking-widest">Data</label>
+                    <input 
+                      type="date"
+                      className="w-full bg-[var(--bg-body)] rounded-2xl p-4 text-xs font-black text-[var(--text-primary)] outline-none border border-transparent focus:border-[var(--green-whatsapp)] transition-all shadow-inner"
+                      value={txDate}
+                      onChange={e => setTxDate(e.target.value)}
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-[9px] font-black text-[var(--text-muted)] uppercase ml-4 tracking-widest">Carteira / Conta</label>
+                  <select 
+                    className="w-full bg-[var(--bg-body)] rounded-2xl p-4 text-xs font-black text-[var(--text-primary)] outline-none border border-transparent focus:border-[var(--green-whatsapp)] transition-all shadow-inner appearance-none"
+                    value={txWalletId}
+                    onChange={e => setTxWalletId(e.target.value)}
+                  >
+                    <option value="">Selecionar Carteira</option>
+                    {wallets.filter(w => w.isActive !== false).map(w => (
+                      <option key={w.id} value={w.id}>{w.name} ({format(w.balance)})</option>
+                    ))}
+                  </select>
+                </div>
+
+                <button 
+                  onClick={handleSaveTransaction} 
+                  disabled={isSaving || !txDesc || txAmount <= 0 || !txCategory || !txWalletId}
+                  className="w-full bg-[var(--green-whatsapp)] text-white py-5 rounded-2xl font-black text-[11px] uppercase shadow-xl shadow-[var(--green-whatsapp)]/20 mt-6 active:scale-95 transition-all disabled:opacity-50 disabled:active:scale-100"
+                >
+                  {isSaving ? <Loader2 className="animate-spin mx-auto" size={18} /> : 'Salvar Transação'}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };

@@ -99,28 +99,28 @@ const ImportData: React.FC<ImportDataProps> = ({ uid, onClose }) => {
 
   return (
     <div className="fixed inset-0 z-[5000] bg-black/80 backdrop-blur-md flex items-center justify-center p-6 animate-fade">
-      <div className="bg-[#111B21] w-full max-w-md rounded-[3rem] p-8 border border-[#2A3942] shadow-2xl flex flex-col relative overflow-hidden">
+      <div className="bg-[var(--surface)] w-full max-w-md rounded-[3rem] p-8 border border-[var(--border)] shadow-2xl flex flex-col relative overflow-hidden">
         <div className="absolute top-0 left-0 w-full h-1 bg-[var(--green-whatsapp)] opacity-50"></div>
         
-        <button onClick={onClose} className="absolute top-8 right-8 text-[#8696A0] hover:text-[#E9EDEF] transition-all">
+        <button onClick={onClose} className="absolute top-8 right-8 text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-all">
           <X size={24} />
         </button>
 
-        <h3 className="text-xl font-black text-[#E9EDEF] uppercase italic mb-8 tracking-tighter flex items-center gap-3">
+        <h3 className="text-xl font-black text-[var(--text-primary)] uppercase italic mb-8 tracking-tighter flex items-center gap-3">
           <Upload className="text-[var(--green-whatsapp)]" size={24} />
           Importar Dados
         </h3>
 
-        <div className="flex gap-2 mb-8 bg-[#202C33] p-1.5 rounded-2xl">
+        <div className="flex gap-2 mb-8 bg-[var(--bg-body)] p-1.5 rounded-2xl">
           <button 
             onClick={() => setActiveTab('CSV')}
-            className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 ${activeTab === 'CSV' ? 'bg-[#00A884] text-white' : 'text-[#8696A0]'}`}
+            className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 ${activeTab === 'CSV' ? 'bg-[var(--green-whatsapp)] text-white' : 'text-[var(--text-muted)]'}`}
           >
             <FileUp size={14} /> CSV / Excel
           </button>
           <button 
             onClick={() => setActiveTab('TEXT')}
-            className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 ${activeTab === 'TEXT' ? 'bg-[#00A884] text-white' : 'text-[#8696A0]'}`}
+            className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 ${activeTab === 'TEXT' ? 'bg-[var(--green-whatsapp)] text-white' : 'text-[var(--text-muted)]'}`}
           >
             <Clipboard size={14} /> Colar Texto
           </button>
@@ -129,26 +129,26 @@ const ImportData: React.FC<ImportDataProps> = ({ uid, onClose }) => {
         <div className="flex-1 space-y-6">
           {activeTab === 'CSV' ? (
             <div className="space-y-4">
-              <p className="text-xs text-[#8696A0] font-medium leading-relaxed">
+              <p className="text-xs text-[var(--text-muted)] font-medium leading-relaxed">
                 Suba o arquivo CSV exportado do seu banco. O sistema tentará identificar automaticamente os valores, datas e descrições.
               </p>
               
-              <label className="flex flex-col items-center justify-center w-full h-40 border-2 border-dashed border-[#2A3942] rounded-[2rem] cursor-pointer hover:bg-white/5 transition-all group">
+              <label className="flex flex-col items-center justify-center w-full h-40 border-2 border-dashed border-[var(--border)] rounded-[2rem] cursor-pointer hover:bg-white/5 transition-all group">
                 <div className="flex flex-col items-center justify-center pt-5 pb-6">
-                  <FileUp className="w-10 h-10 mb-3 text-[#8696A0] group-hover:text-[var(--green-whatsapp)] transition-all" />
-                  <p className="mb-2 text-sm text-[#E9EDEF] font-bold">Clique para selecionar</p>
-                  <p className="text-[10px] text-[#8696A0] uppercase font-black">CSV ou TXT</p>
+                  <FileUp className="w-10 h-10 mb-3 text-[var(--text-muted)] group-hover:text-[var(--green-whatsapp)] transition-all" />
+                  <p className="mb-2 text-sm text-[var(--text-primary)] font-bold">Clique para selecionar</p>
+                  <p className="text-[10px] text-[var(--text-muted)] uppercase font-black">CSV ou TXT</p>
                 </div>
                 <input type="file" className="hidden" accept=".csv,.txt" onChange={handleCSVUpload} disabled={isProcessing} />
               </label>
             </div>
           ) : (
             <div className="space-y-4">
-              <p className="text-xs text-[#8696A0] font-medium leading-relaxed">
+              <p className="text-xs text-[var(--text-muted)] font-medium leading-relaxed">
                 Cole aqui o texto da notificação do banco ou do extrato. O GB processará as informações para você.
               </p>
               <textarea 
-                className="w-full h-40 bg-[#202C33] border border-[#2A3942] rounded-[2rem] p-5 text-sm font-bold text-[#E9EDEF] outline-none focus:border-[var(--green-whatsapp)] transition-all resize-none"
+                className="w-full h-40 bg-[var(--bg-body)] border border-[var(--border)] rounded-[2rem] p-5 text-sm font-bold text-[var(--text-primary)] outline-none focus:border-[var(--green-whatsapp)] transition-all resize-none"
                 placeholder="Ex: Compra aprovada no valor de R$ 50,00 no Supermercado..."
                 value={pastedText}
                 onChange={(e) => setPastedText(e.target.value)}
@@ -192,8 +192,8 @@ const ImportData: React.FC<ImportDataProps> = ({ uid, onClose }) => {
           )}
         </div>
 
-        <div className="mt-8 pt-6 border-t border-[#2A3942]">
-          <p className="text-[9px] text-[#8696A0] font-bold uppercase text-center tracking-widest">
+        <div className="mt-8 pt-6 border-t border-[var(--border)]">
+          <p className="text-[9px] text-[var(--text-muted)] font-bold uppercase text-center tracking-widest">
             Dica: Você também pode enviar prints de extratos diretamente no Chat do GB!
           </p>
         </div>
