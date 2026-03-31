@@ -13,11 +13,14 @@ interface ExtratoProps {
   uid: string;
   cards: CreditCardInfo[];
   categories: UserCategory[];
+  wallets: any[];
+  transactions?: Transaction[];
+  loading?: boolean;
 }
 
-const Extrato: React.FC<ExtratoProps> = ({ uid, cards, categories: userCategories }) => {
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [loading, setLoading] = useState(true);
+const Extrato: React.FC<ExtratoProps> = ({ uid, cards, categories: userCategories, wallets, transactions: propsTransactions, loading: propsLoading }) => {
+  const [localTransactions, setLocalTransactions] = useState<Transaction[]>([]);
+  const [localLoading, setLocalLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [lastDoc, setLastDoc] = useState<any>(null);
   const [hasMore, setHasMore] = useState(true);
@@ -41,6 +44,11 @@ const Extrato: React.FC<ExtratoProps> = ({ uid, cards, categories: userCategorie
   const [editAmount, setEditAmount] = useState<number>(0);
   const [editDate, setEditDate] = useState('');
   const [editCategory, setEditCategory] = useState('');
+  const [editType, setEditType] = useState<'INCOME' | 'EXPENSE' | 'SAVING'>('EXPENSE');
+  const [editPaymentMethod, setEditPaymentMethod] = useState<'CASH' | 'PIX' | 'CARD'>('CASH');
+  const [editCardId, setEditCardId] = useState('');
+  const [editSourceWalletId, setEditSourceWalletId] = useState('');
+  const [editTargetWalletId, setEditTargetWalletId] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<Transaction | null>(null);
@@ -50,7 +58,14 @@ const Extrato: React.FC<ExtratoProps> = ({ uid, cards, categories: userCategorie
   useEffect(() => {
     if (!uid) return;
     
-    setLoading(true);
+    // Se temos transações via props e não há filtros de data, usamos as props para sincronização real-time
+    if (propsTransactions && !startDate && !endDate) {
+      setLocalTransactions(propsTransactions);
+      setLocalLoading(false);
+      return;
+    }
+
+    setLocalLoading(true);
     const userRef = doc(db, "users", uid);
     let q = query(
       collection(userRef, "transactions"),
@@ -70,17 +85,20 @@ const Extrato: React.FC<ExtratoProps> = ({ uid, cards, categories: userCategorie
 
     const unsubscribe = onSnapshot(qLimited, (snap) => {
       const docs = snap.docs.map(d => normalizeTransaction(d));
-      setTransactions(docs);
+      setLocalTransactions(docs);
       setLastDoc(snap.docs[snap.docs.length - 1]);
       setHasMore(snap.docs.length === PAGE_SIZE);
-      setLoading(false);
+      setLocalLoading(false);
     }, (err) => {
       console.error("Firestore Error:", err);
-      setLoading(false);
+      setLocalLoading(false);
     });
 
     return () => unsubscribe();
-  }, [uid, startDate, endDate]);
+  }, [uid, startDate, endDate, propsTransactions]);
+
+  const transactions = localTransactions;
+  const loading = localLoading;
 
   const loadMore = async () => {
     if (!lastDoc || loadingMore || !hasMore) return;
@@ -106,7 +124,7 @@ const Extrato: React.FC<ExtratoProps> = ({ uid, cards, categories: userCategorie
     const snap = await getDocs(qPaged);
     if (!snap.empty) {
       const newDocs = snap.docs.map(d => normalizeTransaction(d));
-      setTransactions(prev => [...prev, ...newDocs]);
+      setLocalTransactions(prev => [...prev, ...newDocs]);
       setLastDoc(snap.docs[snap.docs.length - 1]);
       setHasMore(snap.docs.length === PAGE_SIZE);
     } else {
@@ -121,6 +139,11 @@ const Extrato: React.FC<ExtratoProps> = ({ uid, cards, categories: userCategorie
     setEditAmount(t.amount);
     setEditDate(t.date.split('T')[0]);
     setEditCategory(t.category);
+    setEditType(t.type);
+    setEditPaymentMethod(t.paymentMethod || 'CASH');
+    setEditCardId(t.cardId || '');
+    setEditSourceWalletId(t.sourceWalletId || '');
+    setEditTargetWalletId(t.targetWalletId || '');
   };
 
   const handleSaveEdit = async () => {
@@ -136,7 +159,12 @@ const Extrato: React.FC<ExtratoProps> = ({ uid, cards, categories: userCategorie
             description: editDesc,
             amount: editAmount,
             date: new Date(editDate).toISOString(),
-            category: editCategory
+            category: editCategory,
+            type: editType,
+            paymentMethod: editPaymentMethod,
+            cardId: editPaymentMethod === 'CARD' ? editCardId : null,
+            sourceWalletId: editType === 'EXPENSE' ? editSourceWalletId : null,
+            targetWalletId: editType === 'INCOME' ? editTargetWalletId : null
           },
           oldData: editingTrans
         },
@@ -482,6 +510,17 @@ const Extrato: React.FC<ExtratoProps> = ({ uid, cards, categories: userCategorie
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1.5">
+                  <label className="text-[9px] font-black text-[var(--text-muted)] uppercase ml-2 tracking-widest">Tipo</label>
+                  <select 
+                    className="w-full bg-[var(--bg-body)] border border-[var(--border)] rounded-2xl p-4 text-xs font-bold outline-none focus:border-[var(--green-whatsapp)] text-[var(--text-primary)] transition-all appearance-none"
+                    value={editType}
+                    onChange={(e) => setEditType(e.target.value as any)}
+                  >
+                    <option value="EXPENSE">Saída</option>
+                    <option value="INCOME">Entrada</option>
+                  </select>
+                </div>
+                <div className="space-y-1.5">
                   <label className="text-[9px] font-black text-[var(--text-muted)] uppercase ml-2 tracking-widest">Categoria</label>
                   <div className="relative">
                     <Tag className="absolute left-4 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" size={16} />
@@ -498,6 +537,21 @@ const Extrato: React.FC<ExtratoProps> = ({ uid, cards, categories: userCategorie
                     <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-[var(--text-muted)] pointer-events-none" size={14} />
                   </div>
                 </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <label className="text-[9px] font-black text-[var(--text-muted)] uppercase ml-2 tracking-widest">Método</label>
+                  <select 
+                    className="w-full bg-[var(--bg-body)] border border-[var(--border)] rounded-2xl p-4 text-xs font-bold outline-none focus:border-[var(--green-whatsapp)] text-[var(--text-primary)] transition-all appearance-none"
+                    value={editPaymentMethod}
+                    onChange={(e) => setEditPaymentMethod(e.target.value as any)}
+                  >
+                    <option value="CASH">Dinheiro</option>
+                    <option value="PIX">PIX</option>
+                    <option value="CARD">Cartão</option>
+                  </select>
+                </div>
                 <div className="space-y-1.5">
                   <label className="text-[9px] font-black text-[var(--text-muted)] uppercase ml-2 tracking-widest">Data</label>
                   <div className="relative">
@@ -511,6 +565,48 @@ const Extrato: React.FC<ExtratoProps> = ({ uid, cards, categories: userCategorie
                   </div>
                 </div>
               </div>
+
+              {editPaymentMethod === 'CARD' && (
+                <div className="space-y-1.5">
+                  <label className="text-[9px] font-black text-[var(--text-muted)] uppercase ml-2 tracking-widest">Cartão de Crédito</label>
+                  <select 
+                    className="w-full bg-[var(--bg-body)] border border-[var(--border)] rounded-2xl p-4 text-xs font-bold outline-none focus:border-[var(--green-whatsapp)] text-[var(--text-primary)] transition-all appearance-none"
+                    value={editCardId}
+                    onChange={(e) => setEditCardId(e.target.value)}
+                  >
+                    <option value="">Selecione um cartão...</option>
+                    {cards.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  </select>
+                </div>
+              )}
+
+              {editType === 'EXPENSE' && editPaymentMethod !== 'CARD' && (
+                <div className="space-y-1.5">
+                  <label className="text-[9px] font-black text-[var(--text-muted)] uppercase ml-2 tracking-widest">Carteira de Origem</label>
+                  <select 
+                    className="w-full bg-[var(--bg-body)] border border-[var(--border)] rounded-2xl p-4 text-xs font-bold outline-none focus:border-[var(--green-whatsapp)] text-[var(--text-primary)] transition-all appearance-none"
+                    value={editSourceWalletId}
+                    onChange={(e) => setEditSourceWalletId(e.target.value)}
+                  >
+                    <option value="">Selecione uma carteira...</option>
+                    {wallets.map(w => <option key={w.id} value={w.id}>{w.name} (R$ {w.balance.toFixed(2)})</option>)}
+                  </select>
+                </div>
+              )}
+
+              {editType === 'INCOME' && (
+                <div className="space-y-1.5">
+                  <label className="text-[9px] font-black text-[var(--text-muted)] uppercase ml-2 tracking-widest">Carteira de Destino</label>
+                  <select 
+                    className="w-full bg-[var(--bg-body)] border border-[var(--border)] rounded-2xl p-4 text-xs font-bold outline-none focus:border-[var(--green-whatsapp)] text-[var(--text-primary)] transition-all appearance-none"
+                    value={editTargetWalletId}
+                    onChange={(e) => setEditTargetWalletId(e.target.value)}
+                  >
+                    <option value="">Selecione uma carteira...</option>
+                    {wallets.map(w => <option key={w.id} value={w.id}>{w.name} (R$ {w.balance.toFixed(2)})</option>)}
+                  </select>
+                </div>
+              )}
 
               <div className="pt-4 space-y-3">
                 <button 

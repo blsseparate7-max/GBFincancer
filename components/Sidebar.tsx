@@ -10,7 +10,7 @@ interface SidebarProps {
 }
 
 const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, expanded, setExpanded, role, onClose }) => {
-  const isAdmin = role === 'ADMIN';
+  const isAdmin = role === 'admin';
 
   const groups = [
     {

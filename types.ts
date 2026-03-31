@@ -193,7 +193,7 @@ export interface UserSession {
   name: string;
   email: string;
   isLoggedIn: boolean;
-  role: 'USER' | 'ADMIN';
+  role: 'user' | 'admin';
   subscriptionStatus: SubscriptionStatus;
   plan?: SubscriptionPlan;
   trialEndsAt?: any;
@@ -235,7 +235,7 @@ export interface CustomerData {
   email: string;
   subscriptionStatus: SubscriptionStatus;
   status?: 'active' | 'blocked' | 'deleted';
-  role?: 'USER' | 'ADMIN';
+  role?: 'user' | 'admin';
   plan: SubscriptionPlan;
   trialEndsAt?: any;
   subscriptionEndsAt?: any;

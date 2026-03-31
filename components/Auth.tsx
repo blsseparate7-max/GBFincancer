@@ -8,7 +8,9 @@ import {
   setPersistence,
   browserLocalPersistence,
   GoogleAuthProvider,
-  signInWithPopup
+  signInWithPopup,
+  signInWithRedirect,
+  getRedirectResult
 } from 'firebase/auth';
 import { doc, setDoc, getDoc, serverTimestamp } from 'firebase/firestore';
 import { UserSession } from '../types';
@@ -28,7 +30,6 @@ const Auth: React.FC<AuthProps> = ({ onLogin, onOpenSupport, initialView = 'logi
   const [showPassword, setShowPassword] = useState(false);
   
   const [name, setName] = useState('');
-  const [id, setId] = useState('');
   const [confirmPass, setConfirmPass] = useState('');
 
   const [error, setError] = useState<string | null>(null);
@@ -36,19 +37,100 @@ const Auth: React.FC<AuthProps> = ({ onLogin, onOpenSupport, initialView = 'logi
   const [isLoading, setIsLoading] = useState(false);
   const [legalView, setLegalView] = useState<'terms' | 'privacy' | 'none'>('none');
 
-  const handleGoogleLogin = async () => {
-    setIsLoading(true);
-    setError(null);
-    setMessage(null);
+  // Configurar persistência uma única vez ao montar o componente
+  React.useEffect(() => {
+    const initAuth = async () => {
+      try {
+        await setPersistence(auth, browserLocalPersistence);
+      } catch (err) {
+        console.error("Erro ao configurar persistência:", err);
+      }
+    };
+    initAuth();
+  }, []);
+
+  // Capturar resultado de redirecionamento (fallback do Google Login)
+  React.useEffect(() => {
+    const handleRedirect = async () => {
+      try {
+        const result = await getRedirectResult(auth);
+        if (result?.user) {
+          console.log("GB: Login via redirecionamento detectado. UID:", result.user.uid);
+          setIsLoading(true);
+          await handlePostAuth(result.user);
+          setIsLoading(false);
+        }
+      } catch (err: any) {
+        console.error("GB: Erro no resultado do redirecionamento:", err);
+        setError("Erro ao processar o login com Google via redirecionamento.");
+      }
+    };
+    handleRedirect();
+  }, []);
+
+  const handleFirestoreError = (error: any, operation: string, path: string) => {
+    const errInfo = {
+      error: error.message || String(error),
+      code: error.code,
+      operation,
+      path,
+      auth: {
+        uid: auth.currentUser?.uid,
+        email: auth.currentUser?.email,
+        emailVerified: auth.currentUser?.emailVerified
+      }
+    };
+    console.error(`GB: Erro Firestore (${operation}) em ${path}:`, JSON.stringify(errInfo, null, 2));
+    return error;
+  };
+
+  const handlePostAuth = async (user: any) => {
+    if (!user || !user.uid) {
+      console.error("GB: User ou UID inválido no handlePostAuth");
+      return;
+    }
+
+    console.log("GB: Iniciando handlePostAuth para UID:", user.uid);
+    console.log("GB: auth.currentUser UID:", auth.currentUser?.uid);
+    
+    if (!auth.currentUser) {
+      console.warn("GB: auth.currentUser está nulo no início do handlePostAuth! Aguardando 1.5s para sincronização...");
+      // Delay maior para garantir que o SDK do Firestore pegue o token
+      await new Promise(resolve => setTimeout(resolve, 1500));
+      if (!auth.currentUser) {
+        console.error("GB: auth.currentUser continua nulo após delay. Tentando usar o objeto 'user' passado.");
+        // Se ainda estiver nulo, o Firestore provavelmente vai falhar, mas vamos logar o estado do objeto passado
+        console.log("GB: Objeto 'user' passado:", { uid: user.uid, email: user.email });
+      } else {
+        console.log("GB: auth.currentUser sincronizado com sucesso. UID:", auth.currentUser.uid);
+      }
+    }
+
+    if (auth.currentUser.uid !== user.uid) {
+      console.warn("GB: UID do usuário passado difere do auth.currentUser.uid!", {
+        passed: user.uid,
+        current: auth.currentUser.uid
+      });
+    }
+
     try {
-      const provider = new GoogleAuthProvider();
-      const result = await signInWithPopup(auth, provider);
-      const user = result.user;
-
+      // 4. Verificar/Criar no Firestore
       const userRef = doc(db, "users", user.uid);
-      const userDoc = await getDoc(userRef);
-
+      console.log("GB: Caminho do documento:", userRef.path);
+      console.log("GB: Tentando ler documento do usuário...");
+      
+      let userDoc;
+      try {
+        userDoc = await getDoc(userRef);
+        console.log("GB: Leitura concluída. Existe?", userDoc.exists());
+      } catch (err) {
+        throw handleFirestoreError(err, "GET", userRef.path);
+      }
+      
+      const now = new Date();
+      
       if (!userDoc.exists()) {
+        console.log("GB: Novo usuário detectado. Criando documento...");
         const trialEndsAt = new Date();
         trialEndsAt.setDate(trialEndsAt.getDate() + TRIAL_DAYS);
 
@@ -57,36 +139,112 @@ const Auth: React.FC<AuthProps> = ({ onLogin, onOpenSupport, initialView = 'logi
           userId: user.email?.split('@')[0] || user.uid.substring(0, 8),
           name: user.displayName || "Usuário",
           email: user.email || "",
+          photoURL: user.photoURL || null,
           createdAt: serverTimestamp(),
+          lastLogin: serverTimestamp(),
           trialEndsAt: trialEndsAt.toISOString(),
-          subscriptionStatus: "trial",
+          subscriptionStatus: "trial" as const,
           subscriptionEndsAt: null,
           plan: "free",
           paymentProvider: null,
-          role: 'USER'
+          role: 'user' as const,
+          status: 'active' as const,
+          onboardingSeen: false,
+          lgpdAccepted: false
         };
 
-        await setDoc(userRef, userData);
-        onLogin({ ...userData, isLoggedIn: true, role: 'USER' });
+        console.log("GB: Tentando setDoc (create)...");
+        try {
+          await setDoc(userRef, userData);
+          console.log("GB: Documento criado com sucesso.");
+        } catch (err) {
+          throw handleFirestoreError(err, "CREATE", userRef.path);
+        }
+        onLogin({ ...userData, isLoggedIn: true });
       } else {
-        const data = userDoc.data();
+        console.log("GB: Usuário já existe. Atualizando dados básicos...");
+        const existingData = userDoc.data();
+        
+        // Atualiza apenas campos básicos para manter consistência (nome, foto, último login)
+        const updateData = {
+          lastLogin: serverTimestamp(),
+          name: existingData?.name || user.displayName || "Usuário",
+          photoURL: existingData?.photoURL || user.photoURL || null,
+          userId: existingData?.userId || user.email?.split('@')[0] || user.uid.substring(0, 8),
+          email: existingData?.email || user.email || "",
+          status: 'active' as const, // Garante que a conta seja reativada se estiver como 'deleted'
+        };
+        
+        console.log("GB: Tentando setDoc (update merge)...");
+        try {
+          await setDoc(userRef, updateData, { merge: true });
+          console.log("GB: Dados atualizados com sucesso.");
+        } catch (err) {
+          throw handleFirestoreError(err, "UPDATE", userRef.path);
+        }
+        
         onLogin({
           uid: user.uid,
-          userId: data?.userId || user.email,
-          name: data?.name || user.displayName || "Usuário",
-          email: data?.email || user.email || "",
+          userId: existingData?.userId || user.email,
+          name: existingData?.name || user.displayName || "Usuário",
+          email: existingData?.email || user.email || "",
+          photoURL: existingData?.photoURL || user.photoURL || null,
           isLoggedIn: true,
-          role: (data?.role as 'USER' | 'ADMIN') || 'USER',
-          subscriptionStatus: data?.subscriptionStatus || 'inactive',
-          plan: data?.plan,
-          trialEndsAt: data?.trialEndsAt,
-          subscriptionEndsAt: data?.subscriptionEndsAt,
-          paymentProvider: data?.paymentProvider
+          role: (existingData?.role as 'user' | 'admin') || 'user',
+          subscriptionStatus: existingData?.subscriptionStatus || 'inactive',
+          plan: existingData?.plan,
+          trialEndsAt: existingData?.trialEndsAt,
+          subscriptionEndsAt: existingData?.subscriptionEndsAt,
+          paymentProvider: existingData?.paymentProvider,
+          onboardingSeen: existingData?.onboardingSeen,
+          lgpdAccepted: existingData?.lgpdAccepted,
+          status: 'active' as const
         });
       }
     } catch (err: any) {
-      console.error("Erro Google Login:", err);
-      setError("Erro ao entrar com Google. Tente novamente.");
+      console.error("GB: Erro detalhado no handlePostAuth:", err);
+      if (err.code) console.error("GB: Código do erro:", err.code);
+      setError("Erro ao sincronizar seus dados. Tente novamente.");
+    }
+  };
+
+  const handleGoogleLogin = async () => {
+    setError(null);
+    setMessage(null);
+    
+    // Configurar Provider
+    const provider = new GoogleAuthProvider();
+    provider.setCustomParameters({ prompt: 'select_account' });
+    
+    try {
+      console.log("GB: Iniciando login com Google (Popup)...");
+      // O signInWithPopup deve ser chamado o mais próximo possível do clique do usuário
+      const result = await signInWithPopup(auth, provider);
+      setIsLoading(true);
+      await handlePostAuth(result.user);
+    } catch (err: any) {
+      console.error("GB: Erro no Google Login:", err);
+      
+      if (err.code === "auth/popup-blocked") {
+        console.log("GB: Popup bloqueado. Tentando redirecionamento...");
+        try {
+          // Fallback automático para redirecionamento se o popup for bloqueado
+          await signInWithRedirect(auth, provider);
+        } catch (redirErr: any) {
+          console.error("GB: Erro no redirecionamento:", redirErr);
+          setError("O popup foi bloqueado e o redirecionamento falhou. Por favor, verifique as permissões do seu navegador.");
+        }
+      } else if (err.code === "auth/popup-closed-by-user") {
+        setError("O login foi cancelado. Você fechou a janela do Google antes de terminar.");
+      } else if (err.code === "auth/cancelled-popup-request") {
+        setError("Houve um conflito de popups. Tente novamente.");
+      } else if (err.code === "auth/unauthorized-domain") {
+        setError("Este domínio não está autorizado para login com Google. Verifique as configurações do Firebase.");
+      } else if (err.code === "auth/account-exists-with-different-credential") {
+        setError("Já existe uma conta com este e-mail usando outro método de login (ex: senha).");
+      } else {
+        setError("Erro ao entrar com Google. Tente novamente.");
+      }
     } finally {
       setIsLoading(false);
     }
@@ -109,21 +267,26 @@ const Auth: React.FC<AuthProps> = ({ onLogin, onOpenSupport, initialView = 'logi
       console.log("GB: Auth bem-sucedido. UID:", userCred.user.uid);
 
       const userRef = doc(db, "users", userCred.user.uid);
-      const finalDoc = await getDoc(userRef);
+      let finalDoc;
+      try {
+        finalDoc = await getDoc(userRef);
+      } catch (err) {
+        throw handleFirestoreError(err, "GET", userRef.path);
+      }
       
       if (!finalDoc.exists()) {
         console.warn("GB: Usuário autenticado no Auth, mas documento não encontrado no Firestore.");
         // Fallback: Se o usuário existe no Auth mas não no Firestore (comum em migrações/erros de cadastro)
         // Vamos criar um perfil básico para não quebrar o sistema
         const trialEndsAt = new Date();
-        trialEndsAt.setDate(trialEndsAt.getDate() + 7);
+        trialEndsAt.setDate(trialEndsAt.getDate() + TRIAL_DAYS);
         
         const basicData = {
           uid: userCred.user.uid,
           userId: email.trim().split('@')[0],
           name: "Usuário Recuperado",
           email: email.trim(),
-          role: 'USER' as const,
+          role: 'user' as const,
           subscriptionStatus: 'trial' as const,
           trialEndsAt: trialEndsAt.toISOString(),
           createdAt: new Date().toISOString(),
@@ -131,8 +294,12 @@ const Auth: React.FC<AuthProps> = ({ onLogin, onOpenSupport, initialView = 'logi
           onboardingSeen: true
         };
         
-        await setDoc(userRef, basicData);
-        console.log("GB: Perfil de fallback criado no Firestore.");
+        try {
+          await setDoc(userRef, basicData);
+          console.log("GB: Perfil de fallback criado no Firestore.");
+        } catch (err) {
+          throw handleFirestoreError(err, "CREATE", userRef.path);
+        }
         onLogin({ ...basicData, isLoggedIn: true });
         return;
       }
@@ -146,7 +313,7 @@ const Auth: React.FC<AuthProps> = ({ onLogin, onOpenSupport, initialView = 'logi
         name: userData?.name || "Usuário",
         email: userData?.email || email,
         isLoggedIn: true,
-        role: (userData?.role as 'USER' | 'ADMIN') || 'USER',
+        role: (userData?.role as 'user' | 'admin') || 'user',
         subscriptionStatus: userData?.subscriptionStatus || 'inactive',
         plan: userData?.plan,
         trialEndsAt: userData?.trialEndsAt,
@@ -187,28 +354,20 @@ const Auth: React.FC<AuthProps> = ({ onLogin, onOpenSupport, initialView = 'logi
     }
 
     try {
-      const userIdLower = id.toLowerCase().trim();
-      const usernameRef = doc(db, "usernames", userIdLower);
-      const usernameSnap = await getDoc(usernameRef);
-      
-      if (usernameSnap.exists()) {
-        throw new Error("Este ID já está em uso.");
-      }
-
       // Configura persistência local antes do cadastro
       await setPersistence(auth, browserLocalPersistence);
       
       const userCred = await createUserWithEmailAndPassword(auth, email.trim(), password);
       
       const trialEndsAt = new Date();
-      trialEndsAt.setDate(trialEndsAt.getDate() + 7);
+      trialEndsAt.setDate(trialEndsAt.getDate() + TRIAL_DAYS);
 
       const userData = {
         uid: userCred.user.uid,
-        userId: userIdLower,
+        userId: email.trim().split('@')[0],
         name: name.trim(),
         email: email.trim(),
-        role: 'USER' as const,
+        role: 'user' as const,
         subscriptionStatus: 'trial' as const,
         trialEndsAt: trialEndsAt.toISOString(),
         createdAt: new Date().toISOString(),
@@ -216,8 +375,11 @@ const Auth: React.FC<AuthProps> = ({ onLogin, onOpenSupport, initialView = 'logi
         onboardingSeen: false
       };
 
-      await setDoc(doc(db, "users", userCred.user.uid), userData);
-      await setDoc(usernameRef, { uid: userCred.user.uid });
+      try {
+        await setDoc(doc(db, "users", userCred.user.uid), userData);
+      } catch (err) {
+        throw handleFirestoreError(err, "CREATE", `users/${userCred.user.uid}`);
+      }
 
       onLogin({
         ...userData,
@@ -225,16 +387,18 @@ const Auth: React.FC<AuthProps> = ({ onLogin, onOpenSupport, initialView = 'logi
       });
     } catch (err: any) {
       console.error("Erro no cadastro:", err);
-      let friendlyError = err.message;
+      let friendlyError = "Erro ao criar conta. Tente novamente.";
       
       if (err.code === "auth/email-already-in-use") {
-        friendlyError = "Este e-mail já está em uso.";
+        friendlyError = "Este e-mail já está em uso. Se você já tem uma conta, tente entrar em vez de criar uma nova.";
       } else if (err.code === "auth/weak-password") {
         friendlyError = "A senha deve ter pelo menos 6 caracteres.";
       } else if (err.code === "auth/invalid-email") {
         friendlyError = "E-mail inválido.";
       } else if (err.code === "auth/invalid-credential") {
         friendlyError = "Erro de credenciais. Tente novamente ou use outro e-mail.";
+      } else if (err.code === "auth/operation-not-allowed") {
+        friendlyError = "O cadastro com e-mail e senha não está habilitado. Entre em contato com o suporte.";
       }
       
       setError(friendlyError);
@@ -305,30 +469,18 @@ const Auth: React.FC<AuthProps> = ({ onLogin, onOpenSupport, initialView = 'logi
             )}
 
             {view === 'signup' && (
-              <>
-                <div className="relative group">
-                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-[#8696A0] group-focus-within:text-[#00A884] transition-colors">
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
-                  </span>
-                  <input 
-                    className="w-full bg-[#202C33] text-[#E9EDEF] rounded-2xl pl-12 pr-4 py-4 text-sm font-medium outline-none border border-transparent focus:border-[#00A884] transition-all placeholder-[#8696A0]/50" 
-                    placeholder="Seu Nome Completo" 
-                    value={name} 
-                    onChange={e => setName(e.target.value)} 
-                    required 
-                  />
-                </div>
-                <div className="relative group">
-                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-[#8696A0] group-focus-within:text-[#00A884] transition-colors text-xs font-black italic">ID</span>
-                  <input 
-                    className="w-full bg-[#202C33] text-[#E9EDEF] rounded-2xl pl-12 pr-4 py-4 text-sm font-medium outline-none border border-transparent focus:border-[#00A884] transition-all placeholder-[#8696A0]/50" 
-                    placeholder="Identificador Único (ex: vicentin)" 
-                    value={id} 
-                    onChange={e => setId(e.target.value)} 
-                    required 
-                  />
-                </div>
-              </>
+              <div className="relative group">
+                <span className="absolute left-4 top-1/2 -translate-y-1/2 text-[#8696A0] group-focus-within:text-[#00A884] transition-colors">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
+                </span>
+                <input 
+                  className="w-full bg-[#202C33] text-[#E9EDEF] rounded-2xl pl-12 pr-4 py-4 text-sm font-medium outline-none border border-transparent focus:border-[#00A884] transition-all placeholder-[#8696A0]/50" 
+                  placeholder="Seu Nome Completo" 
+                  value={name} 
+                  onChange={e => setName(e.target.value)} 
+                  required 
+                />
+              </div>
             )}
 
             <div className="relative group">

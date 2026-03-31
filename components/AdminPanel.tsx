@@ -32,7 +32,7 @@ const AdminPanel: React.FC<{ currentAdminId: string }> = ({ currentAdminId }) =>
           userName: data.name || 'Usuário',
           email: data.email || 'N/A',
           status: data.status || 'active',
-          role: data.role || 'USER',
+          role: data.role || 'user',
           createdAt: data.createdAt,
           lastLogin: data.lastLogin,
           subscriptionStatus: data.subscriptionStatus || 'PENDING',

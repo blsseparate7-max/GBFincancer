@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { db, auth } from './services/firebaseConfig';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
-import { collection, doc, onSnapshot, query, orderBy, limit, getDoc } from 'firebase/firestore';
+import { collection, doc, onSnapshot, query, orderBy, limit, getDoc, where } from 'firebase/firestore';
 import { UserSession, Transaction, SavingGoal, Notification, Message, Bill, CategoryLimit, CreditCardInfo, Wallet, UserCategory, UserOnboarding } from './types';
 import Sidebar from './components/Sidebar';
 import Header from './components/Header';
@@ -62,42 +62,54 @@ const App: React.FC = () => {
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
-        const userDoc = await getDoc(doc(db, "users", firebaseUser.uid));
-        if (userDoc.exists()) {
-          const userData = userDoc.data();
-          
-          // Bloqueio de conta excluída
-          if (userData.status === 'deleted' || userData.isActive === false) {
+        try {
+          const userDoc = await getDoc(doc(db, "users", firebaseUser.uid));
+          if (userDoc.exists()) {
+            const userData = userDoc.data();
+            
+            // Bloqueio de conta excluída/inativa
+            if (userData.status === 'deleted' || userData.isActive === false) {
+              console.log("GB: Usuário com status restrito no onAuthStateChanged:", userData.status);
+              // Não fazemos signOut automático aqui para evitar race conditions com o fluxo de reativação no handlePostAuth
+              // Apenas não definimos a sessão, o que mantém o usuário na tela de login/landing
+              setSession(null);
+              setIsInitializing(false);
+              return;
+            }
+
+            const userSession: UserSession = {
+              uid: firebaseUser.uid,
+              userId: userData.userId,
+              name: userData.name,
+              email: firebaseUser.email || '',
+              isLoggedIn: true,
+              role: userData.role || 'user',
+              subscriptionStatus: userData.subscriptionStatus || 'inactive',
+              plan: userData.plan,
+              trialEndsAt: userData.trialEndsAt,
+              subscriptionEndsAt: userData.subscriptionEndsAt,
+              paymentProvider: userData.paymentProvider,
+              onboardingSeen: userData.onboardingSeen,
+              lgpdAccepted: userData.lgpdAccepted,
+              status: userData.status || 'active',
+              photoURL: userData.photoURL
+            };
+            setSession(userSession);
+            
+            if (!userData.onboardingSeen) {
+              setOnboardingStep('welcome');
+            } else if (!userData.lgpdAccepted) {
+              setOnboardingStep('lgpd');
+            }
+          } else {
+            // Caso o usuário exista no Auth mas não no Firestore (ex: após exclusão parcial)
+            console.warn("GB: Usuário no Auth mas sem documento no Firestore. Limpando sessão...");
             await signOut(auth);
             setSession(null);
-            setIsInitializing(false);
-            return;
           }
-
-          const userSession: UserSession = {
-            uid: firebaseUser.uid,
-            userId: userData.userId,
-            name: userData.name,
-            email: firebaseUser.email || '',
-            isLoggedIn: true,
-            role: userData.role || 'USER',
-            subscriptionStatus: userData.subscriptionStatus || 'inactive',
-            plan: userData.plan,
-            trialEndsAt: userData.trialEndsAt,
-            subscriptionEndsAt: userData.subscriptionEndsAt,
-            paymentProvider: userData.paymentProvider,
-            onboardingSeen: userData.onboardingSeen,
-            lgpdAccepted: userData.lgpdAccepted,
-            status: userData.status || 'active',
-            photoURL: userData.photoURL
-          };
-          setSession(userSession);
-          
-          if (!userData.onboardingSeen) {
-            setOnboardingStep('welcome');
-          } else if (!userData.lgpdAccepted) {
-            setOnboardingStep('lgpd');
-          }
+        } catch (err) {
+          console.error("GB: Erro ao carregar dados do usuário no onAuthStateChanged:", err);
+          setSession(null);
         }
       } else {
         setSession(null);
@@ -113,6 +125,7 @@ const App: React.FC = () => {
     if (!session?.uid) return;
     const userRef = doc(db, "users", session.uid);
 
+    setLoadingTransactions(true);
     setLoadingCards(true);
     setLoadingGoals(true);
     setLoadingReminders(true);
@@ -120,9 +133,19 @@ const App: React.FC = () => {
     setLoadingWallets(true);
     setLoadingCategories(true);
 
-    const unsubTrans = onSnapshot(query(collection(userRef, "transactions"), orderBy("createdAt", "desc"), limit(100)), (snap) => {
+    // Listeners Real-time Centralizados
+    const now = new Date();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+
+    const unsubTrans = onSnapshot(query(
+      collection(userRef, "transactions"), 
+      where("date", ">=", startOfMonth),
+      orderBy("date", "desc"), 
+      limit(100)
+    ), (snap) => {
       const normalized = snap.docs.map(d => normalizeTransaction(d));
       setTransactions(normalized);
+      setLoadingTransactions(false);
       assertSchema(session.uid, { transactions: normalized, goals, cards });
     });
 
@@ -176,6 +199,7 @@ const App: React.FC = () => {
   }, [session?.uid]);
 
   const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [loadingTransactions, setLoadingTransactions] = useState(true);
   const [goals, setGoals] = useState<SavingGoal[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -309,7 +333,7 @@ const App: React.FC = () => {
 
   const hasAccess = () => {
     if (!session) return false;
-    if (session.role === 'ADMIN') return true;
+    if (session.role === 'admin') return true;
     
     const now = new Date();
 
@@ -373,11 +397,11 @@ const App: React.FC = () => {
           onOpenProfile={() => setActiveTab('profile')}
         />
       ) : <LandingPage onLogin={(s) => setSession(s)} onOpenSupport={() => setActiveTab('support')} />;
-      case 'extrato': return session ? <Extrato uid={session.uid} cards={cards} categories={categories} /> : null;
-      case 'categories': return session ? <CategoriesTab uid={session.uid} categories={categories} loading={loadingCategories} /> : null;
-      case 'dash': return session ? <Dashboard transactions={transactions} goals={goals} limits={limits} wallets={wallets} reminders={reminders} categories={categories} uid={session.uid} loading={loadingCards || loadingGoals || loadingLimits || loadingWallets} /> : null;
-      case 'calendar': return session ? <CalendarTab transactions={transactions} reminders={reminders} loading={loadingReminders} /> : null;
-      case 'goals': return session ? <Goals goals={goals} transactions={transactions} wallets={wallets} uid={session.uid} user={session} loading={loadingGoals} /> : null;
+      case 'extrato': return session ? <Extrato uid={session.uid} transactions={transactions} loading={loadingTransactions} cards={cards} categories={categories} wallets={wallets} /> : null;
+      case 'categories': return session ? <CategoriesTab uid={session.uid} categories={categories} transactions={transactions} loading={loadingCategories || loadingTransactions} /> : null;
+      case 'dash': return session ? <Dashboard transactions={transactions} goals={goals} limits={limits} wallets={wallets} reminders={reminders} categories={categories} uid={session.uid} loading={loadingCards || loadingGoals || loadingLimits || loadingWallets || loadingTransactions} /> : null;
+      case 'calendar': return session ? <CalendarTab transactions={transactions} reminders={reminders} loading={loadingReminders || loadingTransactions} /> : null;
+      case 'goals': return session ? <Goals goals={goals} transactions={transactions} wallets={wallets} uid={session.uid} user={session} loading={loadingGoals || loadingTransactions} /> : null;
       case 'cc': return session ? <CreditCard transactions={transactions} uid={session.uid} cards={cards} wallets={wallets} loading={loadingCards} /> : null;
       case 'reminders': return session ? <Reminders bills={reminders} wallets={wallets} uid={session.uid} loading={loadingReminders} /> : null;
       case 'messages': return session ? <Messages notifications={notifications} /> : null;
@@ -388,12 +412,12 @@ const App: React.FC = () => {
       case 'debts': return session ? <DebtAssistant uid={session.uid} transactions={transactions} wallets={wallets} user={session} goals={goals} cards={cards} /> : null;
       case 'profile': return session ? <ProfileEdit user={session} onUpdate={(d) => setSession(p => p ? {...p, ...d} : null)} onLogout={() => signOut(auth)} setActiveTab={setActiveTab} /> : null;
       case 'support': return <SupportTab user={session} onBackToAuth={() => setActiveTab('chat')} />;
-      case 'admin_support': return session?.role === 'ADMIN' ? <AdminSupport admin={session} /> : null;
+      case 'admin_support': return session?.role === 'admin' ? <AdminSupport admin={session} /> : null;
       case 'config': return session ? <Settings user={session} onLogout={() => signOut(auth)} /> : null;
       case 'qa':
-        if (session?.role !== 'ADMIN') return <div className="p-8 text-center text-red-500 font-bold">Acesso restrito</div>;
+        if (session?.role !== 'admin') return <div className="p-8 text-center text-red-500 font-bold">Acesso restrito</div>;
         return <QADiagnostic session={session} />;
-      case 'admin': return session?.role === 'ADMIN' ? <AdminPanel currentAdminId={session.uid} /> : null;
+      case 'admin': return session?.role === 'admin' ? <AdminPanel currentAdminId={session.uid} /> : null;
       case 'terms': return <LegalModal type="terms" onClose={() => setActiveTab('chat')} />;
       case 'privacy': return <LegalModal type="privacy" onClose={() => setActiveTab('chat')} />;
       case 'wallets': {

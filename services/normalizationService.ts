@@ -175,6 +175,7 @@ export const normalizeReminder = (docSnap: any): Bill => {
     dueDate: data.dueDate || data.date || new Date().toISOString(),
     dueDay: data.dueDay || (data.dueDate ? new Date(data.dueDate).getDate() : (data.day || 1)),
     isPaid: data.isPaid || data.paid || false,
+    paidAt: data.paidAt || null,
     monthKey: data.monthKey || '',
     recurring: data.recurring !== undefined ? data.recurring : true,
     category: data.category || (normalizedType === 'RECEIVE' ? 'Recebimento' : 'Contas Fixas'),

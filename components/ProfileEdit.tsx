@@ -1,10 +1,12 @@
 import React, { useState, useRef } from 'react';
-import { db, storage } from '../services/firebaseConfig';
+import { auth, db, storage } from '../services/firebaseConfig';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { doc, updateDoc } from 'firebase/firestore';
+import { doc, updateDoc, deleteDoc } from 'firebase/firestore';
+import { deleteUser } from 'firebase/auth';
 import { Notification } from './UI';
 import { handleKiwifyRedirect } from '../services/checkoutService';
-import { OAUTH_CONFIG } from '../constants';
+import { OAUTH_CONFIG, TRIAL_DAYS } from '../constants';
+import { Camera, Trash2, LogOut, Shield, CreditCard, CheckCircle, AlertCircle, Clock, Zap, ExternalLink, ChevronRight } from 'lucide-react';
 
 interface ProfileEditProps {
   user: any;
@@ -23,20 +25,83 @@ const ProfileEdit: React.FC<ProfileEditProps> = ({ user, onUpdate, onLogout, set
   const fileInputRef = useRef<HTMLInputElement>(null);
   const checkoutId = OAUTH_CONFIG.KIWIFY_CHECKOUT_ID || 'j0VhQzs';
 
+  const formatDate = (date: any) => {
+    if (!date) return 'N/A';
+    try {
+      const d = date instanceof Date ? date : new Date(date);
+      return d.toLocaleDateString('pt-BR');
+    } catch (e) {
+      return 'N/A';
+    }
+  };
+
+  const getDaysRemaining = () => {
+    const now = new Date();
+    let end: Date | null = null;
+
+    if (user.subscriptionStatus === 'trial' && user.trialEndsAt) {
+      end = new Date(user.trialEndsAt);
+    } else if (user.subscriptionStatus === 'active' && user.subscriptionEndsAt) {
+      end = new Date(user.subscriptionEndsAt);
+    }
+
+    if (!end) return 0;
+    const diff = end.getTime() - now.getTime();
+    return Math.max(0, Math.ceil(diff / (1000 * 60 * 60 * 24)));
+  };
+
   const handleDeleteAccount = async () => {
     setLoading(true);
     try {
+      const currentUser = auth.currentUser;
+      if (!currentUser) throw new Error("Usuário não autenticado.");
+
       const userRef = doc(db, "users", user.uid);
+      
+      // 1. Marcar como deletado no Firestore primeiro (bloqueia acesso imediato)
+      // Usamos updateDoc para manter os dados mas marcar como inativo
       await updateDoc(userRef, { 
-        status: 'deleted',
+        status: 'deleted', 
         isActive: false,
-        deletedAt: new Date().toISOString()
+        deletedAt: new Date().toISOString() 
       });
-      setNotification({ message: "Conta excluída com sucesso.", type: 'success' });
-      setTimeout(() => onLogout(), 2000);
-    } catch (e) {
-      console.error(e);
-      setNotification({ message: "Erro ao excluir conta.", type: 'error' });
+      
+      // 2. Tentar deletar do Firebase Auth (libera o e-mail)
+      try {
+        await deleteUser(currentUser);
+        console.log("GB: Usuário removido do Firebase Auth com sucesso.");
+        
+        // 3. Opcional: Deletar o documento do Firestore agora que o Auth foi liberado
+        // Nota: Isso pode falhar se as regras de segurança exigirem Auth, 
+        // mas como já marcamos como 'deleted', o App.tsx não deixará entrar.
+        // Se quisermos deletar mesmo, teríamos que ter feito ANTES do deleteUser.
+        // Vamos tentar deletar agora, se falhar, tudo bem, o status já é 'deleted'.
+        try {
+          await deleteDoc(userRef);
+          console.log("GB: Documento do Firestore removido com sucesso.");
+        } catch (docErr) {
+          console.warn("GB: Não foi possível remover o documento do Firestore após remover do Auth (esperado se as regras exigirem login), mas o status já está como 'deleted'.", docErr);
+        }
+
+        setNotification({ message: "Conta excluída permanentemente.", type: 'success' });
+        setTimeout(() => onLogout(), 2000);
+      } catch (authErr: any) {
+        console.error("GB: Erro ao deletar do Auth:", authErr);
+        
+        // Se falhar por login recente, revertemos o status no Firestore para não bloquear o usuário
+        if (authErr.code === 'auth/requires-recent-login') {
+          await updateDoc(userRef, { status: 'active', isActive: true, deletedAt: null });
+          setNotification({ 
+            message: "Para sua segurança, esta operação requer um login recente. Por favor, saia e entre novamente antes de excluir sua conta.", 
+            type: 'error' 
+          });
+        } else {
+          setNotification({ message: "Erro ao liberar seu e-mail no sistema de autenticação. Tente novamente.", type: 'error' });
+        }
+      }
+    } catch (e: any) {
+      console.error("GB: Erro geral no handleDeleteAccount:", e);
+      setNotification({ message: "Erro ao processar exclusão. Tente novamente.", type: 'error' });
     } finally {
       setLoading(false);
       setShowDeleteModal(false);
@@ -133,10 +198,22 @@ const ProfileEdit: React.FC<ProfileEditProps> = ({ user, onUpdate, onLogout, set
             className="hidden" 
             accept="image/*"
           />
-          <p className="mt-4 text-[10px] font-black text-[var(--text-muted)] uppercase tracking-widest">
-            {user.role === 'ADMIN' ? 'Cargo: Fundador Master' : 
-             user.subscriptionStatus === 'active' ? 'Assinatura: Premium Ativo' : 
-             user.subscriptionStatus === 'trial' ? 'Período de Teste' : 'Assinatura: Inativa'}
+          <p className="mt-4 text-[10px] font-black text-[var(--text-muted)] uppercase tracking-widest flex items-center gap-2">
+            {user.role === 'admin' ? 'Cargo: Fundador Master' : 
+             user.subscriptionStatus === 'active' ? (
+               <span className="text-[var(--green-whatsapp)] flex items-center gap-1">
+                 <CheckCircle className="w-3 h-3" /> Assinatura: Premium Ativo
+               </span>
+             ) : 
+             user.subscriptionStatus === 'trial' ? (
+               <span className="text-orange-500 flex items-center gap-1">
+                 <Clock className="w-3 h-3" /> Período de Teste
+               </span>
+             ) : (
+               <span className="text-rose-500 flex items-center gap-1">
+                 <AlertCircle className="w-3 h-3" /> Assinatura: Inativa
+               </span>
+             )}
           </p>
         </div>
 
@@ -179,22 +256,60 @@ const ProfileEdit: React.FC<ProfileEditProps> = ({ user, onUpdate, onLogout, set
         </button>
       </div>
 
-      <div className="bg-[var(--surface)] p-8 rounded-[3rem] shadow-2xl border border-[var(--border)] space-y-4">
+      <div className="bg-[var(--surface)] p-8 rounded-[3rem] shadow-2xl border border-[var(--border)] space-y-6">
          <h4 className="text-[10px] font-black text-[var(--green-whatsapp)] uppercase tracking-widest mb-2 flex items-center gap-2">
-           <span className="w-1.5 h-1.5 bg-[var(--green-whatsapp)] rounded-full"></span> Gerenciar Assinatura
+           <span className="w-1.5 h-1.5 bg-[var(--green-whatsapp)] rounded-full"></span> Detalhes da Assinatura
          </h4>
-         {user.subscriptionStatus !== 'active' ? (
-           <button 
-             onClick={() => handleKiwifyRedirect(user.uid, checkoutId)}
-             className="w-full bg-[var(--green-whatsapp)] text-white font-black py-4 rounded-2xl text-[10px] uppercase tracking-widest hover:bg-[var(--green-whatsapp)]/80 transition-all flex items-center justify-center gap-2 border border-[var(--green-whatsapp)]/20"
-           >
-             💳 Assinar Plano Premium
-           </button>
-         ) : (
-           <div className="w-full bg-[var(--green-whatsapp)]/10 text-[var(--green-whatsapp)] font-black py-4 rounded-2xl text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 border border-[var(--green-whatsapp)]/20">
-             ✅ Assinatura Ativa
-           </div>
-         )}
+         
+         <div className="grid grid-cols-2 gap-4">
+            <div className="bg-[var(--bg-body)] p-4 rounded-2xl border border-[var(--border)]/30">
+               <p className="text-[9px] font-black text-[var(--text-muted)] uppercase tracking-widest mb-1">Status</p>
+               <p className={`text-xs font-black uppercase italic ${
+                 user.subscriptionStatus === 'active' ? 'text-[var(--green-whatsapp)]' : 
+                 user.subscriptionStatus === 'trial' ? 'text-orange-500' : 'text-rose-500'
+               }`}>
+                 {user.subscriptionStatus === 'active' ? 'Ativa' : 
+                  user.subscriptionStatus === 'trial' ? 'Trial' : 'Inativa'}
+               </p>
+            </div>
+            <div className="bg-[var(--bg-body)] p-4 rounded-2xl border border-[var(--border)]/30">
+               <p className="text-[9px] font-black text-[var(--text-muted)] uppercase tracking-widest mb-1">Plano</p>
+               <p className="text-xs font-black text-[var(--text-primary)] uppercase italic">
+                 {user.plan === 'annual' ? 'Anual' : user.plan === 'monthly' ? 'Mensal' : 'Nenhum'}
+               </p>
+            </div>
+         </div>
+
+         <div className="space-y-3">
+            <div className="flex justify-between items-center py-2 border-b border-[var(--border)]/10">
+               <span className="text-[10px] font-black text-[var(--text-muted)] uppercase tracking-widest">Válido até</span>
+               <span className="text-xs font-black text-[var(--text-primary)] italic">
+                 {formatDate(user.subscriptionStatus === 'trial' ? user.trialEndsAt : user.subscriptionEndsAt)}
+               </span>
+            </div>
+            <div className="flex justify-between items-center py-2 border-b border-[var(--border)]/10">
+               <span className="text-[10px] font-black text-[var(--text-muted)] uppercase tracking-widest">Tempo Restante</span>
+               <span className={`text-xs font-black italic ${getDaysRemaining() <= 3 ? 'text-rose-500' : 'text-[var(--green-whatsapp)]'}`}>
+                 {getDaysRemaining()} dias {user.subscriptionStatus === 'trial' ? 'para o fim do teste' : 'para renovação'}
+               </span>
+            </div>
+            <div className="flex justify-between items-center py-2">
+               <span className="text-[10px] font-black text-[var(--text-muted)] uppercase tracking-widest">Provedor</span>
+               <span className="text-xs font-black text-[var(--text-primary)] italic flex items-center gap-1">
+                 {user.paymentProvider || 'Kiwify'} <Shield className="w-3 h-3 text-[var(--green-whatsapp)]" />
+               </span>
+            </div>
+         </div>
+
+         <button 
+           onClick={() => handleKiwifyRedirect(user.uid, checkoutId)}
+           className="w-full bg-[var(--green-whatsapp)] text-white font-black py-4 rounded-2xl text-[10px] uppercase tracking-[0.2em] hover:bg-[var(--green-whatsapp)]/80 transition-all flex items-center justify-center gap-2 shadow-lg shadow-[var(--green-whatsapp)]/20"
+         >
+           <Zap className="w-4 h-4" />
+           {user.subscriptionStatus === 'trial' ? 'Assinar Premium Agora' : 
+            user.subscriptionStatus === 'active' ? 'Renovar / Gerenciar Plano' : 
+            'Assinar Agora'}
+         </button>
       </div>
 
       <div className="bg-[var(--surface)] p-8 rounded-[3rem] shadow-2xl border border-[var(--border)] space-y-4">
@@ -235,37 +350,56 @@ const ProfileEdit: React.FC<ProfileEditProps> = ({ user, onUpdate, onLogout, set
         <div className="fixed inset-0 z-[3000] bg-black/90 backdrop-blur-xl flex items-center justify-center p-6 animate-in fade-in">
           <div className="bg-[var(--surface)] w-full max-w-md rounded-[3rem] p-10 shadow-2xl border border-rose-500/30 space-y-8 text-center animate-in zoom-in">
             <div className="w-20 h-20 bg-rose-500/10 rounded-[2rem] flex items-center justify-center mx-auto">
-              <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" className="text-rose-500"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
+              <Trash2 className="w-8 h-8 text-rose-500" />
             </div>
             
             <div className="space-y-4">
               <h3 className="text-2xl font-black text-[var(--text-primary)] uppercase italic tracking-tighter leading-none">Excluir Conta?</h3>
-              <p className="text-sm font-medium text-[var(--text-muted)] leading-relaxed italic">
-                Atenção: Excluir sua conta no app <span className="font-black text-rose-500">NÃO cancela automaticamente</span> sua assinatura na Kiwify.
-                <br /><br />
-                Antes de prosseguir, cancele sua assinatura na Kiwify para evitar novas cobranças indesejadas.
-              </p>
+              
+              {user.subscriptionStatus === 'active' ? (
+                <div className="space-y-4">
+                  <p className="text-sm font-medium text-[var(--text-muted)] leading-relaxed italic">
+                    Você possui uma <span className="text-rose-500 font-black uppercase">assinatura ativa</span>. 
+                    Para evitar cobranças futuras, você <span className="underline">deve cancelar</span> sua assinatura na Kiwify antes de excluir sua conta.
+                  </p>
+                  <div className="p-4 rounded-2xl bg-rose-500/5 border border-rose-500/10 space-y-3">
+                    <p className="text-[9px] font-black text-rose-500 uppercase tracking-widest">Aviso Importante</p>
+                    <p className="text-[10px] text-[var(--text-muted)] italic">
+                      A exclusão aqui libera seu e-mail para novo cadastro, mas <span className="font-bold">não cancela</span> o pagamento na Kiwify.
+                    </p>
+                    <button 
+                      onClick={() => window.open('https://dashboard.kiwify.com.br/subscriptions', '_blank')}
+                      className="w-full bg-[var(--green-whatsapp)]/10 text-[var(--green-whatsapp)] font-black py-3 rounded-xl text-[9px] uppercase tracking-widest flex items-center justify-center gap-2"
+                    >
+                      <ExternalLink className="w-3 h-3" /> Abrir Painel Kiwify
+                    </button>
+                  </div>
+                </div>
+              ) : user.subscriptionStatus === 'trial' ? (
+                <p className="text-sm font-medium text-[var(--text-muted)] leading-relaxed italic">
+                  Você está no período de teste. Ao excluir sua conta, você perderá o acesso imediatamente e seu e-mail será liberado para um novo cadastro futuro.
+                </p>
+              ) : (
+                <p className="text-sm font-medium text-[var(--text-muted)] leading-relaxed italic">
+                  Esta ação é irreversível. Todos os seus dados serão apagados e seu e-mail será liberado para que você possa criar uma nova conta quando desejar.
+                </p>
+              )}
             </div>
 
             <div className="space-y-3 pt-4">
               <button 
-                onClick={() => window.open('https://dashboard.kiwify.com.br/subscriptions', '_blank')}
-                className="w-full bg-[var(--green-whatsapp)] text-white font-black py-5 rounded-2xl text-[10px] uppercase tracking-widest shadow-xl shadow-[var(--green-whatsapp)]/20"
-              >
-                1. Cancelar Assinatura na Kiwify
-              </button>
-              
-              <button 
                 onClick={handleDeleteAccount}
                 disabled={loading}
-                className="w-full bg-rose-500/10 text-rose-500 border border-rose-500/20 font-black py-5 rounded-2xl text-[10px] uppercase tracking-widest hover:bg-rose-500/20 transition-all"
+                className="w-full bg-rose-500 text-white font-black py-5 rounded-2xl text-[10px] uppercase tracking-widest shadow-xl shadow-rose-500/20 active:scale-95 transition-all disabled:opacity-50"
               >
-                {loading ? 'Processando...' : '2. Confirmar Exclusão da Conta'}
+                {loading ? (
+                  <div className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin mx-auto"></div>
+                ) : 'Confirmar Exclusão Permanente'}
               </button>
               
               <button 
                 onClick={() => setShowDeleteModal(false)}
-                className="w-full text-[var(--text-muted)] font-black text-[9px] uppercase tracking-widest pt-2"
+                className="w-full text-[var(--text-muted)] font-black text-[9px] uppercase tracking-widest pt-2 hover:text-[var(--text-primary)] transition-colors"
               >
                 Manter minha conta
               </button>

@@ -19,6 +19,8 @@ export const dispatchEvent = async (uid: string, event: FinanceEvent) => {
       event.payload.amount = Number(event.payload.amount);
     }
 
+    const isQA = event.payload?.isQA || false;
+    
     switch (event.type) {
       case 'ADD_EXPENSE': {
         const { amount, category, description, paymentMethod, date, cardId, sourceWalletId } = event.payload;
@@ -40,6 +42,7 @@ export const dispatchEvent = async (uid: string, event: FinanceEvent) => {
           type: 'EXPENSE',
           date: date || now.toISOString(),
           sourceWalletId: sourceWalletId || null,
+          isQA,
           createdAt: serverTimestamp()
         });
 
@@ -58,6 +61,7 @@ export const dispatchEvent = async (uid: string, event: FinanceEvent) => {
         await addDoc(collection(userRef, "transactions"), {
           ...event.payload,
           type: 'INCOME',
+          isQA,
           createdAt: serverTimestamp()
         });
 
@@ -119,6 +123,7 @@ export const dispatchEvent = async (uid: string, event: FinanceEvent) => {
               date: currentInstallmentDate.toISOString(),
               invoiceCycle,
               isPaid: false,
+              isQA,
               createdAt: serverTimestamp(),
               installmentNumber: i + 1,
               totalInstallments: numInstallments,
@@ -156,6 +161,7 @@ export const dispatchEvent = async (uid: string, event: FinanceEvent) => {
           paymentMethod: 'PIX',
           sourceWalletId: sourceWalletId || null,
           date: now.toISOString(),
+          isQA,
           createdAt: serverTimestamp()
         });
 
@@ -223,6 +229,7 @@ export const dispatchEvent = async (uid: string, event: FinanceEvent) => {
           dueDate, isPaid: false, recurring: recurring !== undefined ? recurring : true,
           type: type || 'PAY',
           targetWalletName: targetWalletName || null,
+          isQA,
           createdAt: serverTimestamp(), isActive: true
         });
         break;
@@ -263,6 +270,7 @@ export const dispatchEvent = async (uid: string, event: FinanceEvent) => {
               paymentMethod: paymentMethod || 'PIX',
               sourceWalletId: sourceWalletId || null,
               date: billData.dueDate || now.toISOString(),
+              isQA,
               createdAt: serverTimestamp()
             });
 
@@ -291,6 +299,7 @@ export const dispatchEvent = async (uid: string, event: FinanceEvent) => {
               dueDate: nextMonth.toISOString(),
               isPaid: false,
               recurring: true,
+              isQA,
               createdAt: serverTimestamp(),
               isActive: true
             });
@@ -337,6 +346,7 @@ export const dispatchEvent = async (uid: string, event: FinanceEvent) => {
         await addDoc(collection(userRef, "goals"), {
           ...event.payload,
           currentAmount: event.payload.currentAmount !== undefined ? event.payload.currentAmount : 0,
+          isQA,
           createdAt: serverTimestamp()
         });
         break;
@@ -394,6 +404,7 @@ export const dispatchEvent = async (uid: string, event: FinanceEvent) => {
           type: 'EXPENSE',
           paymentMethod: 'META', // Identificador especial para saber que veio de uma meta
           date: now.toISOString(),
+          isQA,
           createdAt: serverTimestamp()
         });
 
@@ -419,6 +430,7 @@ export const dispatchEvent = async (uid: string, event: FinanceEvent) => {
           invoiceAmount: 0,
           dueDay: Number(dueDay),
           closingDay: closingDay ? Number(closingDay) : null,
+          isQA,
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp()
         });
@@ -478,7 +490,35 @@ export const dispatchEvent = async (uid: string, event: FinanceEvent) => {
           updatedAt: serverTimestamp()
         });
 
-        // Se for despesa e mudou valor ou categoria, ajusta limites
+        // 1. Sincronização de Carteiras (Wallet Balance Sync)
+        if (oldData) {
+          const oldAmount = Number(oldData.amount || 0);
+          const newAmount = finalUpdates.amount !== undefined ? Number(finalUpdates.amount) : oldAmount;
+          const oldType = oldData.type;
+          const newType = finalUpdates.type || oldType;
+          const oldMethod = oldData.paymentMethod;
+          const newMethod = finalUpdates.paymentMethod || oldMethod;
+          const oldSourceWalletId = oldData.sourceWalletId;
+          const newSourceWalletId = finalUpdates.sourceWalletId !== undefined ? finalUpdates.sourceWalletId : oldSourceWalletId;
+          const oldTargetWalletId = oldData.targetWalletId;
+          const newTargetWalletId = finalUpdates.targetWalletId !== undefined ? finalUpdates.targetWalletId : oldTargetWalletId;
+
+          // Reverter impacto antigo
+          if (oldType === 'INCOME' && oldTargetWalletId) {
+            await updateWalletBalance(uid, oldTargetWalletId, -oldAmount);
+          } else if (oldType === 'EXPENSE' && oldSourceWalletId && oldMethod !== 'CARD') {
+            await updateWalletBalance(uid, oldSourceWalletId, oldAmount);
+          }
+
+          // Aplicar novo impacto
+          if (newType === 'INCOME' && newTargetWalletId) {
+            await updateWalletBalance(uid, newTargetWalletId, newAmount);
+          } else if (newType === 'EXPENSE' && newSourceWalletId && newMethod !== 'CARD') {
+            await updateWalletBalance(uid, newSourceWalletId, -newAmount);
+          }
+        }
+
+        // 2. Sincronização de Limites e Cartões
         if (oldData && (oldData.type === 'EXPENSE' || finalUpdates.type === 'EXPENSE')) {
           const oldAmount = Number(oldData.amount || 0);
           const newAmount = finalUpdates.amount !== undefined ? Number(finalUpdates.amount) : oldAmount;
@@ -598,15 +638,19 @@ export const dispatchEvent = async (uid: string, event: FinanceEvent) => {
 
         await deleteDoc(itemRef);
 
-        // Se deletou uma transação de despesa, estorna o limite
-        if (colName === 'transactions' && oldData && oldData.type === 'EXPENSE') {
-          const normalizedCat = normalizeCategoryName(oldData.category);
-          await updateLimitConsumption(uid, normalizedCat, -Number(oldData.amount));
+        // Se deletou uma transação, estorna o impacto (Limite, Cartão e Carteira)
+        if (colName === 'transactions' && oldData) {
+          const amount = Number(oldData.amount || 0);
+          
+          // 1. Estorno de Limite de Categoria
+          if (oldData.type === 'EXPENSE') {
+            const normalizedCat = normalizeCategoryName(oldData.category);
+            await updateLimitConsumption(uid, normalizedCat, -amount);
+          }
 
-          // Se for gasto no cartão, estorna o limite do cartão também
-          if (oldData.paymentMethod === 'CARD' && oldData.cardId) {
+          // 2. Estorno de Cartão de Crédito
+          if (oldData.type === 'EXPENSE' && oldData.paymentMethod === 'CARD' && oldData.cardId) {
             const cardRef = doc(userRef, "cards", oldData.cardId);
-            const amount = Number(oldData.amount);
             await updateDoc(cardRef, {
               usedLimit: increment(-amount),
               availableLimit: increment(amount),
@@ -617,6 +661,13 @@ export const dispatchEvent = async (uid: string, event: FinanceEvent) => {
               invoiceAmount: increment(-amount),
               updatedAt: serverTimestamp()
             });
+          }
+
+          // 3. Estorno de Carteira (Wallet)
+          if (oldData.type === 'INCOME' && oldData.targetWalletId) {
+            await updateWalletBalance(uid, oldData.targetWalletId, -amount);
+          } else if (oldData.type === 'EXPENSE' && oldData.sourceWalletId && oldData.paymentMethod !== 'CARD') {
+            await updateWalletBalance(uid, oldData.sourceWalletId, amount);
           }
         }
         break;
@@ -710,6 +761,7 @@ export const dispatchEvent = async (uid: string, event: FinanceEvent) => {
         await addDoc(collection(userRef, "wallets"), {
           ...event.payload,
           isActive: true,
+          isQA,
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp()
         });
@@ -752,6 +804,7 @@ export const dispatchEvent = async (uid: string, event: FinanceEvent) => {
         // 3. Registra a transferência
         await addDoc(collection(userRef, "walletTransfers"), {
           fromWalletId, toWalletId, amount, note, date: date || new Date().toISOString(),
+          isQA,
           createdAt: serverTimestamp()
         });
         break;
@@ -760,6 +813,7 @@ export const dispatchEvent = async (uid: string, event: FinanceEvent) => {
       case 'CREATE_CATEGORY': {
         await addDoc(collection(userRef, "categories"), {
           ...event.payload,
+          isQA,
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp()
         });
@@ -847,6 +901,7 @@ export const dispatchEvent = async (uid: string, event: FinanceEvent) => {
           ...event.payload,
           remainingAmount: event.payload.remainingAmount !== undefined ? event.payload.remainingAmount : event.payload.totalAmount,
           status: event.payload.status || 'ATIVA',
+          isQA,
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp()
         });
@@ -875,6 +930,7 @@ export const dispatchEvent = async (uid: string, event: FinanceEvent) => {
         await addDoc(collection(userRef, "debts", debtId, "payments"), {
           amount,
           date: date || now.toISOString(),
+          isQA,
           createdAt: serverTimestamp()
         });
 
@@ -896,6 +952,7 @@ export const dispatchEvent = async (uid: string, event: FinanceEvent) => {
           paymentMethod: 'PIX',
           sourceWalletId: sourceWalletId || null,
           date: date || now.toISOString(),
+          isQA,
           createdAt: serverTimestamp()
         });
 

@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { UserSession, Message, Transaction, CategoryLimit, Bill, CreditCardInfo, Wallet, UserCategory, SavingGoal } from '../types';
 import { parseMessage } from '../services/geminiService';
 import { parseStatementFile } from '../services/statementService';
@@ -41,18 +41,30 @@ const ChatInterface: React.FC<ChatProps> = ({
     }
   }, [messages, isLoading, pendingAction]);
 
+  const monthlySummary = useMemo(() => calculateMonthlySummary(transactions), [transactions]);
+
   // Enviar resumo automático apenas uma vez ao entrar
   useEffect(() => {
     if (summarySentRef.current) return;
     
-    // Verificar se já existe um resumo nas mensagens para evitar duplicidade em remounts
-    const hasSummary = messages.some(m => m.text.includes("💰 Resumo rápido"));
-    if (hasSummary) {
+    // Verificar se já foi enviado nesta sessão (sessionStorage)
+    const sessionKey = `summary_sent_${user.uid}_${new Date().toDateString()}`;
+    if (sessionStorage.getItem(sessionKey)) {
       summarySentRef.current = true;
       return;
     }
 
+    // Verificar se já existe um resumo nas mensagens para evitar duplicidade em remounts
+    const hasSummary = messages.some(m => m.text.includes("💰 Resumo rápido"));
+    if (hasSummary) {
+      summarySentRef.current = true;
+      sessionStorage.setItem(sessionKey, 'true');
+      return;
+    }
+
     const generateSummary = () => {
+      if (reminders.length === 0 && transactions.length === 0) return;
+
       const now = new Date();
       const currentMonth = now.getMonth();
       const currentYear = now.getFullYear();
@@ -72,34 +84,31 @@ const ChatInterface: React.FC<ChatProps> = ({
       });
       const pendingTotal = pendingBills.reduce((sum, b) => sum + (Number(b.amount) || 0), 0);
 
-      // Contas Pagas (Mês Atual)
-      const paidBills = reminders.filter(b => 
-        b.isPaid && 
-        b.type === 'PAY' && 
-        b.isActive !== false &&
-        b.paidAt && new Date(b.paidAt).getMonth() === currentMonth &&
-        new Date(b.paidAt).getFullYear() === currentYear
-      );
-      const paidTotal = paidBills.reduce((sum, b) => sum + (Number(b.amount) || 0), 0);
-
       // Próxima conta (Pendente mais próxima)
       const nextBill = [...pendingBills].sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime())[0];
 
       // Insight de economia (Baseado no Dashboard)
-      const summary = calculateMonthlySummary(transactions);
       let insight = "Continue registrando para eu te dar dicas!";
-      if (summary.categories.length > 0) {
-        const top = summary.categories[0];
+      
+      // Contas pagas vs totais
+      const totalBillsThisMonth = reminders.filter(b => {
+        const d = new Date(b.dueDate);
+        return b.isActive !== false && b.type === 'PAY' && d.getMonth() === currentMonth && d.getFullYear() === currentYear;
+      });
+      const paidBillsThisMonth = totalBillsThisMonth.filter(b => b.isPaid);
+      
+      if (totalBillsThisMonth.length > 0) {
+        const percent = Math.round((paidBillsThisMonth.length / totalBillsThisMonth.length) * 100);
+        insight = `Você já pagou **${percent}%** das suas contas fixas este mês. Continue assim!`;
+      } else if (monthlySummary.categories.length > 0) {
+        const top = monthlySummary.categories[0];
         insight = `Sua maior despesa é **${top.category}** (${formatCurrency(top.amount)}).`;
       }
 
-      const summaryText = `📊 **Resumo Financeiro**\n\n` +
-        `💰 **Saldo atual:** ${formatCurrency(balance)}\n\n` +
-        `⏳ **Contas a vencer neste mês:** ${pendingBills.length}\n` +
-        `Total pendente: ${formatCurrency(pendingTotal)}\n` +
-        `${nextBill ? `Próxima: ${nextBill.description} vence em ${Math.ceil((new Date(nextBill.dueDate).getTime() - now.getTime()) / (1000 * 60 * 60 * 24))} dias` : ''}\n\n` +
-        `✅ **Contas pagas neste mês:** ${paidBills.length}\n` +
-        `Total pago: ${formatCurrency(paidTotal)}\n\n` +
+      const summaryText = `💰 **Resumo rápido:**\n` +
+        `Saldo atual: **${formatCurrency(balance)}**\n` +
+        `Pendências: **${formatCurrency(pendingTotal)}** (${pendingBills.length} contas)\n` +
+        `${nextBill ? `Próxima conta: **${nextBill.description}** (vence em ${Math.ceil((new Date(nextBill.dueDate).getTime() - now.getTime()) / (1000 * 60 * 60 * 24))} dias)` : 'Nenhuma conta pendente para este mês'}\n\n` +
         `💡 **Insight:** ${insight}`;
 
       const summaryMsg: Message = {
@@ -111,12 +120,13 @@ const ChatInterface: React.FC<ChatProps> = ({
 
       setMessages(prev => [...prev, summaryMsg]);
       summarySentRef.current = true;
+      sessionStorage.setItem(sessionKey, 'true');
     };
 
     // Pequeno delay para garantir que os dados carregaram
-    const timer = setTimeout(generateSummary, 500);
+    const timer = setTimeout(generateSummary, 800);
     return () => clearTimeout(timer);
-  }, [transactions, reminders, goals, setMessages, messages]);
+  }, [monthlySummary, reminders, wallets, setMessages, messages, user.uid]);
 
   // Verificar primeiro recebimento após cadastro
   useEffect(() => {
@@ -161,7 +171,6 @@ const ChatInterface: React.FC<ChatProps> = ({
         .filter(w => w.isActive !== false)
         .reduce((sum, w) => sum + (Number(w.balance) || 0), 0);
 
-      const summary = calculateMonthlySummary(transactions);
       const income = reminders
         .filter(r => r.type === 'RECEIVE')
         .reduce((sum, r) => sum + (Number(r.amount) || 0), 0);
@@ -170,7 +179,7 @@ const ChatInterface: React.FC<ChatProps> = ({
       
       if (balance < 100 && balance > 0) {
         riskMsg = "⚠️ **Alerta de Risco:** Seu saldo total está muito baixo (menos de R$ 100). Evite gastos não essenciais hoje.";
-      } else if (income > 0 && summary.expense > income * 0.8) {
+      } else if (income > 0 && monthlySummary.expense > income * 0.8) {
         riskMsg = "🚨 **Alerta de Risco:** Seus gastos já comprometeram mais de 80% da sua renda mensal. Recomendo cautela extra.";
       }
 
