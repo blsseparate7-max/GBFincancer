@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { db, auth } from '../services/firebaseConfig';
+import { db, auth, isFirebaseConfigured } from '../services/firebaseConfig';
 import { 
   signInWithEmailAndPassword, 
   createUserWithEmailAndPassword, 
@@ -25,6 +25,34 @@ interface AuthProps {
 
 const Auth: React.FC<AuthProps> = ({ onLogin, onOpenSupport, initialView = 'login' }) => {
   const [view, setView] = useState<'login' | 'signup' | 'forgot'>(initialView);
+  
+  if (!isFirebaseConfigured()) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#0B141A] p-4 font-sans">
+        <div className="max-w-md w-full bg-[#111B21] rounded-2xl shadow-2xl p-8 text-center border border-[#2A3942]">
+          <div className="w-16 h-16 bg-yellow-500/10 rounded-full flex items-center justify-center mx-auto mb-6">
+            <svg className="w-8 h-8 text-yellow-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+          </div>
+          <h2 className="text-xl font-bold text-[#E9EDEF] mb-3">Configuração Necessária</h2>
+          <p className="text-[#8696A0] mb-8 text-sm leading-relaxed">
+            O Firebase não está configurado. Por favor, adicione as chaves da API no arquivo <code className="bg-[#202C33] px-1.5 py-0.5 rounded text-[#00A884]">firebase-applet-config.json</code> para habilitar o login.
+          </p>
+          <div className="text-xs text-[#8696A0] bg-[#202C33] p-4 rounded-xl text-left border border-[#2A3942]">
+            <p className="font-bold text-[#E9EDEF] mb-2 uppercase tracking-wider">Passos para corrigir:</p>
+            <ul className="space-y-2">
+              <li className="flex gap-2"><span className="text-[#00A884]">1.</span> Acesse o Firebase Console</li>
+              <li className="flex gap-2"><span className="text-[#00A884]">2.</span> Crie um projeto ou use um existente</li>
+              <li className="flex gap-2"><span className="text-[#00A884]">3.</span> Adicione um App Web e copie as chaves</li>
+              <li className="flex gap-2"><span className="text-[#00A884]">4.</span> Cole no arquivo de configuração</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -91,40 +119,30 @@ const Auth: React.FC<AuthProps> = ({ onLogin, onOpenSupport, initialView = 'logi
     }
 
     console.log("GB: Iniciando handlePostAuth para UID:", user.uid);
-    console.log("GB: auth.currentUser UID:", auth.currentUser?.uid);
     
+    // Pequeno delay para garantir que o SDK do Firebase Auth tenha propagado o estado
+    // Isso é crucial para que as Security Rules do Firestore funcionem corretamente
     if (!auth.currentUser) {
-      console.warn("GB: auth.currentUser está nulo no início do handlePostAuth! Aguardando 1.5s para sincronização...");
-      // Delay maior para garantir que o SDK do Firestore pegue o token
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      if (!auth.currentUser) {
-        console.error("GB: auth.currentUser continua nulo após delay. Tentando usar o objeto 'user' passado.");
-        // Se ainda estiver nulo, o Firestore provavelmente vai falhar, mas vamos logar o estado do objeto passado
-        console.log("GB: Objeto 'user' passado:", { uid: user.uid, email: user.email });
-      } else {
-        console.log("GB: auth.currentUser sincronizado com sucesso. UID:", auth.currentUser.uid);
-      }
-    }
-
-    if (auth.currentUser.uid !== user.uid) {
-      console.warn("GB: UID do usuário passado difere do auth.currentUser.uid!", {
-        passed: user.uid,
-        current: auth.currentUser.uid
-      });
+      console.warn("GB: auth.currentUser está nulo no início do handlePostAuth! Aguardando sincronização...");
+      await new Promise(resolve => setTimeout(resolve, 1000));
     }
 
     try {
-      // 4. Verificar/Criar no Firestore
       const userRef = doc(db, "users", user.uid);
-      console.log("GB: Caminho do documento:", userRef.path);
-      console.log("GB: Tentando ler documento do usuário...");
+      console.log("GB: Tentando acessar Firestore para o usuário:", user.uid);
       
       let userDoc;
       try {
         userDoc = await getDoc(userRef);
-        console.log("GB: Leitura concluída. Existe?", userDoc.exists());
-      } catch (err) {
-        throw handleFirestoreError(err, "GET", userRef.path);
+      } catch (err: any) {
+        // Se falhar por permissão, pode ser que o token ainda não tenha sido propagado
+        if (err.code === 'permission-denied') {
+          console.warn("GB: Permissão negada inicial. Tentando novamente em 1.5s...");
+          await new Promise(resolve => setTimeout(resolve, 1500));
+          userDoc = await getDoc(userRef);
+        } else {
+          throw handleFirestoreError(err, "GET", userRef.path);
+        }
       }
       
       const now = new Date();
@@ -211,16 +229,15 @@ const Auth: React.FC<AuthProps> = ({ onLogin, onOpenSupport, initialView = 'logi
   const handleGoogleLogin = async () => {
     setError(null);
     setMessage(null);
+    setIsLoading(true);
     
-    // Configurar Provider
     const provider = new GoogleAuthProvider();
     provider.setCustomParameters({ prompt: 'select_account' });
     
     try {
       console.log("GB: Iniciando login com Google (Popup)...");
-      // O signInWithPopup deve ser chamado o mais próximo possível do clique do usuário
       const result = await signInWithPopup(auth, provider);
-      setIsLoading(true);
+      console.log("GB: Popup concluído com sucesso. UID:", result.user.uid);
       await handlePostAuth(result.user);
     } catch (err: any) {
       console.error("GB: Erro no Google Login:", err);
@@ -228,25 +245,22 @@ const Auth: React.FC<AuthProps> = ({ onLogin, onOpenSupport, initialView = 'logi
       if (err.code === "auth/popup-blocked") {
         console.log("GB: Popup bloqueado. Tentando redirecionamento...");
         try {
-          // Fallback automático para redirecionamento se o popup for bloqueado
           await signInWithRedirect(auth, provider);
         } catch (redirErr: any) {
           console.error("GB: Erro no redirecionamento:", redirErr);
-          setError("O popup foi bloqueado e o redirecionamento falhou. Por favor, verifique as permissões do seu navegador.");
+          setError("O popup foi bloqueado e o redirecionamento falhou. Verifique as permissões do navegador.");
+          setIsLoading(false);
         }
       } else if (err.code === "auth/popup-closed-by-user") {
-        setError("O login foi cancelado. Você fechou a janela do Google antes de terminar.");
-      } else if (err.code === "auth/cancelled-popup-request") {
-        setError("Houve um conflito de popups. Tente novamente.");
+        setError("Login cancelado pelo usuário.");
+        setIsLoading(false);
       } else if (err.code === "auth/unauthorized-domain") {
-        setError("Este domínio não está autorizado para login com Google. Verifique as configurações do Firebase.");
-      } else if (err.code === "auth/account-exists-with-different-credential") {
-        setError("Já existe uma conta com este e-mail usando outro método de login (ex: senha).");
+        setError("Este domínio não está autorizado no Firebase Console. Adicione o domínio da Vercel em Authentication > Settings > Authorized domains.");
+        setIsLoading(false);
       } else {
-        setError("Erro ao entrar com Google. Tente novamente.");
+        setError(`Erro ao entrar com Google: ${err.message || 'Tente novamente.'}`);
+        setIsLoading(false);
       }
-    } finally {
-      setIsLoading(false);
     }
   };
 

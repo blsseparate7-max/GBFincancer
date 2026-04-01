@@ -34,6 +34,7 @@ import AdminSupport from './components/AdminSupport';
 import LegalModal from './components/LegalModal';
 import Paywall from './components/Paywall';
 import LandingPage from './components/LandingPage';
+import PWAInstallPrompt from './components/PWAInstallPrompt';
 import { normalizeCard, normalizeGoal, normalizeReminder, normalizeLimit, normalizeWallet, normalizeUserCategory, normalizeTransaction, assertSchema } from './services/normalizationService';
 
 import { motion, AnimatePresence } from 'motion/react';
@@ -102,9 +103,9 @@ const App: React.FC = () => {
               setOnboardingStep('lgpd');
             }
           } else {
-            // Caso o usuário exista no Auth mas não no Firestore (ex: após exclusão parcial)
-            console.warn("GB: Usuário no Auth mas sem documento no Firestore. Limpando sessão...");
-            await signOut(auth);
+            // Caso o usuário exista no Auth mas não no Firestore (ex: após exclusão parcial ou durante o signup)
+            console.warn("GB: Usuário no Auth mas sem documento no Firestore. Aguardando criação...");
+            // Não fazemos signOut aqui, pois o Auth.tsx pode estar criando o documento agora mesmo
             setSession(null);
           }
         } catch (err) {
@@ -522,6 +523,11 @@ const App: React.FC = () => {
         {/* Paywall Overlay */}
         {session && !hasAccess() && activeTab !== 'support' && activeTab !== 'profile' && activeTab !== 'config' && (
           <Paywall user={session} onLogout={() => signOut(auth)} />
+        )}
+
+        {/* PWA Install Prompt */}
+        {session && onboardingStep === 'none' && (
+          <PWAInstallPrompt onClose={() => {}} />
         )}
       </div>
     </div>

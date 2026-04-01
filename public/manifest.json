@@ -1,21 +1,24 @@
 {
-  "name": "GB Financer - IA Financeira",
-  "short_name": "GB Financer",
+  "name": "GBFinancer",
+  "short_name": "GBFinancer",
   "description": "Seu mentor financeiro com inteligência artificial.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#0b141a",
   "theme_color": "#00a884",
+  "orientation": "portrait",
   "icons": [
     {
       "src": "https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png",
       "sizes": "192x192",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any maskable"
     },
     {
       "src": "https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png",
       "sizes": "512x512",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any maskable"
     }
   ]
 }
