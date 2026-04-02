@@ -126,7 +126,11 @@ export const normalizeGoal = (docSnap: any, uid?: string): SavingGoal => {
     level: data.level || 1,
     updatedAt: data.updatedAt || null,
     createdAt: data.createdAt || null,
-    contributions: data.contributions || []
+    contributions: data.contributions || [],
+    // Novos campos
+    status: data.status || 'ACTIVE',
+    resolved: !!data.resolved,
+    lastPromptedAt: data.lastPromptedAt || null
   };
 };
 
@@ -181,7 +185,13 @@ export const normalizeReminder = (docSnap: any): Bill => {
     category: data.category || (normalizedType === 'RECEIVE' ? 'Recebimento' : 'Contas Fixas'),
     type: normalizedType,
     isActive: data.isActive !== undefined ? data.isActive : true,
-    cardId: data.cardId || null
+    cardId: data.cardId || null,
+    // Novos campos
+    status: data.status || (data.isPaid ? 'PAID' : 'PENDING'),
+    cycleKey: data.cycleKey || null,
+    lastPromptedAt: data.lastPromptedAt || null,
+    resolved: !!data.resolved,
+    dedupeKey: data.dedupeKey || null
   };
 };
 
@@ -205,22 +215,16 @@ export const normalizeLimit = (docSnap: any): CategoryLimit => {
 /**
  * Normaliza nomes de categorias para um padrão global.
  */
-export const normalizeCategoryName = (cat: string): string => {
-  if (!cat) return 'Outros';
-  const c = cat.toUpperCase().trim();
+export const normalizeCategoryName = (cat: any): string => {
+  if (!cat || typeof cat !== 'string') return 'Outros';
   
-  // Mapeamento de variações para categorias padrão
-  if (['LANCHE', 'LANCHES', 'COMIDA', 'RESTAURANTE', 'IFOOD', 'ALIMENTAÇÃO', 'ALIMENTACAO', 'MERCADO', 'SUPERMERCADO', 'PADARIA'].includes(c)) return 'Alimentação';
-  if (['UBER', '99', 'GASOLINA', 'COMBUSTIVEL', 'TRANSPORTE', 'TRANSP', 'METRO', 'ÔNIBUS', 'ONIBUS', 'ESTACIONAMENTO'].includes(c)) return 'Transporte';
-  if (['ALUGUEL', 'CONDOMINIO', 'LUZ', 'AGUA', 'ÁGUA', 'INTERNET', 'MORADIA', 'REFORMA', 'MOVEIS', 'MÓVEIS'].includes(c)) return 'Moradia';
-  if (['FARMACIA', 'FARMÁCIA', 'MEDICO', 'MÉDICO', 'SAUDE', 'SAÚDE', 'ACADEMIA', 'DENTISTA', 'EXAMES', 'HOSPITAL'].includes(c)) return 'Saúde';
-  if (['ESCOLA', 'CURSO', 'FACULDADE', 'EDUCAÇÃO', 'EDUCACAO', 'LIVROS', 'PAPELARIA'].includes(c)) return 'Educação';
-  if (['CINEMA', 'LAZER', 'VIAGEM', 'SHOW', 'BAR', 'BALADA', 'JOGOS', 'GAMES', 'STREAMING', 'NETFLIX', 'SPOTIFY'].includes(c)) return 'Lazer';
-  if (['ROUPA', 'BELEZA', 'PESSOAL', 'PET', 'CABELEIREIRO', 'BARBEARIA', 'PRESENTES', 'GIFT'].includes(c)) return 'Pessoal';
-  if (['INVESTIMENTO', 'BANCO', 'JUROS', 'FINANCEIRO', 'EMPRESTIMO', 'EMPRÉSTIMO', 'TAXA', 'IMPOSTO', 'IOF'].includes(c)) return 'Financeiro';
-  
-  // Se não bater com nenhum, retorna Capitalizado para manter padrão visual
-  return cat.charAt(0).toUpperCase() + cat.slice(1).toLowerCase();
+  // Se já estiver capitalizado e for uma string limpa, mantemos como está
+  // para evitar que "Mercado" vire "Alimentação" contra a vontade do usuário.
+  const trimmed = cat.trim();
+  if (trimmed.length === 0) return 'Outros';
+
+  // Apenas capitaliza a primeira letra para manter padrão visual
+  return trimmed.charAt(0).toUpperCase() + trimmed.slice(1).toLowerCase();
 };
 
 /**
@@ -264,12 +268,24 @@ export const normalizeTransaction = (docSnap: any): any => {
     amount: amount,
     category: normalizeCategoryName(data.category || data.tag || 'Outros'),
     type: data.type || (amount < 0 ? 'EXPENSE' : 'INCOME'),
-    paymentMethod: data.paymentMethod || data.method || 'PIX',
-    date: data.date || data.timestamp || new Date().toISOString(),
+    paymentMethod: data.paymentMethod === 'CREDIT' ? 'CARD' : (data.paymentMethod || data.method || 'PIX'),
+    date: data.date || data.timestamp || new Date().toISOString().split('T')[0],
     createdAt: data.createdAt || null,
     cardId: data.cardId || null,
+    sourceWalletId: data.sourceWalletId || data.walletId || null,
+    targetWalletId: data.targetWalletId || data.walletId || null,
+    walletId: data.walletId || null,
+    walletName: data.walletName || null,
     isPaid: data.isPaid !== undefined ? data.isPaid : (data.paymentMethod === 'CARD' ? false : true),
-    invoiceCycle: data.invoiceCycle || null
+    invoiceCycle: data.invoiceCycle || null,
+    // Novos campos para orquestração e deduplicação
+    status: data.status || 'CONFIRMED',
+    cycleKey: data.cycleKey || null,
+    lastPromptedAt: data.lastPromptedAt || null,
+    dedupeKey: data.dedupeKey || null,
+    resolved: !!data.resolved,
+    source: data.source || 'CHAT',
+    confirmedBy: data.confirmedBy || null
   };
 };
 

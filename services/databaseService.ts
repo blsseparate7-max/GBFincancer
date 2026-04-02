@@ -108,6 +108,7 @@ export const fetchChatContext = async (uid: string) => {
     
     // Buscas paralelas para performance
     const [
+      userSnap,
       transSnap,
       goalsSnap,
       remindersSnap,
@@ -116,6 +117,7 @@ export const fetchChatContext = async (uid: string) => {
       walletsSnap,
       catsSnap
     ] = await Promise.all([
+      getDoc(userRef),
       getDocs(query(collection(userRef, "transactions"), orderBy("date", "desc"), limit(50))),
       getDocs(collection(userRef, "goals")),
       getDocs(collection(userRef, "reminders")),
@@ -126,6 +128,7 @@ export const fetchChatContext = async (uid: string) => {
     ]);
 
     return {
+      spendingLimit: userSnap.exists() ? userSnap.data().spendingLimit : null,
       transactions: transSnap.docs.map(d => normalizeTransaction(d)),
       goals: goalsSnap.docs.map(d => normalizeGoal(d, uid)),
       reminders: remindersSnap.docs.map(d => normalizeReminder(d)),

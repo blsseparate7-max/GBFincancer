@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { db } from '../services/firebaseConfig';
 import { collection, query, orderBy, limit, onSnapshot, doc, startAfter, getDocs, where } from 'firebase/firestore';
-import { Transaction, CreditCardInfo, UserCategory } from '../types';
+import { Transaction, CreditCardInfo, UserCategory, PaymentMethod } from '../types';
 import { dispatchEvent } from '../services/eventDispatcher';
 import { normalizeTransaction } from '../services/normalizationService';
 import MoneyInput from './MoneyInput';
@@ -45,7 +45,7 @@ const Extrato: React.FC<ExtratoProps> = ({ uid, cards, categories: userCategorie
   const [editDate, setEditDate] = useState('');
   const [editCategory, setEditCategory] = useState('');
   const [editType, setEditType] = useState<'INCOME' | 'EXPENSE' | 'SAVING'>('EXPENSE');
-  const [editPaymentMethod, setEditPaymentMethod] = useState<'CASH' | 'PIX' | 'CARD'>('CASH');
+  const [editPaymentMethod, setEditPaymentMethod] = useState<PaymentMethod>('CASH');
   const [editCardId, setEditCardId] = useState('');
   const [editSourceWalletId, setEditSourceWalletId] = useState('');
   const [editTargetWalletId, setEditTargetWalletId] = useState('');
@@ -221,8 +221,10 @@ const Extrato: React.FC<ExtratoProps> = ({ uid, cards, categories: userCategorie
 
   const filteredTransactions = useMemo(() => {
     return transactions.filter(t => {
-      const matchesSearch = t.description.toLowerCase().includes(searchTerm.toLowerCase()) || 
-                           t.category.toLowerCase().includes(searchTerm.toLowerCase());
+      const tDesc = (t.description || "").toLowerCase();
+      const tCat = (t.category || "").toLowerCase();
+      const search = searchTerm.toLowerCase();
+      const matchesSearch = tDesc.includes(search) || tCat.includes(search);
       const matchesType = filterType === 'ALL' || t.type === filterType;
       
       // Advanced Filters
@@ -547,9 +549,11 @@ const Extrato: React.FC<ExtratoProps> = ({ uid, cards, categories: userCategorie
                     value={editPaymentMethod}
                     onChange={(e) => setEditPaymentMethod(e.target.value as any)}
                   >
+                    <option value="PIX">Pix</option>
+                    <option value="DEBIT">Débito</option>
+                    <option value="CREDIT">Crédito</option>
                     <option value="CASH">Dinheiro</option>
-                    <option value="PIX">PIX</option>
-                    <option value="CARD">Cartão</option>
+                    <option value="TRANSFER">Transferência</option>
                   </select>
                 </div>
                 <div className="space-y-1.5">

@@ -14,6 +14,9 @@ export interface QATestStep {
   expected: string;
   actual: string;
   status: 'OK' | 'FAILED' | 'DIVERGENCE';
+  probableCause?: string;
+  moduleFile?: string;
+  timestamp: string;
 }
 
 export interface QATestScenarioResult {
@@ -21,6 +24,7 @@ export interface QATestScenarioResult {
   name: string;
   steps: QATestStep[];
   success: boolean;
+  summary?: string;
 }
 
 const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
@@ -71,7 +75,8 @@ export class QATestingService {
         action: "Criar carteira com saldo 1000",
         expected: "Carteira criada com saldo 1000",
         actual: "Carteira criada",
-        status: 'OK'
+        status: 'OK',
+        timestamp: new Date().toISOString()
       });
 
       await wait(1000);
@@ -105,7 +110,10 @@ export class QATestingService {
         action: `Lançar despesa de ${expenseAmount}`,
         expected: "Saldo da carteira deve ser 800",
         actual: checkExpense ? "Saldo 800" : "Saldo não atualizou corretamente",
-        status: checkExpense ? 'OK' : 'FAILED'
+        status: checkExpense ? 'OK' : 'FAILED',
+        probableCause: checkExpense ? undefined : "Falha na atualização de saldo no Firestore ou no eventDispatcher",
+        moduleFile: checkExpense ? undefined : "services/eventDispatcher.ts",
+        timestamp: new Date().toISOString()
       });
       if (!checkExpense) success = false;
 
@@ -136,7 +144,10 @@ export class QATestingService {
           action: "Alterar valor de 200 para 300",
           expected: "Saldo da carteira deve ser 700",
           actual: checkEdit ? "Saldo 700" : "Saldo não recalculo corretamente",
-          status: checkEdit ? 'OK' : 'FAILED'
+          status: checkEdit ? 'OK' : 'FAILED',
+          probableCause: checkEdit ? undefined : "Erro na lógica de estorno/recalculo de edição",
+          moduleFile: checkEdit ? undefined : "services/eventDispatcher.ts",
+          timestamp: new Date().toISOString()
         });
         if (!checkEdit) success = false;
       }
@@ -161,7 +172,10 @@ export class QATestingService {
           action: "Excluir transação de 300",
           expected: "Saldo da carteira deve voltar para 1000",
           actual: checkDelete ? "Saldo 1000" : "Saldo não estornou corretamente",
-          status: checkDelete ? 'OK' : 'FAILED'
+          status: checkDelete ? 'OK' : 'FAILED',
+          probableCause: checkDelete ? undefined : "Erro na lógica de estorno ao excluir transação",
+          moduleFile: checkDelete ? undefined : "services/eventDispatcher.ts",
+          timestamp: new Date().toISOString()
         });
         if (!checkDelete) success = false;
       }
@@ -173,7 +187,10 @@ export class QATestingService {
         action: "Execução do cenário",
         expected: "Fluxo completo",
         actual: e.message,
-        status: 'FAILED'
+        status: 'FAILED',
+        probableCause: "Erro inesperado na execução do teste",
+        moduleFile: "services/QATestingService.ts",
+        timestamp: new Date().toISOString()
       });
     }
 
@@ -207,7 +224,8 @@ export class QATestingService {
         action: "Criar cartão com limite 5000",
         expected: "Cartão criado com limite 5000",
         actual: "Cartão criado",
-        status: 'OK'
+        status: 'OK',
+        timestamp: new Date().toISOString()
       });
 
       // 2. Compra no Cartão
@@ -229,7 +247,10 @@ export class QATestingService {
         action: "Compra de 500 no cartão",
         expected: "Limite usado: 500, Disponível: 4500",
         actual: checkCharge ? "Limite atualizado" : "Limite não atualizou corretamente",
-        status: checkCharge ? 'OK' : 'FAILED'
+        status: checkCharge ? 'OK' : 'FAILED',
+        probableCause: checkCharge ? undefined : "Erro na atualização de limites do cartão",
+        moduleFile: checkCharge ? undefined : "services/eventDispatcher.ts",
+        timestamp: new Date().toISOString()
       });
       if (!checkCharge) success = false;
 
@@ -252,7 +273,10 @@ export class QATestingService {
         action: "Pagar fatura de 500",
         expected: "Limite usado: 0, Disponível: 5000",
         actual: checkPay ? "Limite restaurado" : "Limite não restaurou corretamente",
-        status: checkPay ? 'OK' : 'FAILED'
+        status: checkPay ? 'OK' : 'FAILED',
+        probableCause: checkPay ? undefined : "Erro na lógica de pagamento de fatura",
+        moduleFile: checkPay ? undefined : "services/eventDispatcher.ts",
+        timestamp: new Date().toISOString()
       });
       if (!checkPay) success = false;
 
@@ -263,7 +287,10 @@ export class QATestingService {
         action: "Execução do cenário",
         expected: "Fluxo completo",
         actual: e.message,
-        status: 'FAILED'
+        status: 'FAILED',
+        probableCause: "Erro inesperado na execução do teste",
+        moduleFile: "services/QATestingService.ts",
+        timestamp: new Date().toISOString()
       });
     }
 
@@ -296,7 +323,8 @@ export class QATestingService {
         action: "Criar lembrete recorrente de 150",
         expected: "Lembrete criado",
         actual: "Lembrete criado",
-        status: 'OK'
+        status: 'OK',
+        timestamp: new Date().toISOString()
       });
 
       // Pagar Lembrete
@@ -319,7 +347,10 @@ export class QATestingService {
         action: "Marcar lembrete como pago",
         expected: "Lembrete atual marcado como pago e novo ciclo criado",
         actual: checkPay ? "Pago e novo ciclo gerado" : "Falha na liquidação ou recorrência",
-        status: checkPay ? 'OK' : 'FAILED'
+        status: checkPay ? 'OK' : 'FAILED',
+        probableCause: checkPay ? undefined : "Erro na lógica de recorrência de lembretes",
+        moduleFile: checkPay ? undefined : "services/eventDispatcher.ts",
+        timestamp: new Date().toISOString()
       });
       if (!checkPay) success = false;
 
@@ -330,7 +361,10 @@ export class QATestingService {
         action: "Execução do cenário",
         expected: "Fluxo completo",
         actual: e.message,
-        status: 'FAILED'
+        status: 'FAILED',
+        probableCause: "Erro inesperado na execução do teste",
+        moduleFile: "services/QATestingService.ts",
+        timestamp: new Date().toISOString()
       });
     }
 
@@ -363,7 +397,8 @@ export class QATestingService {
         action: "Criar meta de 1000",
         expected: "Meta criada",
         actual: "Meta criada",
-        status: 'OK'
+        status: 'OK',
+        timestamp: new Date().toISOString()
       });
 
       // Adicionar Saldo
@@ -385,7 +420,10 @@ export class QATestingService {
         action: "Adicionar 200 na meta",
         expected: "Saldo da meta deve ser 200",
         actual: checkContrib ? "Saldo 200" : "Saldo não atualizou",
-        status: checkContrib ? 'OK' : 'FAILED'
+        status: checkContrib ? 'OK' : 'FAILED',
+        probableCause: checkContrib ? undefined : "Erro na atualização de saldo da meta",
+        moduleFile: checkContrib ? undefined : "services/eventDispatcher.ts",
+        timestamp: new Date().toISOString()
       });
       if (!checkContrib) success = false;
 
@@ -396,7 +434,10 @@ export class QATestingService {
         action: "Execução do cenário",
         expected: "Fluxo completo",
         actual: e.message,
-        status: 'FAILED'
+        status: 'FAILED',
+        probableCause: "Erro inesperado na execução do teste",
+        moduleFile: "services/QATestingService.ts",
+        timestamp: new Date().toISOString()
       });
     }
 
@@ -429,8 +470,6 @@ export class QATestingService {
 
       const checkCat = await this.waitForCondition(async () => {
         const ctx = await fetchChatContext(this.uid);
-        // Categorias são normalizadas, mas aqui estamos testando se o valor foi computado
-        // O dashboard/ranking usa as transações para calcular
         const trans = ctx?.transactions.find(t => t.category === category);
         return !!trans;
       });
@@ -440,7 +479,10 @@ export class QATestingService {
         action: `Lançar despesa na categoria ${category}`,
         expected: "Transação registrada com a categoria correta",
         actual: checkCat ? "Categoria registrada" : "Falha ao registrar categoria",
-        status: checkCat ? 'OK' : 'FAILED'
+        status: checkCat ? 'OK' : 'FAILED',
+        probableCause: checkCat ? undefined : "Erro na normalização ou salvamento de categoria",
+        moduleFile: checkCat ? undefined : "services/normalizationService.ts",
+        timestamp: new Date().toISOString()
       });
       if (!checkCat) success = false;
 
@@ -451,7 +493,10 @@ export class QATestingService {
         action: "Execução do cenário",
         expected: "Fluxo completo",
         actual: e.message,
-        status: 'FAILED'
+        status: 'FAILED',
+        probableCause: "Erro inesperado na execução do teste",
+        moduleFile: "services/QATestingService.ts",
+        timestamp: new Date().toISOString()
       });
     }
 
@@ -495,7 +540,8 @@ export class QATestingService {
         action: "Criar W1 (1000) e W2 (0)",
         expected: "Carteiras prontas para transferência",
         actual: "OK",
-        status: 'OK'
+        status: 'OK',
+        timestamp: new Date().toISOString()
       });
 
       // 2. Transferir
@@ -524,7 +570,10 @@ export class QATestingService {
         action: "Transferir 400 de W1 para W2",
         expected: "W1: 600, W2: 400",
         actual: checkTransfer ? "Saldos atualizados" : "Falha na transferência",
-        status: checkTransfer ? 'OK' : 'FAILED'
+        status: checkTransfer ? 'OK' : 'FAILED',
+        probableCause: checkTransfer ? undefined : "Erro na lógica de transferência entre carteiras",
+        moduleFile: checkTransfer ? undefined : "services/eventDispatcher.ts",
+        timestamp: new Date().toISOString()
       });
       if (!checkTransfer) success = false;
 
@@ -535,7 +584,10 @@ export class QATestingService {
         action: "Execução do cenário",
         expected: "Fluxo completo",
         actual: e.message,
-        status: 'FAILED'
+        status: 'FAILED',
+        probableCause: "Erro inesperado na execução do teste",
+        moduleFile: "services/QATestingService.ts",
+        timestamp: new Date().toISOString()
       });
     }
 
@@ -568,7 +620,10 @@ export class QATestingService {
         action: "Simular entrada de texto 'Gastei 99 em Outros'",
         expected: "Transação deve aparecer no extrato",
         actual: checkChat ? "Transação encontrada" : "Não registrado",
-        status: checkChat ? 'OK' : 'FAILED'
+        status: checkChat ? 'OK' : 'FAILED',
+        probableCause: checkChat ? undefined : "Falha no processamento de eventos vindos do chat",
+        moduleFile: checkChat ? undefined : "services/eventDispatcher.ts",
+        timestamp: new Date().toISOString()
       });
       if (!checkChat) success = false;
 
@@ -613,7 +668,10 @@ export class QATestingService {
         action: "Simular importação de 2 itens",
         expected: "2 novas transações no extrato",
         actual: checkImport ? "2 itens importados" : "Falha na importação",
-        status: checkImport ? 'OK' : 'FAILED'
+        status: checkImport ? 'OK' : 'FAILED',
+        probableCause: checkImport ? undefined : "Erro no processamento de transações em lote",
+        moduleFile: checkImport ? undefined : "services/eventDispatcher.ts",
+        timestamp: new Date().toISOString()
       });
       if (!checkImport) success = false;
 
@@ -628,6 +686,9 @@ export class QATestingService {
    * Executa todos os testes
    */
   async runAllTests(onProgress: (scenario: QATestScenarioResult) => void): Promise<QATestScenarioResult[]> {
+    // 1. Limpeza inicial para garantir ambiente limpo
+    await this.cleanupQAData();
+    
     const results: QATestScenarioResult[] = [];
     
     const scenarios = [
@@ -647,15 +708,19 @@ export class QATestingService {
       onProgress(result);
     }
 
+    // Limpeza final opcional, mas recomendada para não deixar lixo se o usuário sair da aba
+    // Mas o usuário quer ver os dados se quiser? Não, ele quer ambiente limpo.
+    // Vamos manter a limpeza final.
     await this.cleanupQAData();
     return results;
   }
 
-  private async cleanupQAData(): Promise<void> {
-    const collections = ['transactions', 'wallets', 'cards', 'reminders', 'goals', 'events'];
+  async cleanupQAData(): Promise<void> {
+    const collections = ['transactions', 'wallets', 'cards', 'reminders', 'goals', 'limits', 'categories', 'messages'];
+    const userRef = doc(db, "users", this.uid);
     for (const colName of collections) {
       try {
-        const q = query(collection(db, colName), where('isQA', '==', true));
+        const q = query(collection(userRef, colName), where('isQA', '==', true));
         const snapshot = await getDocs(q);
         const deletePromises = snapshot.docs.map(doc => deleteDoc(doc.ref));
         await Promise.all(deletePromises);

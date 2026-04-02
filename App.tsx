@@ -78,13 +78,14 @@ const App: React.FC = () => {
               return;
             }
 
+            const isAdminEmail = firebaseUser.email?.toLowerCase() === 'gbfinancer@gmail.com' || firebaseUser.email?.toLowerCase() === 'blsseparate7@gmail.com';
             const userSession: UserSession = {
               uid: firebaseUser.uid,
               userId: userData.userId,
               name: userData.name,
               email: firebaseUser.email || '',
               isLoggedIn: true,
-              role: userData.role || 'user',
+              role: isAdminEmail ? 'admin' : (userData.role || 'user'),
               subscriptionStatus: userData.subscriptionStatus || 'inactive',
               plan: userData.plan,
               trialEndsAt: userData.trialEndsAt,
@@ -93,9 +94,20 @@ const App: React.FC = () => {
               onboardingSeen: userData.onboardingSeen,
               lgpdAccepted: userData.lgpdAccepted,
               status: userData.status || 'active',
-              photoURL: userData.photoURL
+              photoURL: userData.photoURL,
+              spendingLimit: userData.spendingLimit
             };
             setSession(userSession);
+
+            // Garante categorias padrão
+            const { ensureDefaultCategories } = await import('./services/categoryService');
+            await ensureDefaultCategories(firebaseUser.uid);
+
+            // Auto-upgrade role in Firestore if needed
+            if (isAdminEmail && userData.role !== 'admin') {
+              const { syncUserData } = await import('./services/databaseService');
+              await syncUserData(firebaseUser.uid, { role: 'admin' });
+            }
             
             if (!userData.onboardingSeen) {
               setOnboardingStep('welcome');
@@ -184,6 +196,13 @@ const App: React.FC = () => {
       setNotifications(snap.docs.map(d => ({ id: d.id, ...d.data() } as Notification)));
     });
 
+    const unsubUser = onSnapshot(userRef, (snap) => {
+      if (snap.exists()) {
+        const userData = snap.data();
+        setSession(prev => prev ? { ...prev, ...userData } : null);
+      }
+    });
+
     const unsubOnboarding = onSnapshot(doc(db, "users", session.uid, "onboarding", "flags"), (snap) => {
       if (snap.exists()) {
         setOnboarding(snap.data() as UserOnboarding);
@@ -192,10 +211,18 @@ const App: React.FC = () => {
       }
     });
 
+    const unsubMessages = onSnapshot(query(
+      collection(userRef, "messages"),
+      orderBy("timestamp", "asc"),
+      limit(50)
+    ), (snap) => {
+      setMessages(snap.docs.map(d => ({ id: d.id, ...d.data() } as Message)));
+    });
+
     return () => { 
       unsubTrans(); unsubGoals(); unsubReminders(); 
       unsubLimits(); unsubCards(); unsubWallets(); unsubNotifs(); unsubCats();
-      unsubOnboarding();
+      unsubOnboarding(); unsubMessages(); unsubUser();
     };
   }, [session?.uid]);
 
@@ -251,7 +278,7 @@ const App: React.FC = () => {
           // Verificar se a carteira já existe ou criar uma nova
           let targetWalletId = null;
           if (source.targetWalletName) {
-            const existingWallet = wallets.find(w => w.name.toLowerCase() === source.targetWalletName.toLowerCase());
+            const existingWallet = wallets.find(w => (w.name || "").toLowerCase() === (source.targetWalletName || "").toLowerCase());
             
             if (existingWallet) {
               targetWalletId = existingWallet.id;
@@ -400,7 +427,7 @@ const App: React.FC = () => {
       ) : <LandingPage onLogin={(s) => setSession(s)} onOpenSupport={() => setActiveTab('support')} />;
       case 'extrato': return session ? <Extrato uid={session.uid} transactions={transactions} loading={loadingTransactions} cards={cards} categories={categories} wallets={wallets} /> : null;
       case 'categories': return session ? <CategoriesTab uid={session.uid} categories={categories} transactions={transactions} loading={loadingCategories || loadingTransactions} /> : null;
-      case 'dash': return session ? <Dashboard transactions={transactions} goals={goals} limits={limits} wallets={wallets} reminders={reminders} categories={categories} uid={session.uid} loading={loadingCards || loadingGoals || loadingLimits || loadingWallets || loadingTransactions} /> : null;
+      case 'dash': return session ? <Dashboard transactions={transactions} goals={goals} limits={limits} wallets={wallets} reminders={reminders} categories={categories} uid={session.uid} user={session} loading={loadingCards || loadingGoals || loadingLimits || loadingWallets || loadingTransactions} /> : null;
       case 'calendar': return session ? <CalendarTab transactions={transactions} reminders={reminders} loading={loadingReminders || loadingTransactions} /> : null;
       case 'goals': return session ? <Goals goals={goals} transactions={transactions} wallets={wallets} uid={session.uid} user={session} loading={loadingGoals || loadingTransactions} /> : null;
       case 'cc': return session ? <CreditCard transactions={transactions} uid={session.uid} cards={cards} wallets={wallets} loading={loadingCards} /> : null;
@@ -434,7 +461,23 @@ const App: React.FC = () => {
         
         return <WalletTab uid={session.uid} freeBalance={freeBalance} goals={goals} wallets={wallets} loading={loadingWallets || loadingGoals} />;
       }
-      default: return session ? <ChatInterface user={session} messages={messages} setMessages={setMessages} transactions={transactions} limits={limits} reminders={reminders} goals={goals} /> : <LandingPage onLogin={(s) => setSession(s)} onOpenSupport={() => setActiveTab('support')} />;
+      default: return session ? (
+        <ChatInterface 
+          user={session} 
+          messages={messages} 
+          transactions={transactions} 
+          limits={limits} 
+          reminders={reminders} 
+          goals={goals} 
+          cards={cards}
+          wallets={wallets}
+          categories={categories}
+          onToggleSidebar={handleToggleSidebar}
+          onOpenProfile={() => setActiveTab('profile')}
+        />
+      ) : (
+        <LandingPage onLogin={(s) => setSession(s)} onOpenSupport={() => setActiveTab('support')} />
+      );
     }
   };
 

@@ -1,7 +1,7 @@
 
 
 export type TransactionType = 'INCOME' | 'EXPENSE' | 'SAVING';
-export type PaymentMethod = 'CASH' | 'PIX' | 'CARD';
+export type PaymentMethod = 'PIX' | 'DEBIT' | 'CREDIT' | 'CASH' | 'TRANSFER' | 'CARD';
 
 export interface Contribution {
   id: string;
@@ -26,6 +26,9 @@ export interface SavingGoal {
   deadlineMonths?: number;
   updatedAt?: any;
   createdAt?: any;
+  status?: 'active' | 'completed' | 'canceled';
+  resolved?: boolean;
+  lastPromptedAt?: any;
 }
 
 export interface Transaction {
@@ -33,11 +36,15 @@ export interface Transaction {
   description: string;
   amount: number;
   category: string;
+  categoryId?: string;
+  categoryName?: string;
   type: TransactionType;
   paymentMethod: PaymentMethod;
   date: string;
   createdAt: any;
   cardId?: string;
+  walletId?: string;
+  walletName?: string;
   sourceWalletId?: string;
   targetWalletId?: string;
   isPaid?: boolean;
@@ -45,6 +52,11 @@ export interface Transaction {
   installmentNumber?: number;
   totalInstallments?: number;
   originalAmount?: number;
+  source?: 'chat' | 'ui' | 'admin' | 'system';
+  confirmedBy?: string;
+  cycleKey?: string;
+  status?: 'confirmed' | 'pending' | 'canceled';
+  resolved?: boolean;
 }
 
 export interface CategoryLimit {
@@ -76,6 +88,11 @@ export interface Message {
   text: string;
   sender: 'user' | 'ai' | 'system';
   timestamp: any;
+  dedupeKey?: string;
+  resolved?: boolean;
+  actionType?: string;
+  actionPayload?: any;
+  lastPromptedAt?: any;
 }
 
 export type EventType = 
@@ -88,6 +105,7 @@ export type EventType =
   | 'DELETE_GOAL'
   | 'SPEND_FROM_GOAL'
   | 'UPDATE_LIMIT' 
+  | 'UPDATE_USER'
   | 'CREATE_REMINDER' 
   | 'PAY_REMINDER'
   | 'DELETE_REMINDER'
@@ -145,6 +163,11 @@ export interface Bill {
   isActive?: boolean; 
   originalBillId?: string;
   type?: 'PAY' | 'RECEIVE';
+  cycleKey?: string;
+  lastPromptedAt?: any;
+  resolved?: boolean;
+  dedupeKey?: string;
+  status?: 'pending' | 'paid' | 'received' | 'canceled';
 }
 
 export type IncomeFrequency = 'MONTHLY' | 'BIWEEKLY' | 'WEEKLY' | 'DAILY' | 'VARIABLE';
@@ -205,6 +228,7 @@ export interface UserSession {
   lgpdVersion?: string;
   incomeProfile?: IncomeProfile;
   defaultReceivingWallet?: string;
+  spendingLimit?: number;
   suggestedGoals?: any[];
   status?: 'active' | 'blocked' | 'deleted';
   lastLogin?: any;
@@ -246,6 +270,7 @@ export interface CustomerData {
   lgpdVersion?: string;
   incomeProfile?: IncomeProfile;
   defaultReceivingWallet?: string;
+  spendingLimit?: number;
   suggestedGoals?: any[];
   createdAt?: any;
   lastLogin?: any;

@@ -7,10 +7,12 @@ import { fetchChatContext } from '../services/databaseService';
 import { formatCurrency, calculateMonthlySummary } from '../services/summaryService';
 import ChatComposer from './ChatComposer';
 
+import { db } from '../services/firebaseConfig';
+import { collection, addDoc, serverTimestamp, query, where, getDocs, limit, doc, updateDoc, getDoc } from 'firebase/firestore';
+
 interface ChatProps {
   user: UserSession;
   messages: Message[];
-  setMessages: React.Dispatch<React.SetStateAction<Message[]>>;
   transactions: Transaction[];
   limits: CategoryLimit[];
   reminders: Bill[];
@@ -23,17 +25,52 @@ interface ChatProps {
 }
 
 const ChatInterface: React.FC<ChatProps> = ({ 
-  user, messages, setMessages, transactions, limits, reminders, 
+  user, messages, transactions, limits, reminders, 
   cards, wallets, categories, goals, onToggleSidebar, onOpenProfile 
 }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [pendingAction, setPendingAction] = useState<any>(null);
   const [pendingEvents, setPendingEvents] = useState<any[]>([]);
+  const [isSelectingCard, setIsSelectingCard] = useState(false);
   const [salaryCheckDone, setSalaryCheckDone] = useState(false);
   const [pendingSalaryReminder, setPendingSalaryReminder] = useState<Bill | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const isProcessingRef = useRef(false);
   const summarySentRef = useRef(false);
+
+  // Helper para enviar mensagem para o Firestore (Sincronização Total)
+  const sendMessageToFirestore = async (text: string, sender: 'user' | 'ai', dedupeKey?: string) => {
+    if (!user.uid) return;
+    
+    console.log(`GB Chat: Enviando mensagem (${sender}): "${text.substring(0, 30)}..."`);
+    
+    if (dedupeKey) {
+      const q = query(
+        collection(db, "users", user.uid, "messages"),
+        where("dedupeKey", "==", dedupeKey),
+        limit(1)
+      );
+      const snap = await getDocs(q);
+      if (!snap.empty) {
+        console.log(`GB Chat: Mensagem ignorada (dedupeKey duplicado: ${dedupeKey})`);
+        return; 
+      }
+    }
+
+    try {
+      await addDoc(collection(db, "users", user.uid, "messages"), {
+        text,
+        sender,
+        timestamp: serverTimestamp(),
+        dedupeKey: dedupeKey || null,
+        source: 'chat',
+        resolved: false
+      });
+      console.log(`GB Chat: Mensagem salva no Firestore com sucesso.`);
+    } catch (err) {
+      console.error("GB Chat: Erro ao salvar mensagem no Firestore:", err);
+    }
+  };
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -41,171 +78,92 @@ const ChatInterface: React.FC<ChatProps> = ({
     }
   }, [messages, isLoading, pendingAction]);
 
+  useEffect(() => {
+    setIsSelectingCard(false);
+  }, [pendingAction, pendingEvents.length]);
+
   const monthlySummary = useMemo(() => calculateMonthlySummary(transactions), [transactions]);
 
-  // Enviar resumo automático apenas uma vez ao entrar
+  // Enviar resumo automático foi removido a pedido do usuário (Premium Chat)
+  // O resumo agora é gerado apenas sob demanda pela IA.
   useEffect(() => {
-    if (summarySentRef.current) return;
-    
-    // Verificar se já foi enviado nesta sessão (sessionStorage)
-    const sessionKey = `summary_sent_${user.uid}_${new Date().toDateString()}`;
-    if (sessionStorage.getItem(sessionKey)) {
-      summarySentRef.current = true;
-      return;
-    }
+    summarySentRef.current = true;
+  }, []);
 
-    // Verificar se já existe um resumo nas mensagens para evitar duplicidade em remounts
-    const hasSummary = messages.some(m => m.text.includes("💰 Resumo rápido"));
-    if (hasSummary) {
-      summarySentRef.current = true;
-      sessionStorage.setItem(sessionKey, 'true');
-      return;
-    }
+  // Orquestração de Lembretes e Alertas (Premium)
+  useEffect(() => {
+    if (!user || !user.uid || !reminders.length) return;
 
-    const generateSummary = () => {
-      if (reminders.length === 0 && transactions.length === 0) return;
-
+    const checkReminders = async () => {
       const now = new Date();
-      const currentMonth = now.getMonth();
-      const currentYear = now.getFullYear();
-
-      // Saldo atual disponível (soma das carteiras ativas)
-      const balance = wallets
-        .filter(w => w.isActive !== false)
-        .reduce((sum, w) => sum + (Number(w.balance) || 0), 0);
-
-      // Contas Pendentes (Mês Atual ou Atrasadas)
-      const pendingBills = reminders.filter(b => {
-        const d = new Date(b.dueDate);
-        return !b.isPaid && 
-          b.type === 'PAY' && 
-          b.isActive !== false &&
-          (d.getFullYear() < currentYear || (d.getFullYear() === currentYear && d.getMonth() <= currentMonth));
-      });
-      const pendingTotal = pendingBills.reduce((sum, b) => sum + (Number(b.amount) || 0), 0);
-
-      // Próxima conta (Pendente mais próxima)
-      const nextBill = [...pendingBills].sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime())[0];
-
-      // Insight de economia (Baseado no Dashboard)
-      let insight = "Continue registrando para eu te dar dicas!";
+      const cycleKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
       
-      // Contas pagas vs totais
-      const totalBillsThisMonth = reminders.filter(b => {
-        const d = new Date(b.dueDate);
-        return b.isActive !== false && b.type === 'PAY' && d.getMonth() === currentMonth && d.getFullYear() === currentYear;
-      });
-      const paidBillsThisMonth = totalBillsThisMonth.filter(b => b.isPaid);
-      
-      if (totalBillsThisMonth.length > 0) {
-        const percent = Math.round((paidBillsThisMonth.length / totalBillsThisMonth.length) * 100);
-        insight = `Você já pagou **${percent}%** das suas contas fixas este mês. Continue assim!`;
-      } else if (monthlySummary.categories.length > 0) {
-        const top = monthlySummary.categories[0];
-        insight = `Sua maior despesa é **${top.category}** (${formatCurrency(top.amount)}).`;
+      // 1. Salário Pendente
+      const salaryReminder = reminders.find(r => 
+        r.type === 'RECEIVE' && 
+        (r.description.toLowerCase().includes('salário') || r.description.toLowerCase().includes('salario')) &&
+        !r.isPaid &&
+        !r.resolved
+      );
+
+      if (salaryReminder) {
+        const dedupeKey = `salary-prompt-${salaryReminder.id}-${cycleKey}`;
+        
+        // Verificar se já perguntamos neste ciclo via Firestore
+        const q = query(
+          collection(db, "users", user.uid, "messages"),
+          where("dedupeKey", "==", dedupeKey),
+          limit(1)
+        );
+        const snap = await getDocs(q);
+        
+        if (snap.empty) {
+          await sendMessageToFirestore(
+            `Olá ${user.displayName || 'amigo'}! Notei que seu salário de **${formatCurrency(salaryReminder.amount)}** ainda não foi registrado. Já caiu na conta? 💰`,
+            'ai',
+            dedupeKey
+          );
+          setPendingSalaryReminder(salaryReminder);
+        }
       }
 
-      const summaryText = `💰 **Resumo rápido:**\n` +
-        `Saldo atual: **${formatCurrency(balance)}**\n` +
-        `Pendências: **${formatCurrency(pendingTotal)}** (${pendingBills.length} contas)\n` +
-        `${nextBill ? `Próxima conta: **${nextBill.description}** (vence em ${Math.ceil((new Date(nextBill.dueDate).getTime() - now.getTime()) / (1000 * 60 * 60 * 24))} dias)` : 'Nenhuma conta pendente para este mês'}\n\n` +
-        `💡 **Insight:** ${insight}`;
-
-      const summaryMsg: Message = {
-        id: 'auto-summary-' + Date.now(),
-        text: summaryText,
-        sender: 'ai',
-        timestamp: new Date()
-      };
-
-      setMessages(prev => [...prev, summaryMsg]);
-      summarySentRef.current = true;
-      sessionStorage.setItem(sessionKey, 'true');
-    };
-
-    // Pequeno delay para garantir que os dados carregaram
-    const timer = setTimeout(generateSummary, 800);
-    return () => clearTimeout(timer);
-  }, [monthlySummary, reminders, wallets, setMessages, messages, user.uid]);
-
-  // Verificar primeiro recebimento após cadastro
-  useEffect(() => {
-    if (salaryCheckDone || reminders.length === 0) return;
-
-    // Se o usuário tem perfil de renda mas não tem transações, é o primeiro login
-    const isFirstLogin = transactions.length === 0;
-    
-    const today = new Date();
-    const todayDay = today.getDate();
-
-    // Procurar por lembretes de recebimento
-    const salaryReminder = reminders.find(r => 
-      !r.isPaid && 
-      r.type === 'RECEIVE' && 
-      (isFirstLogin || r.dueDay === todayDay)
-    );
-
-    if (salaryReminder) {
-      setPendingSalaryReminder(salaryReminder);
-      
-      const msg: Message = {
-        id: 'salary-check-' + Date.now(),
-        text: isFirstLogin 
-          ? `👋 Bem-vindo! Notei que você informou uma renda de **${formatCurrency(salaryReminder.amount)}**.\n\nVocê já recebeu esse valor este mês?`
-          : `👋 Olá! Notei que hoje é dia de receber: **${salaryReminder.description}** (${formatCurrency(salaryReminder.amount)}).\n\nVocê já recebeu esse valor?`,
-        sender: 'ai',
-        timestamp: new Date()
-      };
-      setMessages(prev => [...prev, msg]);
-    }
-
-    setSalaryCheckDone(true);
-  }, [reminders, transactions, salaryCheckDone]);
-
-  // Alerta de Risco Financeiro Proativo
-  useEffect(() => {
-    if (transactions.length === 0 || wallets.length === 0) return;
-
-    const checkRisk = () => {
-      const balance = wallets
-        .filter(w => w.isActive !== false)
-        .reduce((sum, w) => sum + (Number(w.balance) || 0), 0);
-
-      const income = reminders
+      // 2. Alerta de Risco (80% da renda)
+      const totalIncome = reminders
         .filter(r => r.type === 'RECEIVE')
-        .reduce((sum, r) => sum + (Number(r.amount) || 0), 0);
-
-      let riskMsg = "";
+        .reduce((acc, r) => acc + r.amount, 0);
       
-      if (balance < 100 && balance > 0) {
-        riskMsg = "⚠️ **Alerta de Risco:** Seu saldo total está muito baixo (menos de R$ 100). Evite gastos não essenciais hoje.";
-      } else if (income > 0 && monthlySummary.expense > income * 0.8) {
-        riskMsg = "🚨 **Alerta de Risco:** Seus gastos já comprometeram mais de 80% da sua renda mensal. Recomendo cautela extra.";
-      }
+      const totalSpent = transactions
+        .filter(t => t.type === 'EXPENSE')
+        .reduce((acc, t) => acc + t.amount, 0);
 
-      if (riskMsg) {
-        // Verificar se já enviamos esse alerta recentemente
-        const hasRiskMsg = messages.some(m => m.text.includes(riskMsg.substring(0, 20)));
-        if (!hasRiskMsg) {
-          setMessages(prev => [...prev, {
-            id: 'risk-alert-' + Date.now(),
-            text: riskMsg,
-            sender: 'ai',
-            timestamp: new Date()
-          }]);
+      if (totalIncome > 0 && totalSpent > totalIncome * 0.8) {
+        const riskMsg = `⚠️ **Alerta de Risco:** Seus gastos atingiram 80% da sua renda mensal. Recomendo cautela extra.`;
+        const dedupeKey = `risk-alert-${cycleKey}`;
+        
+        const q = query(
+          collection(db, "users", user.uid, "messages"),
+          where("dedupeKey", "==", dedupeKey),
+          limit(1)
+        );
+        const snap = await getDocs(q);
+        
+        if (snap.empty) {
+          await sendMessageToFirestore(riskMsg, 'ai', dedupeKey);
         }
       }
     };
 
-    const timer = setTimeout(checkRisk, 3000);
+    const timer = setTimeout(checkReminders, 3000);
     return () => clearTimeout(timer);
-  }, [transactions, wallets, reminders]);
+  }, [user, reminders, transactions]);
 
-  const handleSalaryConfirm = (confirmed: boolean) => {
+  const handleSalaryConfirm = async (confirmed: boolean) => {
     if (!pendingSalaryReminder) return;
 
+    const today = new Date();
+    const cycleKey = `${today.getMonth() + 1}-${today.getFullYear()}`;
+
     if (confirmed) {
-      // Se confirmou, abrimos o seletor de carteira
       setPendingAction({
         type: 'ADD_INCOME',
         payload: {
@@ -214,25 +172,14 @@ const ChatInterface: React.FC<ChatProps> = ({
           description: pendingSalaryReminder.description,
           date: new Date().toISOString(),
           reminderId: pendingSalaryReminder.id,
+          cycleKey,
           targetWalletName: (pendingSalaryReminder as any).targetWalletName
         }
       });
       
-      const msg: Message = {
-        id: 'salary-yes-' + Date.now(),
-        text: "Excelente! Em qual carteira esse dinheiro entrou?",
-        sender: 'ai',
-        timestamp: new Date()
-      };
-      setMessages(prev => [...prev, msg]);
+      await sendMessageToFirestore("Excelente! Em qual carteira esse dinheiro entrou?", 'ai');
     } else {
-      const msg: Message = {
-        id: 'salary-no-' + Date.now(),
-        text: "Sem problemas! Me avise quando o dinheiro cair para eu registrar e atualizar seus saldos. 😉",
-        sender: 'ai',
-        timestamp: new Date()
-      };
-      setMessages(prev => [...prev, msg]);
+      await sendMessageToFirestore("Sem problemas! Me avise quando o dinheiro cair para eu atualizar seus saldos. 😉", 'ai');
     }
     
     setPendingSalaryReminder(null);
@@ -241,55 +188,39 @@ const ChatInterface: React.FC<ChatProps> = ({
   const handleSend = async (text: string) => {
     if (!text.trim() || isLoading || isProcessingRef.current) return;
     
+    console.log(`GB Chat: handleSend recebido: "${text}"`);
     isProcessingRef.current = true;
-    const userMsg: Message = { 
-      id: Date.now().toString(), 
-      text: text.trim(), 
-      sender: 'user', 
-      timestamp: new Date() 
-    };
-    
-    setMessages(prev => [...prev, userMsg]);
+    await sendMessageToFirestore(text.trim(), 'user');
     setIsLoading(true);
 
     try {
-      // 1. Buscar contexto atualizado diretamente do Firestore (Fonte da Verdade)
+      // 1. Buscar contexto ATUALIZADO do Firestore (Fonte da Verdade)
+      console.log("GB Chat: Buscando contexto atualizado...");
       const freshContext = await fetchChatContext(user.uid);
-      
-      // 2. Usar o contexto fresco ou os props como fallback
       const finalContext = freshContext || { reminders, cards, wallets, categories, transactions, goals, limits };
 
-      const result = await parseMessage(text.trim(), user.name, finalContext);
+      // 2. Processar com Gemini
+      console.log("GB Chat: Chamando Gemini API...");
+      const result = await parseMessage(text.trim(), user.name || 'Usuário', finalContext);
+      console.log("GB Chat: Gemini respondeu:", result);
       
       if (result.events && result.events.length > 0) {
-        // Se houver múltiplos eventos, colocamos na fila de confirmação
-        setPendingEvents(result.events);
-        
-        // Alerta de Risco ou Gasto Suspeito pode vir no reply da IA
-        const aiMsg: Message = { 
-          id: (Date.now() + 1).toString(), 
-          text: result.reply || `Encontrei ${result.events.length} lançamentos. Pode confirmar para mim?`, 
-          sender: 'ai', 
-          timestamp: new Date() 
-        };
-        setMessages(prev => [...prev, aiMsg]);
-      } else {
-        // Se não houver eventos, mas a IA deu um reply (pode ser um alerta de risco ou previsão)
-        const aiMsg: Message = { 
-          id: (Date.now() + 1).toString(), 
-          text: result.reply || "Entendi. Como posso ajudar mais?", 
-          sender: 'ai', 
-          timestamp: new Date() 
-        };
-        setMessages(prev => [...prev, aiMsg]);
+        console.log(`GB Chat: Detectados ${result.events.length} eventos.`);
+        if (result.events.length === 1) {
+          setPendingAction(result.events[0]);
+          setPendingEvents([]);
+        } else {
+          setPendingEvents(result.events);
+          setPendingAction(null);
+        }
       }
+
+      // 3. Enviar resposta da IA para o Firestore
+      await sendMessageToFirestore(result.reply || "Entendido. ✅", 'ai');
+
     } catch (e) {
-      setMessages(prev => [...prev, {
-        id: Date.now().toString(),
-        text: "Houve um erro na análise, mas anotei sua intenção.",
-        sender: 'ai',
-        timestamp: new Date()
-      }]);
+      console.error("GB Chat: Erro no processamento:", e);
+      await sendMessageToFirestore("Houve um pequeno erro na análise, mas anotei sua intenção. Pode repetir? 😅", 'ai');
     } finally {
       setIsLoading(false);
       isProcessingRef.current = false;
@@ -300,26 +231,19 @@ const ChatInterface: React.FC<ChatProps> = ({
     if (isLoading) return;
     
     setIsLoading(true);
-    const userMsg: Message = { 
-      id: Date.now().toString(), 
-      text: `📎 Enviou arquivo: ${file.name}`, 
-      sender: 'user', 
-      timestamp: new Date() 
-    };
-    setMessages(prev => [...prev, userMsg]);
+    await sendMessageToFirestore(`📎 Enviou arquivo: ${file.name}`, 'user');
 
     try {
       const result = await parseStatementFile(file);
       
       if (result.transactions && result.transactions.length > 0) {
-        // Converter transações do extrato em eventos do chat
         const events = result.transactions.map((t: any) => {
-          // Detecção de duplicidade mais rigorosa
           const isDuplicate = transactions.some(prev => {
             const sameAmount = Math.abs(prev.amount) === Math.abs(t.amount);
             const sameDate = prev.date === t.date;
-            const similarDesc = prev.description.toLowerCase().includes(t.description.toLowerCase()) || 
-                               t.description.toLowerCase().includes(prev.description.toLowerCase());
+            const prevDesc = (prev.description || "").toLowerCase();
+            const tDesc = (t.description || "").toLowerCase();
+            const similarDesc = prevDesc.includes(tDesc) || tDesc.includes(prevDesc);
             return sameAmount && (sameDate || similarDesc);
           });
 
@@ -333,69 +257,65 @@ const ChatInterface: React.FC<ChatProps> = ({
               paymentMethod: t.paymentMethod || (t.isCardCharge ? 'CARD' : 'PIX'),
               isCardCharge: t.isCardCharge,
               isDuplicate,
-              selected: !isDuplicate // Desmarcar duplicados por padrão
+              selected: !isDuplicate
             }
           };
         });
 
-        setPendingEvents(events);
-
+        if (events.length === 1) {
+          setPendingAction(events[0]);
+          setPendingEvents([]);
+        } else {
+          setPendingEvents(events);
+          setPendingAction(null);
+        }
         const bankInfo = result.summary?.bankName ? ` do ${result.summary.bankName}` : '';
-        const aiMsg: Message = { 
-          id: (Date.now() + 1).toString(), 
-          text: `Li seu extrato${bankInfo}! Encontrei ${events.length} lançamentos. Confira a prévia abaixo e selecione o que deseja importar.`, 
-          sender: 'ai', 
-          timestamp: new Date() 
-        };
-        setMessages(prev => [...prev, aiMsg]);
+        await sendMessageToFirestore(`Li seu extrato${bankInfo}! Encontrei ${events.length} lançamentos. Confira a prévia abaixo.`, 'ai');
       } else {
-        setMessages(prev => [...prev, {
-          id: Date.now().toString(),
-          text: "Não consegui encontrar transações nesse arquivo. Pode verificar se é um extrato válido?",
-          sender: 'ai',
-          timestamp: new Date()
-        }]);
+        await sendMessageToFirestore("Não consegui encontrar transações nesse arquivo.", 'ai');
       }
     } catch (error) {
-      console.error(error);
-      setMessages(prev => [...prev, {
-        id: Date.now().toString(),
-        text: "Houve um erro ao processar seu arquivo. Tente novamente ou envie uma foto mais nítida.",
-        sender: 'ai',
-        timestamp: new Date()
-      }]);
+      await sendMessageToFirestore("Houve um erro ao processar seu arquivo.", 'ai');
     } finally {
       setIsLoading(false);
     }
   };
 
-  const confirmAllEvents = async (walletId: string | 'CARD') => {
+  const confirmAllEvents = async (id: string, isCard: boolean = false) => {
     const selectedEvents = pendingEvents.filter(ev => ev.payload.selected);
     if (selectedEvents.length === 0) return;
 
     setIsLoading(true);
     try {
+      const newCategoryNames = Array.from(new Set(
+        selectedEvents
+          .filter(e => !categories.find(c => c.name.toLowerCase() === e.payload.category.toLowerCase()))
+          .map(e => e.payload.category.trim())
+          .filter(name => name.length > 0)
+      ));
+
+      for (const catName of newCategoryNames) {
+        await dispatchEvent(user.uid, {
+          type: 'CREATE_CATEGORY',
+          payload: { name: catName, color: '#00A884', icon: '📁' },
+          source: 'chat',
+          createdAt: new Date()
+        });
+      }
+
       for (const event of selectedEvents) {
         const eventToDispatch = { ...event };
+        eventToDispatch.payload.confirmedBy = user.uid;
         
-        // Se o usuário escolheu uma carteira específica, mas o lançamento foi detectado como cartão,
-        // e o usuário NÃO escolheu explicitamente 'CARD' no seletor geral,
-        // nós respeitamos a escolha do seletor geral (walletId).
-        
-        if (walletId === 'CARD') {
-          if (eventToDispatch.type === 'ADD_EXPENSE') {
-            eventToDispatch.type = 'ADD_CARD_CHARGE';
-          }
+        if (isCard) {
+          if (eventToDispatch.type === 'ADD_EXPENSE') eventToDispatch.type = 'ADD_CARD_CHARGE';
           eventToDispatch.payload.paymentMethod = 'CARD';
-          eventToDispatch.payload.cardId = eventToDispatch.payload.cardId || 'default';
+          eventToDispatch.payload.cardId = id;
         } else {
-          // Se for um INCOME, sempre vai para a carteira
           if (eventToDispatch.type === 'ADD_INCOME') {
-            eventToDispatch.payload.targetWalletId = walletId;
+            eventToDispatch.payload.targetWalletId = id;
           } else {
-            // Se for EXPENSE, vai para a carteira como PIX/Débito
-            eventToDispatch.payload.sourceWalletId = walletId;
-            eventToDispatch.payload.paymentMethod = eventToDispatch.payload.paymentMethod || 'PIX';
+            eventToDispatch.payload.sourceWalletId = id;
           }
         }
 
@@ -406,24 +326,11 @@ const ChatInterface: React.FC<ChatProps> = ({
         });
       }
 
-      const walletName = walletId === 'CARD' ? 'Cartão de Crédito' : wallets.find(w => w.id === walletId)?.name || 'Carteira';
-      
-      setMessages(prev => [...prev, {
-        id: Date.now().toString(),
-        text: `✅ Sucesso! Importei ${selectedEvents.length} lançamentos para sua conta (${walletName}).`,
-        sender: 'ai',
-        timestamp: new Date()
-      }]);
-
+      const name = isCard ? cards.find(c => c.id === id)?.name || 'Cartão' : wallets.find(w => w.id === id)?.name || 'Carteira';
+      await sendMessageToFirestore(`✅ Sucesso! Importei ${selectedEvents.length} lançamentos para sua conta (${name}).`, 'ai');
       setPendingEvents([]);
     } catch (e) {
-      console.error(e);
-      setMessages(prev => [...prev, {
-        id: Date.now().toString(),
-        text: "Ocorreu um erro ao salvar alguns lançamentos. Por favor, verifique seu extrato.",
-        sender: 'ai',
-        timestamp: new Date()
-      }]);
+      await sendMessageToFirestore("Ocorreu um erro ao salvar alguns lançamentos.", 'ai');
     } finally {
       setIsLoading(false);
     }
@@ -437,7 +344,7 @@ const ChatInterface: React.FC<ChatProps> = ({
     setPendingEvents(prev => prev.map((ev, i) => i === index ? { ...ev, payload: { ...ev.payload, ...updates } } : ev));
   };
 
-  const confirmPendingAction = async (walletId: string | 'CARD') => {
+  const confirmPendingAction = async (id: string, isCard: boolean = false) => {
     if (!pendingAction) return;
 
     setIsLoading(true);
@@ -445,30 +352,33 @@ const ChatInterface: React.FC<ChatProps> = ({
       const eventToDispatch = { ...pendingAction };
       
       if (pendingAction.payload.reminderId) {
-        // Se veio de um lembrete (ex: salário), usamos PAY_REMINDER
         await dispatchEvent(user.uid, {
           type: 'PAY_REMINDER',
           payload: {
             billId: pendingAction.payload.reminderId,
-            paymentMethod: 'PIX',
-            sourceWalletId: walletId
+            paymentMethod: isCard ? 'CARD' : 'PIX',
+            sourceWalletId: isCard ? null : id,
+            cardId: isCard ? id : null,
+            cycleKey: pendingAction.payload.cycleKey,
+            confirmedBy: user.uid
           },
           source: 'chat',
           createdAt: new Date()
         });
       } else {
-        if (walletId === 'CARD') {
+        if (isCard) {
           eventToDispatch.type = 'ADD_CARD_CHARGE';
           eventToDispatch.payload.paymentMethod = 'CARD';
-          // Se já tiver um cardId da IA, mantém, senão usa 'default'
-          eventToDispatch.payload.cardId = eventToDispatch.payload.cardId || 'default';
+          eventToDispatch.payload.cardId = id;
+          eventToDispatch.payload.confirmedBy = user.uid;
         } else {
           if (eventToDispatch.type === 'ADD_INCOME') {
-            eventToDispatch.payload.targetWalletId = walletId;
+            eventToDispatch.payload.targetWalletId = id;
           } else {
-            eventToDispatch.payload.sourceWalletId = walletId;
-            eventToDispatch.payload.paymentMethod = 'PIX'; // Padroniza como PIX/Débito quando sai de carteira
+            eventToDispatch.payload.sourceWalletId = id;
+            // O dispatcher agora cuida da inferência se necessário, ou deixa null
           }
+          eventToDispatch.payload.confirmedBy = user.uid;
         }
 
         await dispatchEvent(user.uid, {
@@ -478,34 +388,12 @@ const ChatInterface: React.FC<ChatProps> = ({
         });
       }
 
-      // Proatividade: Checar limites
-      let proactiveReply = "";
-      const freshContext = await fetchChatContext(user.uid);
-      const currentLimits = freshContext?.limits || limits || [];
+      const name = isCard ? cards.find(c => c.id === id)?.name || 'Cartão' : wallets.find(w => w.id === id)?.name || 'Carteira';
+      const typeLabel = pendingAction.type === 'ADD_INCOME' ? 'Recebimento registrado' : 'Gasto anotado com sucesso';
+      const amountFormatted = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(pendingAction.payload.amount);
+      const feedback = `${typeLabel}  \n\n${amountFormatted} — ${pendingAction.payload.description}\nCarteira: ${name}\nCategoria: ${pendingAction.payload.category}`;
       
-      if (eventToDispatch.type === 'ADD_EXPENSE' || eventToDispatch.type === 'ADD_CARD_CHARGE') {
-        const cat = eventToDispatch.payload.category?.toUpperCase();
-        const limit = currentLimits.find((l: any) => l.category.toUpperCase() === cat);
-        if (limit) {
-          const spent = limit.spent + eventToDispatch.payload.amount;
-          const pct = (spent / limit.limit) * 100;
-          if (pct >= 100) {
-            proactiveReply = `\n\n⚠️ ATENÇÃO: Você estourou o limite de ${cat}!`;
-          } else if (pct >= 80) {
-            proactiveReply = `\n\n💡 ALERTA: Você já usou ${pct.toFixed(0)}% do seu limite de ${cat}.`;
-          }
-        }
-      }
-
-      const walletName = walletId === 'CARD' ? 'Cartão de Crédito' : wallets.find(w => w.id === walletId)?.name || 'Carteira';
-      
-      setMessages(prev => [...prev, {
-        id: Date.now().toString(),
-        text: `✅ Confirmado! Registrado via ${walletName}.${proactiveReply}`,
-        sender: 'ai',
-        timestamp: new Date()
-      }]);
-
+      await sendMessageToFirestore(feedback, 'ai');
       setPendingAction(null);
     } catch (e) {
       console.error(e);
@@ -571,7 +459,11 @@ const ChatInterface: React.FC<ChatProps> = ({
             <div className={`max-w-[85%] px-3 py-2 text-[15px] relative shadow-lg ${msg.sender === 'user' ? 'bubble-user' : 'bubble-ai'}`}>
               <div className="leading-tight pr-10 whitespace-pre-wrap">{msg.text}</div>
               <div className="text-[9px] text-[var(--text-muted)] text-right absolute bottom-1 right-2 font-medium opacity-70">
-                {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                {(() => {
+                  if (!msg.timestamp) return '';
+                  const d = msg.timestamp.toDate ? msg.timestamp.toDate() : new Date(msg.timestamp);
+                  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                })()}
               </div>
             </div>
           </div>
@@ -665,22 +557,41 @@ const ChatInterface: React.FC<ChatProps> = ({
                           className="w-full bg-transparent text-xs font-bold text-[var(--text-primary)] mb-1 outline-none focus:text-[var(--green-whatsapp)]"
                         />
 
-                        <div className="flex items-center gap-2">
-                          <select 
-                            value={ev.payload.category}
-                            onChange={(e) => updatePendingEvent(idx, { category: e.target.value })}
-                            className="bg-[var(--surface)] px-2 py-0.5 rounded-lg text-[9px] font-black uppercase italic text-[var(--green-whatsapp)] outline-none border border-[var(--border)]"
-                          >
-                            {categories.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
-                            {!categories.find(c => c.name === ev.payload.category) && <option value={ev.payload.category}>{ev.payload.category}</option>}
-                          </select>
-                          
-                          {ev.payload.isCardCharge && (
-                            <span className="text-[8px] font-black bg-rose-100 text-rose-600 px-1.5 py-0.5 rounded-full uppercase">Cartão</span>
-                          )}
-                          
-                          {ev.payload.isDuplicate && (
-                            <span className="text-[8px] font-black bg-amber-100 text-amber-600 px-1.5 py-0.5 rounded-full uppercase">Duplicado?</span>
+                        <div className="flex flex-col gap-1">
+                          <div className="flex items-center gap-2">
+                            <select 
+                              value={categories.find(c => c.name === ev.payload.category) ? ev.payload.category : 'NEW'}
+                              onChange={(e) => {
+                                if (e.target.value === 'NEW') {
+                                  updatePendingEvent(idx, { category: '', isNewCategory: true });
+                                } else {
+                                  updatePendingEvent(idx, { category: e.target.value, isNewCategory: false });
+                                }
+                              }}
+                              className="bg-[var(--surface)] px-2 py-0.5 rounded-lg text-[9px] font-black uppercase italic text-[var(--green-whatsapp)] outline-none border border-[var(--border)]"
+                            >
+                              {categories.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+                              <option value="NEW">+ Nova Categoria</option>
+                            </select>
+                            
+                            {ev.payload.isCardCharge && (
+                              <span className="text-[8px] font-black bg-rose-100 text-rose-600 px-1.5 py-0.5 rounded-full uppercase">Cartão</span>
+                            )}
+                            
+                            {ev.payload.isDuplicate && (
+                              <span className="text-[8px] font-black bg-amber-100 text-amber-600 px-1.5 py-0.5 rounded-full uppercase">Duplicado?</span>
+                            )}
+                          </div>
+
+                          {(ev.payload.isNewCategory || !categories.find(c => c.name === ev.payload.category)) && (
+                            <input 
+                              type="text"
+                              placeholder="Nome da nova categoria..."
+                              value={ev.payload.category}
+                              onChange={(e) => updatePendingEvent(idx, { category: e.target.value })}
+                              className="bg-[var(--bg-body)] border border-[var(--green-whatsapp)]/30 rounded-lg px-2 py-1 text-[10px] font-bold text-[var(--green-whatsapp)] outline-none placeholder:text-[var(--text-muted)]/50"
+                              autoFocus
+                            />
                           )}
                         </div>
                       </div>
@@ -698,27 +609,55 @@ const ChatInterface: React.FC<ChatProps> = ({
 
               <div className="bg-[var(--bg-body)] rounded-2xl p-4 border border-[var(--border)]">
                 <p className="text-[10px] font-black text-[var(--text-muted)] uppercase mb-3 text-center">
-                  Confirmar {pendingEvents.filter(e => e.payload.selected).length} itens em:
+                  {isSelectingCard ? 'Escolha o Cartão:' : `Confirmar ${pendingEvents.filter(e => e.payload.selected).length} itens em:`}
                 </p>
 
                 <div className="grid grid-cols-2 gap-2">
-                  {wallets.map(w => (
-                    <button 
-                      key={w.id}
-                      onClick={() => confirmAllEvents(w.id)}
-                      className="bg-[var(--surface)] text-[var(--text-primary)] border border-[var(--border)] hover:border-[var(--green-whatsapp)] hover:bg-[var(--green-whatsapp)]/5 rounded-xl py-2.5 px-2 text-[10px] font-black uppercase transition-all active:scale-95 flex items-center gap-2"
-                    >
-                      <span className="text-base">{w.icon || '💰'}</span>
-                      <span className="truncate flex-1 text-left">{w.name}</span>
-                    </button>
-                  ))}
-                  <button 
-                    onClick={() => confirmAllEvents('CARD')}
-                    className="bg-[var(--surface)] hover:bg-rose-500/5 hover:border-rose-500 border border-[var(--border)] rounded-xl py-2.5 px-2 text-[10px] font-black uppercase transition-all active:scale-95 flex items-center gap-2"
-                  >
-                    <span className="text-base">💳</span>
-                    <span className="flex-1 text-left">Cartão de Crédito</span>
-                  </button>
+                  {isSelectingCard ? (
+                    <>
+                      {cards.map(card => (
+                        <button 
+                          key={card.id}
+                          onClick={() => confirmAllEvents(card.id, true)}
+                          className="bg-[var(--surface)] hover:bg-rose-500/5 hover:border-rose-500 border border-[var(--border)] rounded-xl py-2.5 px-2 text-[10px] font-black uppercase transition-all active:scale-95 flex items-center gap-2"
+                        >
+                          <span className="text-base">💳</span>
+                          <span className="truncate flex-1 text-left">{card.name}</span>
+                        </button>
+                      ))}
+                      <button 
+                        onClick={() => setIsSelectingCard(false)}
+                        className="col-span-2 bg-[var(--bg-body)] text-[var(--text-muted)] border border-[var(--border)] rounded-xl py-2 text-[9px] font-black uppercase transition-all active:scale-95"
+                      >
+                        Voltar para Carteiras
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      {wallets.map(w => (
+                        <button 
+                          key={w.id}
+                          onClick={() => confirmAllEvents(w.id, false)}
+                          className="bg-[var(--surface)] text-[var(--text-primary)] border border-[var(--border)] hover:border-[var(--green-whatsapp)] hover:bg-[var(--green-whatsapp)]/5 rounded-xl py-2.5 px-2 text-[10px] font-black uppercase transition-all active:scale-95 flex items-center gap-2"
+                        >
+                          <span className="text-base">{w.icon || '💰'}</span>
+                          <span className="truncate flex-1 text-left">{w.name}</span>
+                        </button>
+                      ))}
+                      {cards.length > 0 && (
+                        <button 
+                          onClick={() => {
+                            if (cards.length === 1) confirmAllEvents(cards[0].id, true);
+                            else setIsSelectingCard(true);
+                          }}
+                          className="bg-[var(--surface)] hover:bg-rose-500/5 hover:border-rose-500 border border-[var(--border)] rounded-xl py-2.5 px-2 text-[10px] font-black uppercase transition-all active:scale-95 flex items-center gap-2"
+                        >
+                          <span className="text-base">💳</span>
+                          <span className="flex-1 text-left">Cartão de Crédito</span>
+                        </button>
+                      )}
+                    </>
+                  )}
                 </div>
               </div>
             </div>
@@ -751,32 +690,58 @@ const ChatInterface: React.FC<ChatProps> = ({
               </div>
 
               <p className="text-[10px] font-black text-[var(--text-muted)] uppercase mb-3 text-center">
-                {pendingAction.type === 'ADD_INCOME' ? 'Onde entrou esse dinheiro?' : 'De onde saiu esse dinheiro?'}
+                {isSelectingCard ? 'Escolha o Cartão:' : (pendingAction.type === 'ADD_INCOME' ? 'Onde entrou esse dinheiro?' : 'De onde saiu esse dinheiro?')}
               </p>
 
               <div className="grid grid-cols-2 gap-2">
-                {wallets.map(w => {
-                  const isSuggested = pendingAction.payload.targetWalletName && w.name.toLowerCase() === pendingAction.payload.targetWalletName.toLowerCase();
-                  return (
+                {isSelectingCard ? (
+                  <>
+                    {cards.map(card => (
+                      <button 
+                        key={card.id}
+                        onClick={() => confirmPendingAction(card.id, true)}
+                        className="bg-[var(--bg-body)] hover:bg-rose-500 hover:text-white border border-[var(--border)] rounded-2xl py-3 px-2 text-[10px] font-black uppercase transition-all active:scale-95 flex flex-col items-center gap-1"
+                      >
+                        <span className="text-lg">💳</span>
+                        <span className="truncate w-full text-center">{card.name}</span>
+                      </button>
+                    ))}
                     <button 
-                      key={w.id}
-                      onClick={() => confirmPendingAction(w.id)}
-                      className={`${isSuggested ? 'bg-[var(--green-whatsapp)] text-white border-white' : 'bg-[var(--bg-body)] text-[var(--text-primary)] border-[var(--border)]'} hover:bg-[var(--green-whatsapp)] hover:text-white border rounded-2xl py-3 px-2 text-[10px] font-black uppercase transition-all active:scale-95 flex flex-col items-center gap-1 relative overflow-hidden`}
+                      onClick={() => setIsSelectingCard(false)}
+                      className="col-span-2 bg-[var(--bg-body)] text-[var(--text-muted)] border border-[var(--border)] rounded-xl py-2 text-[9px] font-black uppercase transition-all active:scale-95"
                     >
-                      {isSuggested && <div className="absolute top-0 right-0 bg-[var(--text-primary)] text-[var(--green-whatsapp)] text-[7px] px-1 font-black">Sugerido</div>}
-                      <span className="text-lg">{w.icon || '💰'}</span>
-                      <span className="truncate w-full text-center">{w.name}</span>
+                      Voltar para Carteiras
                     </button>
-                  );
-                })}
-                {pendingAction.type !== 'ADD_INCOME' && (
-                  <button 
-                    onClick={() => confirmPendingAction('CARD')}
-                    className="bg-[var(--bg-body)] hover:bg-rose-500 hover:text-white border border-[var(--border)] rounded-2xl py-3 px-2 text-[10px] font-black uppercase transition-all active:scale-95 flex flex-col items-center gap-1"
-                  >
-                    <span className="text-lg">💳</span>
-                    <span>Cartão</span>
-                  </button>
+                  </>
+                ) : (
+                  <>
+                    {wallets.map(w => {
+                      const isSuggested = pendingAction.payload.targetWalletName && w.name.toLowerCase() === pendingAction.payload.targetWalletName.toLowerCase();
+                      return (
+                        <button 
+                          key={w.id}
+                          onClick={() => confirmPendingAction(w.id, false)}
+                          className={`${isSuggested ? 'bg-[var(--green-whatsapp)] text-white border-white' : 'bg-[var(--bg-body)] text-[var(--text-primary)] border-[var(--border)]'} hover:bg-[var(--green-whatsapp)] hover:text-white border rounded-2xl py-3 px-2 text-[10px] font-black uppercase transition-all active:scale-95 flex flex-col items-center gap-1 relative overflow-hidden`}
+                        >
+                          {isSuggested && <div className="absolute top-0 right-0 bg-[var(--text-primary)] text-[var(--green-whatsapp)] text-[7px] px-1 font-black">Sugerido</div>}
+                          <span className="text-lg">{w.icon || '💰'}</span>
+                          <span className="truncate w-full text-center">{w.name}</span>
+                        </button>
+                      );
+                    })}
+                    {cards.length > 0 && pendingAction.type !== 'ADD_INCOME' && (
+                      <button 
+                        onClick={() => {
+                          if (cards.length === 1) confirmPendingAction(cards[0].id, true);
+                          else setIsSelectingCard(true);
+                        }}
+                        className="bg-[var(--bg-body)] hover:bg-rose-500 hover:text-white border border-[var(--border)] rounded-2xl py-3 px-2 text-[10px] font-black uppercase transition-all active:scale-95 flex flex-col items-center gap-1"
+                      >
+                        <span className="text-lg">💳</span>
+                        <span>Cartão</span>
+                      </button>
+                    )}
+                  </>
                 )}
               </div>
             </div>

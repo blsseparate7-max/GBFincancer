@@ -2,10 +2,101 @@
 import { db } from "./firebaseConfig";
 import { 
   collection, addDoc, doc, setDoc, deleteDoc, updateDoc, 
-  serverTimestamp, increment, getDoc, arrayUnion, getDocs, query, where 
+  serverTimestamp, increment, getDoc, arrayUnion, getDocs, query, where,
+  writeBatch, limit
 } from "firebase/firestore";
-import { FinanceEvent } from "../types";
+import { FinanceEvent, TransactionType } from "../types";
 import { normalizeCategoryName } from "./normalizationService";
+
+async function getWalletInfo(uid: string, walletId: string) {
+  if (!walletId) return null;
+  const walletRef = doc(db, "users", uid, "wallets", walletId);
+  const snap = await getDoc(walletRef);
+  if (snap.exists()) {
+    return { id: snap.id, name: snap.data().name };
+  }
+  return null;
+}
+
+async function getCategoryInfo(uid: string, categoryName: string) {
+  if (!categoryName) return { id: 'outros', name: 'Outros' };
+  const normalized = normalizeCategoryName(categoryName);
+  const q = query(collection(db, "users", uid, "categories"), where("name", "==", normalized), limit(1));
+  const snap = await getDocs(q);
+  if (!snap.empty) {
+    const d = snap.docs[0];
+    return { id: d.id, name: d.data().name };
+  }
+  return { id: 'outros', name: normalized };
+}
+
+export const migrateTransactions = async (uid: string) => {
+  if (!uid) return 0;
+  try {
+    const userRef = doc(db, "users", uid);
+    const transRef = collection(userRef, "transactions");
+    const snap = await getDocs(transRef);
+    
+    const walletsSnap = await getDocs(collection(userRef, "wallets"));
+    const walletsMap = new Map(walletsSnap.docs.map(d => [d.id, d.data().name]));
+    
+    const categoriesSnap = await getDocs(collection(userRef, "categories"));
+    const categoriesMap = new Map(categoriesSnap.docs.map(d => [d.data().name, d.id]));
+
+    const batch = writeBatch(db);
+    let count = 0;
+
+    for (const d of snap.docs) {
+      const data = d.data();
+      const updates: any = {};
+      
+      // 1. Wallet Info
+      const walletId = data.walletId || data.sourceWalletId || data.targetWalletId;
+      if (walletId && !data.walletName) {
+        updates.walletId = walletId;
+        updates.walletName = walletsMap.get(walletId) || null;
+      }
+
+      // 2. Category Info
+      if (data.category && (!data.categoryId || !data.categoryName)) {
+        const normalized = normalizeCategoryName(data.category);
+        updates.category = normalized;
+        updates.categoryName = normalized;
+        updates.categoryId = categoriesMap.get(normalized) || 'outros';
+      }
+
+      // 3. Payment Method Consistency
+      if (updates.walletName || data.walletName) {
+        const wName = (updates.walletName || data.walletName || "").toLowerCase();
+        if (wName.includes('dinheiro') && data.paymentMethod === 'PIX') {
+          updates.paymentMethod = 'CASH';
+        }
+      }
+
+      if (Object.keys(updates).length > 0) {
+        batch.update(d.ref, updates);
+        count++;
+      }
+      
+      if (count >= 450) { // Firestore batch limit is 500
+        await batch.commit();
+        break; 
+      }
+    }
+    
+    if (count > 0 && count < 450) await batch.commit();
+    console.log(`GB: Migração concluída. ${count} transações atualizadas.`);
+    return count;
+  } catch (error) {
+    console.error("GB: Erro na migração:", error);
+    return 0;
+  }
+};
+
+const getCycleKey = (dateStr?: string) => {
+  const d = dateStr ? new Date(dateStr) : new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+};
 
 export const dispatchEvent = async (uid: string, event: FinanceEvent) => {
   if (!uid) return { success: false, error: "No user ID" };
@@ -13,77 +104,152 @@ export const dispatchEvent = async (uid: string, event: FinanceEvent) => {
   try {
     const userRef = doc(db, "users", uid);
     const now = new Date();
+    const batch = writeBatch(db);
     
     // Normalização de valores numéricos
     if (event.payload && event.payload.amount !== undefined) {
       event.payload.amount = Number(event.payload.amount);
     }
 
-    const isQA = event.payload?.isQA || false;
+    // Sanitiza o payload para evitar 'undefined' que quebra o Firestore (recursivo)
+    const sanitizePayload = (p: any): any => {
+      if (p === null || p === undefined) return null;
+      if (typeof p !== 'object') return p;
+      if (p instanceof Date) return p;
+      if (Array.isArray(p)) return p.map(item => sanitizePayload(item));
+
+      const sanitized: any = {};
+      Object.keys(p).forEach(key => {
+        const val = p[key];
+        if (val === undefined) {
+          sanitized[key] = null;
+        } else if (val !== null && typeof val === 'object' && !(val instanceof Date)) {
+          sanitized[key] = sanitizePayload(val);
+        } else {
+          sanitized[key] = val;
+        }
+      });
+      return sanitized;
+    };
+
+    const payload = sanitizePayload(event.payload);
+    const isQA = payload.isQA || false;
+    const source = event.source || 'ui';
+    const cycleKey = getCycleKey(payload.date);
+    const confirmedBy = payload.confirmedBy || null;
     
     switch (event.type) {
       case 'ADD_EXPENSE': {
-        const { amount, category, description, paymentMethod, date, cardId, sourceWalletId } = event.payload;
+        const { amount, category, description, paymentMethod, date, cardId, sourceWalletId } = payload;
         
-        if (paymentMethod === 'CARD') {
-          // Redireciona para lógica de cartão para garantir que o limite seja atualizado e apareça na fatura
+        if (paymentMethod === 'CARD' || cardId) {
           return await dispatchEvent(uid, {
             ...event,
             type: 'ADD_CARD_CHARGE',
-            payload: { ...event.payload, cardId: cardId || 'default' }
+            payload: { ...payload, cardId: cardId || 'default', confirmedBy }
           });
         }
 
-        const normalizedCat = normalizeCategoryName(category);
+        const catInfo = await getCategoryInfo(uid, category);
+        const walletInfo = await getWalletInfo(uid, sourceWalletId);
         
-        // Transação de saída (Cash/Pix/Wallet)
-        await addDoc(collection(userRef, "transactions"), {
-          amount, category: normalizedCat, description, paymentMethod: paymentMethod || 'PIX',
+        const transRef = doc(collection(userRef, "transactions"));
+        
+        // Determinar paymentMethod se não fornecido
+        let finalPaymentMethod = paymentMethod;
+        if (!finalPaymentMethod && walletInfo) {
+          if (walletInfo.name.toLowerCase().includes('dinheiro')) {
+            finalPaymentMethod = 'CASH';
+          }
+        }
+
+        batch.set(transRef, {
+          amount, 
+          category: catInfo.name,
+          categoryId: catInfo.id,
+          categoryName: catInfo.name,
+          description, 
+          paymentMethod: finalPaymentMethod || null,
           type: 'EXPENSE',
           date: date || now.toISOString(),
+          walletId: walletInfo?.id || null,
+          walletName: walletInfo?.name || null,
           sourceWalletId: sourceWalletId || null,
           isQA,
+          source,
+          cycleKey,
+          confirmedBy,
+          status: 'CONFIRMED',
+          resolved: true,
           createdAt: serverTimestamp()
         });
 
-        // Atualiza saldo da carteira se houver
         if (sourceWalletId) {
-          await updateWalletBalance(uid, sourceWalletId, -amount);
+          const walletRef = doc(userRef, "wallets", sourceWalletId);
+          batch.update(walletRef, { 
+            balance: increment(-amount),
+            updatedAt: serverTimestamp()
+          });
         }
 
-        // Atualiza consumo de limite
-        await updateLimitConsumption(uid, normalizedCat, amount);
+        const limitId = (catInfo.name || "").toLowerCase().trim().replace(/\s+/g, '_');
+        const limitRef = doc(userRef, "limits", limitId);
+        batch.set(limitRef, {
+          spent: increment(amount),
+          updatedAt: serverTimestamp()
+        }, { merge: true });
+
+        await batch.commit();
         break;
       }
 
       case 'ADD_INCOME': {
-        const { amount, targetWalletId } = event.payload;
-        await addDoc(collection(userRef, "transactions"), {
-          ...event.payload,
+        const { amount, targetWalletId, description, category, date, paymentMethod } = payload;
+        const catInfo = await getCategoryInfo(uid, category || 'Recebimento');
+        const walletInfo = await getWalletInfo(uid, targetWalletId);
+        
+        const transRef = doc(collection(userRef, "transactions"));
+        
+        batch.set(transRef, {
+          ...payload,
           type: 'INCOME',
+          category: catInfo.name,
+          categoryId: catInfo.id,
+          categoryName: catInfo.name,
+          walletId: walletInfo?.id || null,
+          walletName: walletInfo?.name || null,
+          paymentMethod: paymentMethod || null,
           isQA,
+          source,
+          cycleKey,
+          confirmedBy,
+          status: 'CONFIRMED',
+          resolved: true,
           createdAt: serverTimestamp()
         });
 
-        // Atualiza saldo da carteira se houver
         if (targetWalletId) {
-          await updateWalletBalance(uid, targetWalletId, amount);
+          const walletRef = doc(userRef, "wallets", targetWalletId);
+          batch.update(walletRef, { 
+            balance: increment(amount),
+            updatedAt: serverTimestamp()
+          });
         }
+
+        await batch.commit();
         break;
       }
 
       case 'ADD_CARD_CHARGE': {
-        let { amount, category, description, cardId, date, sourceWalletId, installments } = event.payload;
-        const normalizedCat = normalizeCategoryName(category);
+        let { amount, category, description, cardId, date, sourceWalletId, installments } = payload;
+        const catInfo = await getCategoryInfo(uid, category);
         const chargeDate = date ? new Date(date) : now;
         const numInstallments = installments || 1;
         const installmentAmount = amount / numInstallments;
         
-        // 1. Busca info do cartão para calcular o ciclo
         let cardRef = doc(userRef, "cards", cardId || 'default');
         let cardSnap = await getDoc(cardRef);
         
-        // Se não encontrou o cartão pelo ID, tenta pegar o primeiro disponível
         if (!cardSnap.exists()) {
           const cardsSnap = await getDocs(collection(userRef, "cards"));
           if (!cardsSnap.empty) {
@@ -96,6 +262,7 @@ export const dispatchEvent = async (uid: string, event: FinanceEvent) => {
         if (cardSnap.exists()) {
           const cardData = cardSnap.data();
           const closingDay = cardData.closingDay || 10;
+          const cardName = cardData.name || 'Cartão';
 
           for (let i = 0; i < numInstallments; i++) {
             const currentInstallmentDate = new Date(chargeDate);
@@ -111,19 +278,28 @@ export const dispatchEvent = async (uid: string, event: FinanceEvent) => {
               ? `${description} (${i + 1}/${numInstallments})`
               : description;
 
-            // 2. Registra a transação com o ciclo de fatura
-            await addDoc(collection(userRef, "transactions"), {
+            const transRef = doc(collection(userRef, "transactions"));
+            batch.set(transRef, {
               amount: installmentAmount, 
-              category: normalizedCat, 
+              category: catInfo.name,
+              categoryId: catInfo.id,
+              categoryName: catInfo.name,
               description: installmentDesc, 
               paymentMethod: 'CARD',
               type: 'EXPENSE',
               cardId: cardId || 'default',
+              walletId: cardId || 'default',
+              walletName: cardName,
               sourceWalletId: sourceWalletId || null,
               date: currentInstallmentDate.toISOString(),
               invoiceCycle,
               isPaid: false,
               isQA,
+              source,
+              cycleKey: invoiceCycle,
+              confirmedBy,
+              status: 'CONFIRMED',
+              resolved: true,
               createdAt: serverTimestamp(),
               installmentNumber: i + 1,
               totalInstallments: numInstallments,
@@ -131,21 +307,25 @@ export const dispatchEvent = async (uid: string, event: FinanceEvent) => {
             });
           }
 
-          // 3. Atualiza o cartão (Regra da Vida Real)
-          await updateDoc(cardRef, {
+          batch.update(cardRef, {
             usedLimit: increment(amount),
             availableLimit: increment(-amount),
             currentInvoiceAmount: increment(numInstallments > 1 ? installmentAmount : amount),
-            // Compatibilidade
             usedAmount: increment(amount),
             availableAmount: increment(-amount),
             invoiceAmount: increment(numInstallments > 1 ? installmentAmount : amount),
             updatedAt: serverTimestamp()
           });
-        }
 
-        // 4. Atualiza limite de categoria
-        await updateLimitConsumption(uid, normalizedCat, amount);
+          const limitId = (catInfo.name || "").toLowerCase().trim().replace(/\s+/g, '_');
+          const limitRef = doc(userRef, "limits", limitId);
+          batch.set(limitRef, {
+            spent: increment(amount),
+            updatedAt: serverTimestamp()
+          }, { merge: true });
+
+          await batch.commit();
+        }
         break;
       }
 
@@ -162,6 +342,11 @@ export const dispatchEvent = async (uid: string, event: FinanceEvent) => {
           sourceWalletId: sourceWalletId || null,
           date: now.toISOString(),
           isQA,
+          source,
+          cycleKey,
+          confirmedBy,
+          status: 'CONFIRMED',
+          resolved: true,
           createdAt: serverTimestamp()
         });
 
@@ -209,7 +394,7 @@ export const dispatchEvent = async (uid: string, event: FinanceEvent) => {
       case 'UPDATE_LIMIT': {
         const { category, amount } = event.payload;
         const normalizedCat = normalizeCategoryName(category);
-        const limitId = normalizedCat.toLowerCase().trim().replace(/\s+/g, '_');
+        const limitId = (normalizedCat || "").toLowerCase().trim().replace(/\s+/g, '_');
         await setDoc(doc(userRef, "limits", limitId), {
           category: normalizedCat,
           limit: amount,
@@ -230,24 +415,39 @@ export const dispatchEvent = async (uid: string, event: FinanceEvent) => {
           type: type || 'PAY',
           targetWalletName: targetWalletName || null,
           isQA,
+          source,
+          cycleKey,
+          confirmedBy,
+          status: 'PENDING',
+          resolved: false,
           createdAt: serverTimestamp(), isActive: true
         });
         break;
       }
 
       case 'PAY_REMINDER': {
-        const { billId, paymentMethod, sourceWalletId, cardId } = event.payload;
+        const { billId, paymentMethod, sourceWalletId, cardId } = payload;
         const billRef = doc(userRef, "reminders", billId);
         const billSnap = await getDoc(billRef);
         
         if (billSnap.exists()) {
           const billData = billSnap.data();
           const isReceive = billData.type === 'RECEIVE';
+          const cycleKey = getCycleKey();
           
-          await updateDoc(billRef, { isPaid: true, paidAt: now.toISOString() });
+          batch.update(billRef, { 
+            isPaid: true, 
+            paidAt: now.toISOString(),
+            status: isReceive ? 'RECEIVED' : 'PAID',
+            resolved: true,
+            lastPromptedAt: serverTimestamp(),
+            cycleKey
+          });
           
-          // Se for pagamento via cartão, redireciona para ADD_CARD_CHARGE
           if (paymentMethod === 'CARD' && !isReceive) {
+            // Para cartão, o ADD_CARD_CHARGE já faz o commit do batch dele
+            // Então precisamos commitar este primeiro
+            await batch.commit();
             await dispatchEvent(uid, {
               type: 'ADD_CARD_CHARGE',
               payload: {
@@ -255,14 +455,15 @@ export const dispatchEvent = async (uid: string, event: FinanceEvent) => {
                 category: billData.category || 'Contas',
                 description: `PGTO: ${billData.description}`,
                 cardId: cardId || 'default',
-                date: now.toISOString()
+                date: now.toISOString(),
+                confirmedBy
               },
-              source: 'ui',
+              source,
               createdAt: serverTimestamp()
             });
           } else {
-            // Gera a transação real no Dashboard
-            await addDoc(collection(userRef, "transactions"), {
+            const transRef = doc(collection(userRef, "transactions"));
+            batch.set(transRef, {
               description: isReceive ? `REC: ${billData.description}` : `PGTO: ${billData.description}`,
               amount: billData.amount,
               category: billData.category || (isReceive ? 'Recebimento' : 'Contas'),
@@ -271,38 +472,57 @@ export const dispatchEvent = async (uid: string, event: FinanceEvent) => {
               sourceWalletId: sourceWalletId || null,
               date: billData.dueDate || now.toISOString(),
               isQA,
+              source,
+              cycleKey,
+              confirmedBy,
+              status: 'CONFIRMED',
+              resolved: true,
               createdAt: serverTimestamp()
             });
 
-            // Atualiza saldo da carteira se houver
             if (sourceWalletId) {
-              await updateWalletBalance(uid, sourceWalletId, isReceive ? billData.amount : -billData.amount);
+              const walletRef = doc(userRef, "wallets", sourceWalletId);
+              batch.update(walletRef, { 
+                balance: increment(isReceive ? billData.amount : -billData.amount),
+                updatedAt: serverTimestamp()
+              });
             }
-          }
 
-          // Se for recorrente, cria o do próximo mês baseado na data de vencimento atual
-          if (billData.recurring) {
-            const currentDueDate = billData.dueDate ? new Date(billData.dueDate) : new Date();
-            const nextMonth = new Date(currentDueDate.getFullYear(), currentDueDate.getMonth() + 1, billData.dueDay);
-            
-            // Ajuste para meses com menos dias (ex: 31 de Jan -> 28/29 de Fev)
-            if (nextMonth.getDate() !== billData.dueDay) {
-              nextMonth.setDate(0);
+            if (!isReceive) {
+              const normalizedCat = normalizeCategoryName(billData.category || 'Contas');
+              const limitId = (normalizedCat || "").toLowerCase().trim().replace(/\s+/g, '_');
+              const limitRef = doc(userRef, "limits", limitId);
+              batch.set(limitRef, {
+                spent: increment(billData.amount),
+                updatedAt: serverTimestamp()
+              }, { merge: true });
             }
-            
-            await addDoc(collection(userRef, "reminders"), {
-              description: billData.description,
-              amount: billData.amount,
-              dueDay: billData.dueDay,
-              category: billData.category,
-              type: billData.type || 'PAY',
-              dueDate: nextMonth.toISOString(),
-              isPaid: false,
-              recurring: true,
-              isQA,
-              createdAt: serverTimestamp(),
-              isActive: true
-            });
+
+            // Se for recorrente, cria o do próximo mês
+            if (billData.recurring) {
+              const currentDueDate = billData.dueDate ? new Date(billData.dueDate) : new Date();
+              const nextMonth = new Date(currentDueDate.getFullYear(), currentDueDate.getMonth() + 1, billData.dueDay);
+              if (nextMonth.getDate() !== billData.dueDay) nextMonth.setDate(0);
+              
+              const nextBillRef = doc(collection(userRef, "reminders"));
+              batch.set(nextBillRef, {
+                description: billData.description,
+                amount: billData.amount,
+                dueDay: billData.dueDay,
+                category: billData.category,
+                type: billData.type || 'PAY',
+                dueDate: nextMonth.toISOString(),
+                isPaid: false,
+                recurring: true,
+                isQA,
+                createdAt: serverTimestamp(),
+                isActive: true,
+                status: 'pending',
+                resolved: false
+              });
+            }
+
+            await batch.commit();
           }
         }
         break;
@@ -347,6 +567,9 @@ export const dispatchEvent = async (uid: string, event: FinanceEvent) => {
           ...event.payload,
           currentAmount: event.payload.currentAmount !== undefined ? event.payload.currentAmount : 0,
           isQA,
+          source,
+          status: 'ACTIVE',
+          resolved: false,
           createdAt: serverTimestamp()
         });
         break;
@@ -477,12 +700,25 @@ export const dispatchEvent = async (uid: string, event: FinanceEvent) => {
       }
 
       case 'UPDATE_TRANSACTION': {
-        const { id, updates, oldData } = event.payload;
+        const { id, updates, oldData } = payload;
         const transRef = doc(userRef, "transactions", id);
         
-        const finalUpdates = { ...updates };
+        const finalUpdates = { ...(updates || {}) };
+        
+        // 1. Category Info Sync
         if (finalUpdates.category) {
-          finalUpdates.category = normalizeCategoryName(finalUpdates.category);
+          const catInfo = await getCategoryInfo(uid, finalUpdates.category);
+          finalUpdates.category = catInfo.name;
+          finalUpdates.categoryId = catInfo.id;
+          finalUpdates.categoryName = catInfo.name;
+        }
+
+        // 2. Wallet Info Sync
+        const newWalletId = finalUpdates.sourceWalletId || finalUpdates.targetWalletId;
+        if (newWalletId) {
+          const walletInfo = await getWalletInfo(uid, newWalletId);
+          finalUpdates.walletId = walletInfo?.id || null;
+          finalUpdates.walletName = walletInfo?.name || null;
         }
 
         await updateDoc(transRef, {
@@ -490,7 +726,7 @@ export const dispatchEvent = async (uid: string, event: FinanceEvent) => {
           updatedAt: serverTimestamp()
         });
 
-        // 1. Sincronização de Carteiras (Wallet Balance Sync)
+        // 3. Sincronização de Carteiras (Wallet Balance Sync)
         if (oldData) {
           const oldAmount = Number(oldData.amount || 0);
           const newAmount = finalUpdates.amount !== undefined ? Number(finalUpdates.amount) : oldAmount;
@@ -674,10 +910,11 @@ export const dispatchEvent = async (uid: string, event: FinanceEvent) => {
       }
 
       case 'ADMIN_UPDATE_USER': {
-        const { targetUid, updates, adminId } = event.payload;
+        const { targetUid, updates, adminId } = payload;
         const targetRef = doc(db, "users", targetUid);
+        const safeUpdates = updates || {};
         await updateDoc(targetRef, {
-          ...updates,
+          ...safeUpdates,
           localUpdatedAt: new Date().toISOString()
         });
         
@@ -686,7 +923,7 @@ export const dispatchEvent = async (uid: string, event: FinanceEvent) => {
           adminId,
           action: 'UPDATE_USER',
           targetUserId: targetUid,
-          details: `Atualizou campos: ${Object.keys(updates).join(', ')}`,
+          details: `Atualizou campos: ${Object.keys(safeUpdates).join(', ')}`,
           createdAt: serverTimestamp()
         });
         break;
@@ -768,6 +1005,14 @@ export const dispatchEvent = async (uid: string, event: FinanceEvent) => {
         break;
       }
 
+      case 'UPDATE_USER': {
+        await updateDoc(userRef, {
+          ...event.payload,
+          updatedAt: serverTimestamp()
+        });
+        break;
+      }
+
       case 'UPDATE_WALLET': {
         const { id, ...updates } = event.payload;
         await updateDoc(doc(userRef, "wallets", id), {
@@ -837,8 +1082,8 @@ export const dispatchEvent = async (uid: string, event: FinanceEvent) => {
           }
 
           // 2. Migra limite se existir
-          const oldLimitId = oldName.toLowerCase().trim().replace(/\s+/g, '_');
-          const newLimitId = newName.toLowerCase().trim().replace(/\s+/g, '_');
+          const oldLimitId = (oldName || "").toLowerCase().trim().replace(/\s+/g, '_');
+          const newLimitId = (newName || "").toLowerCase().trim().replace(/\s+/g, '_');
           const oldLimitRef = doc(userRef, "limits", oldLimitId);
           const oldLimitSnap = await getDoc(oldLimitRef);
           
@@ -891,7 +1136,7 @@ export const dispatchEvent = async (uid: string, event: FinanceEvent) => {
         }
 
         // 2. Deleta limite se existir
-        const limitId = name.toLowerCase().trim().replace(/\s+/g, '_');
+        const limitId = (name || "").toLowerCase().trim().replace(/\s+/g, '_');
         await deleteDoc(doc(userRef, "limits", limitId));
         break;
       }
@@ -972,7 +1217,7 @@ export const dispatchEvent = async (uid: string, event: FinanceEvent) => {
 };
 
 async function updateLimitConsumption(uid: string, category: string, amount: number) {
-  const limitId = category.toLowerCase().trim().replace(/\s+/g, '_');
+  const limitId = (category || "").toLowerCase().trim().replace(/\s+/g, '_');
   const limitRef = doc(db, "users", uid, "limits", limitId);
   const snap = await getDoc(limitRef);
   if (snap.exists()) {

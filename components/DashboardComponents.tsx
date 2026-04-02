@@ -180,6 +180,101 @@ export const ExpenseRanking: React.FC<{ ranking: any[] }> = React.memo(({ rankin
   </div>
 ));
 
+export const GlobalSpendingLimitCard: React.FC<{ 
+  limit: number | null | undefined; 
+  spent: number; 
+  onEdit: () => void;
+  onDelete: () => void;
+  onAdd: () => void;
+}> = React.memo(({ limit, spent, onEdit, onDelete, onAdd }) => {
+  const pct = limit && limit > 0 ? (spent / limit) * 100 : 0;
+  const isOver = pct >= 100;
+  const isWarning = pct >= 80;
+
+  return (
+    <div className="bg-[var(--surface)] p-10 rounded-[3rem] border border-[var(--border)] shadow-sm space-y-8 relative overflow-hidden group">
+      <div className="flex justify-between items-center relative z-10">
+        <div>
+          <h3 className="text-xs font-black text-[var(--text-primary)] uppercase tracking-[0.2em] mb-1">Teto de Gastos Global</h3>
+          <p className="text-[9px] font-bold text-[var(--text-muted)] uppercase italic">Limite mensal de despesas</p>
+        </div>
+        {limit ? (
+          <div className="flex gap-2">
+            <button 
+              onClick={onEdit}
+              className="w-8 h-8 bg-[var(--bg-body)] text-[var(--text-muted)] rounded-xl flex items-center justify-center hover:text-[var(--text-primary)] transition-all border border-[var(--border)] shadow-sm"
+            >
+              <Info size={14} />
+            </button>
+            <button 
+              onClick={onDelete}
+              className="w-8 h-8 bg-rose-500/10 text-rose-500 rounded-xl flex items-center justify-center hover:bg-rose-500 hover:text-white transition-all border border-rose-500/20 shadow-sm"
+            >
+              <TrendingDown size={14} />
+            </button>
+          </div>
+        ) : (
+          <button 
+            onClick={onAdd} 
+            className="px-4 py-2 bg-[var(--green-whatsapp)] text-white rounded-xl font-black text-[9px] uppercase shadow-lg shadow-[var(--green-whatsapp)]/20 hover:scale-105 transition-all active:scale-95"
+          >
+            Definir Teto
+          </button>
+        )}
+      </div>
+
+      {!limit ? (
+        <div className="py-6 text-center space-y-4 relative z-10">
+          <div className="w-16 h-16 bg-[var(--bg-body)] rounded-full flex items-center justify-center mx-auto opacity-20">
+            <Target size={32} />
+          </div>
+          <p className="text-[11px] font-black uppercase italic text-[var(--text-muted)]">Teto de gastos não definido</p>
+          <button 
+            onClick={onAdd}
+            className="text-[10px] font-black text-[var(--green-whatsapp)] uppercase tracking-widest hover:underline"
+          >
+            Começar agora →
+          </button>
+        </div>
+      ) : (
+        <div className="space-y-6 relative z-10">
+          <div className="flex justify-between items-end">
+            <div className="space-y-1">
+              <p className="text-[10px] font-black text-[var(--text-muted)] uppercase tracking-widest">Utilizado</p>
+              <p className={`text-3xl font-black italic tracking-tighter leading-none ${isOver ? 'text-rose-500' : 'text-[var(--text-primary)]'}`}>
+                {format(spent)}
+              </p>
+            </div>
+            <div className="text-right space-y-1">
+              <p className="text-[10px] font-black text-[var(--text-muted)] uppercase tracking-widest">Limite</p>
+              <p className="text-xl font-black text-[var(--text-primary)] italic leading-none opacity-60">
+                {format(limit)}
+              </p>
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            <div className="h-4 w-full bg-[var(--bg-body)] rounded-full overflow-hidden shadow-inner p-1">
+              <motion.div 
+                initial={{ width: 0 }}
+                animate={{ width: `${Math.min(100, pct)}%` }}
+                transition={{ duration: 1.5, ease: "easeOut" }}
+                className={`h-full rounded-full transition-all duration-1000 ${isOver ? 'bg-rose-500 shadow-[0_0_15px_rgba(244,63,94,0.4)]' : isWarning ? 'bg-amber-400' : 'bg-[var(--green-whatsapp)]'}`} 
+              />
+            </div>
+            <div className="flex justify-between items-center text-[10px] font-black italic">
+              <span className="text-[var(--text-muted)] uppercase">Status do mês</span>
+              <span className={isOver ? 'text-rose-500 animate-pulse' : isWarning ? 'text-amber-500' : 'text-[var(--green-whatsapp)]'}>
+                {pct.toFixed(1)}% {isOver ? '(Limite Excedido)' : ''}
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+});
+
 export const SpendingLimitsCard: React.FC<{ limits: any[], onAdd: () => void }> = React.memo(({ limits, onAdd }) => (
   <div className="bg-[var(--surface)] p-10 rounded-[3rem] border border-[var(--border)] shadow-sm space-y-8">
     <div className="flex justify-between items-center">

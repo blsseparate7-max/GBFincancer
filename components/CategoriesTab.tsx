@@ -1,16 +1,17 @@
 import React, { useState } from 'react';
-import { UserCategory } from '../types';
+import { UserCategory, Transaction } from '../types';
 import { dispatchEvent } from '../services/eventDispatcher';
-import { Tag, Plus, Edit2, Trash2, Check, X, Palette } from 'lucide-react';
+import { Tag, Plus, Edit2, Trash2, Check, X, Palette, ShoppingCart, Coffee, Car, Home, HeartPulse, Zap, DollarSign, Briefcase, Plane, GraduationCap, Gift, Music, Smartphone, Utensils, Dumbbell, Bike, Fuel, School, BookOpen, Tv, Droplets, Wifi, Phone, Key, CreditCard, Repeat, Dog, Shirt, Sparkles, TrendingUp, Percent } from 'lucide-react';
 import { Notification, ConfirmModal } from './UI';
 
 interface CategoriesTabProps {
   uid: string;
   categories: UserCategory[];
+  transactions: Transaction[];
   loading: boolean;
 }
 
-const CategoriesTab: React.FC<CategoriesTabProps> = ({ uid, categories, loading }) => {
+const CategoriesTab: React.FC<CategoriesTabProps> = ({ uid, categories, transactions, loading }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingCategory, setEditingCategory] = useState<UserCategory | null>(null);
   
@@ -22,7 +23,13 @@ const CategoriesTab: React.FC<CategoriesTabProps> = ({ uid, categories, loading 
   const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<UserCategory | null>(null);
 
-  const icons = ['Tag', 'ShoppingBag', 'Coffee', 'Car', 'Home', 'Heart', 'Zap', 'DollarSign', 'Briefcase', 'Plane', 'Book', 'Gift', 'Music', 'Smartphone', 'Utensils', 'Dumbbell'];
+  const icons = [
+    'Utensils', 'ShoppingCart', 'Coffee', 'Pizza', 'Bike', 'Car', 'Fuel', 'Smartphone', 
+    'HeartPulse', 'Pill', 'Dumbbell', 'GraduationCap', 'School', 'BookOpen', 'Palmtree', 
+    'Tv', 'Plane', 'Home', 'Droplets', 'Zap', 'Wifi', 'Phone', 'Key', 'CreditCard', 
+    'Repeat', 'Dog', 'Shirt', 'Sparkles', 'TrendingUp', 'DollarSign', 'Percent', 
+    'Briefcase', 'Gift', 'Tag'
+  ];
   const colors = ['#128C7E', '#075E54', '#34B7F1', '#25D366', '#DC2626', '#EA580C', '#D97706', '#65A30D', '#059669', '#0891B2', '#2563EB', '#4F46E5', '#7C3AED', '#9333EA', '#C026D3', '#DB2777'];
 
   const handleOpenModal = (cat?: UserCategory) => {
@@ -95,6 +102,57 @@ const CategoriesTab: React.FC<CategoriesTabProps> = ({ uid, categories, loading 
     }
   };
 
+  const getIcon = (iconName: string) => {
+    switch (iconName) {
+      case 'Utensils': return <Utensils size={24} />;
+      case 'ShoppingCart': return <ShoppingCart size={24} />;
+      case 'Coffee': return <Coffee size={24} />;
+      case 'Pizza': return <Utensils size={24} />; // Fallback
+      case 'Bike': return <Bike size={24} />;
+      case 'Car': return <Car size={24} />;
+      case 'Fuel': return <Fuel size={24} />;
+      case 'Smartphone': return <Smartphone size={24} />;
+      case 'HeartPulse': return <HeartPulse size={24} />;
+      case 'Pill': return <HeartPulse size={24} />; // Fallback
+      case 'Dumbbell': return <Dumbbell size={24} />;
+      case 'GraduationCap': return <GraduationCap size={24} />;
+      case 'School': return <School size={24} />;
+      case 'BookOpen': return <BookOpen size={24} />;
+      case 'Palmtree': return <Plane size={24} />; // Fallback
+      case 'Tv': return <Tv size={24} />;
+      case 'Plane': return <Plane size={24} />;
+      case 'Home': return <Home size={24} />;
+      case 'Droplets': return <Droplets size={24} />;
+      case 'Zap': return <Zap size={24} />;
+      case 'Wifi': return <Wifi size={24} />;
+      case 'Phone': return <Phone size={24} />;
+      case 'Key': return <Key size={24} />;
+      case 'CreditCard': return <CreditCard size={24} />;
+      case 'Repeat': return <Repeat size={24} />;
+      case 'Dog': return <Dog size={24} />;
+      case 'Shirt': return <Shirt size={24} />;
+      case 'Sparkles': return <Sparkles size={24} />;
+      case 'TrendingUp': return <TrendingUp size={24} />;
+      case 'DollarSign': return <DollarSign size={24} />;
+      case 'Percent': return <Percent size={24} />;
+      case 'Briefcase': return <Briefcase size={24} />;
+      case 'Gift': return <Gift size={24} />;
+      default: return <Tag size={24} />;
+    }
+  };
+
+  const calculateSpent = (catName: string) => {
+    return transactions
+      .filter(t => t.category === catName && t.type === 'EXPENSE')
+      .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+  };
+
+  const calculateReceived = (catName: string) => {
+    return transactions
+      .filter(t => t.category === catName && t.type === 'INCOME')
+      .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+  };
+
   if (loading) {
     return (
       <div className="flex-1 flex items-center justify-center">
@@ -120,35 +178,43 @@ const CategoriesTab: React.FC<CategoriesTabProps> = ({ uid, categories, loading 
 
       <div className="flex-1 overflow-y-auto p-6 space-y-4">
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {categories.map(cat => (
-            <div 
-              key={cat.id}
-              className="bg-[var(--surface)] border border-[var(--border)] p-5 rounded-3xl flex items-center justify-between group hover:bg-white/5 transition-all"
-            >
-              <div className="flex items-center gap-4">
-                <div 
-                  className="w-12 h-12 rounded-2xl flex items-center justify-center text-white shadow-lg"
-                  style={{ backgroundColor: cat.color }}
-                >
-                  <Tag size={24} />
+          {categories.map(cat => {
+            const amount = cat.type === 'INCOME' ? calculateReceived(cat.name) : calculateSpent(cat.name);
+            return (
+              <div 
+                key={cat.id}
+                className="bg-[var(--surface)] border border-[var(--border)] p-5 rounded-3xl flex items-center justify-between group hover:bg-white/5 transition-all"
+              >
+                <div className="flex items-center gap-4">
+                  <div 
+                    className="w-12 h-12 rounded-2xl flex items-center justify-center text-white shadow-lg"
+                    style={{ backgroundColor: cat.color }}
+                  >
+                    {getIcon(cat.icon)}
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-black text-[var(--text-primary)]">{cat.name}</h4>
+                    <div className="flex flex-col">
+                      <span className="text-[9px] font-black uppercase text-[var(--text-muted)] tracking-widest">
+                        {cat.type === 'INCOME' ? 'Entrada' : 'Saída'}
+                      </span>
+                      <span className={`text-[11px] font-black ${cat.type === 'INCOME' ? 'text-emerald-500' : 'text-red-500'}`}>
+                        {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(amount)}
+                      </span>
+                    </div>
+                  </div>
                 </div>
-                <div>
-                  <h4 className="text-sm font-black text-[var(--text-primary)]">{cat.name}</h4>
-                  <span className="text-[9px] font-black uppercase text-[var(--text-muted)] tracking-widest">
-                    {cat.type === 'INCOME' ? 'Entrada' : 'Saída'}
-                  </span>
+                <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-all">
+                  <button onClick={() => handleOpenModal(cat)} className="p-2 hover:bg-white/10 rounded-xl text-[var(--text-muted)] hover:text-white transition-all">
+                    <Edit2 size={16} />
+                  </button>
+                  <button onClick={() => handleDelete(cat)} className="p-2 hover:bg-red-500/10 rounded-xl text-[var(--text-muted)] hover:text-red-500 transition-all">
+                    <Trash2 size={16} />
+                  </button>
                 </div>
               </div>
-              <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-all">
-                <button onClick={() => handleOpenModal(cat)} className="p-2 hover:bg-white/10 rounded-xl text-[var(--text-muted)] hover:text-white transition-all">
-                  <Edit2 size={16} />
-                </button>
-                <button onClick={() => handleDelete(cat)} className="p-2 hover:bg-red-500/10 rounded-xl text-[var(--text-muted)] hover:text-red-500 transition-all">
-                  <Trash2 size={16} />
-                </button>
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
 
         {categories.length === 0 && (
@@ -210,6 +276,21 @@ const CategoriesTab: React.FC<CategoriesTabProps> = ({ uid, categories, loading 
                     <div className="w-6 h-6 rounded-full shadow-inner" style={{ backgroundColor: color }} />
                     <span className="text-[10px] font-mono text-[var(--text-muted)] uppercase">{color}</span>
                   </div>
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <label className="text-[9px] font-black text-[var(--text-muted)] uppercase ml-2 tracking-widest">Escolha um Ícone</label>
+                <div className="grid grid-cols-6 gap-2 max-h-32 overflow-y-auto p-2 bg-[var(--bg-body)] rounded-2xl border border-[var(--border)]">
+                  {icons.map(i => (
+                    <button 
+                      key={i}
+                      onClick={() => setIcon(i)}
+                      className={`aspect-square rounded-xl flex items-center justify-center transition-all ${icon === i ? 'bg-[var(--green-whatsapp)] text-white shadow-lg' : 'text-[var(--text-muted)] hover:bg-white/5'}`}
+                    >
+                      {getIcon(i)}
+                    </button>
+                  ))}
                 </div>
               </div>
 

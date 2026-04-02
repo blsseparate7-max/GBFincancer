@@ -43,7 +43,7 @@ const FINANCE_PARSER_SCHEMA = {
               amount: { type: Type.NUMBER },
               category: { type: Type.STRING },
               description: { type: Type.STRING },
-              paymentMethod: { type: Type.STRING, enum: ['CASH', 'PIX', 'CARD'] },
+              paymentMethod: { type: Type.STRING, enum: ['PIX', 'DEBIT', 'CREDIT', 'CASH', 'TRANSFER', 'CARD'] },
               cardId: { type: Type.STRING },
               dueDay: { type: Type.NUMBER },
               name: { type: Type.STRING },
@@ -71,7 +71,7 @@ const FINANCE_PARSER_SCHEMA = {
   required: ["reply"]
 };
 
-export const parseMessage = async (text: string, userName: string, context?: { reminders?: any[], cards?: any[], wallets?: any[], categories?: any[], transactions?: any[], goals?: any[], limits?: any[] }) => {
+export const parseMessage = async (text: string, userName: string, context?: { reminders?: any[], cards?: any[], wallets?: any[], categories?: any[], transactions?: any[], goals?: any[], limits?: any[], spendingLimit?: number | null }) => {
   try {
     const ai = getAI();
     if (!ai) return { reply: "IA Indisponível." };
@@ -131,6 +131,10 @@ export const parseMessage = async (text: string, userName: string, context?: { r
       `CARTEIRAS: ${JSON.stringify(context.wallets.map(w => ({ id: w.id, nome: w.name, saldo: w.balance })))}` :
       'Sem carteiras.';
 
+    const spendingLimitContext = context?.spendingLimit ? 
+      `TETO DE GASTOS GLOBAL MENSAL: R$ ${context.spendingLimit}` : 
+      'TETO DE GASTOS GLOBAL: Não definido.';
+
     // Contexto de Médias por Categoria (para detecção de gastos suspeitos)
     const categoryAverages = context?.transactions ? 
       (() => {
@@ -163,6 +167,7 @@ export const parseMessage = async (text: string, userName: string, context?: { r
       ${remindersContext}
       ${cardsContext}
       ${walletsContext}
+      ${spendingLimitContext}
 
       REGRAS DE OURO (FONTE DA VERDADE):
       1. Você deve SEMPRE priorizar os dados acima sobre qualquer conversa anterior.
@@ -186,9 +191,17 @@ export const parseMessage = async (text: string, userName: string, context?: { r
       OBJETIVO: Analisar a mensagem e retornar um JSON com "reply" e opcionalmente uma lista de "events".
       
       ESTILO DE RESPOSTA (PREMIUM):
-      - Seja curto, profissional e visual.
-      - Use emojis de forma elegante.
-      - Máximo de 5 blocos de informação em resumos.
+      - Seja extremamente curto, profissional e direto.
+      - Use emojis de forma elegante e minimalista (máximo 1 por parágrafo).
+      - Se o usuário pedir um resumo ("resumo", "como estou", "meu saldo"), forneça uma análise rápida e clara baseada nos dados (Total de gastos, saldo disponível e se há alertas).
+      - Se o usuário perguntar sobre o teto de gastos:
+        - Caso não exista: "O teto de gastos ainda não foi definido."
+        - Caso exista: "Teto atual: R$ [VALOR]. Você já utilizou: R$ [VALOR_GASTO]."
+      - Se o usuário registrar algo, responda apenas com uma confirmação curta (ex: 'Registrado! ✅', 'Anotado, ${userName}.').
+      - Não repita informações que já estão na tela ou que foram ditas recentemente.
+      - Se detectar um problema (gasto alto, saldo baixo), use um tom consultivo e discreto.
+      - Máximo de 1 ou 2 frases por resposta, a menos que seja uma análise complexa solicitada.
+      - Evite saudações longas ("Olá, como posso ajudar hoje?"). Vá direto ao ponto.
       
       MENSAGEM DO USUÁRIO: "${text}"`,
       config: {

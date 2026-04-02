@@ -1,6 +1,6 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { Transaction, SavingGoal, CategoryLimit, Wallet, Bill, UserCategory } from '../types';
-import { dispatchEvent } from '../services/eventDispatcher';
+import { dispatchEvent, migrateTransactions } from '../services/eventDispatcher';
 import { normalizeCategoryName } from '../services/normalizationService';
 import OnboardingChecklist from './OnboardingChecklist';
 import { 
@@ -22,6 +22,7 @@ import {
   CashFlowChart, 
   ProjectionCard, 
   ExpenseRanking, 
+  GlobalSpendingLimitCard, 
   SpendingLimitsCard, 
   CompositionChart, 
   UpcomingBillsCard,
@@ -37,11 +38,13 @@ interface DashProps {
   reminders: Bill[];
   categories: UserCategory[];
   uid: string;
+  user: any; // UserSession
   loading?: boolean;
 }
 
-const Dashboard: React.FC<DashProps> = ({ transactions, goals, limits, wallets, reminders, categories, uid, loading }) => {
+const Dashboard: React.FC<DashProps> = ({ transactions, goals, limits, wallets, reminders, categories, uid, user, loading }) => {
   const [showLimitModal, setShowLimitModal] = useState(false);
+  const [showGlobalLimitModal, setShowGlobalLimitModal] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
   
   // Transaction Form State
@@ -51,15 +54,26 @@ const Dashboard: React.FC<DashProps> = ({ transactions, goals, limits, wallets, 
   const [txCategory, setTxCategory] = useState('');
   const [txDate, setTxDate] = useState(new Date().toISOString().split('T')[0]);
   const [txWalletId, setTxWalletId] = useState('');
+  const [txPaymentMethod, setTxPaymentMethod] = useState<string>('');
   const [isSaving, setIsSaving] = useState(false);
 
   const [limitCat, setLimitCat] = useState('');
   const [limitVal, setLimitVal] = useState('');
+  const [globalLimitVal, setGlobalLimitVal] = useState(user?.spendingLimit?.toString() || '');
   const [selectedDay, setSelectedDay] = useState<number | null>(null);
   const [dailyInsight, setDailyInsight] = useState<string | null>(null);
   const [loadingInsight, setLoadingInsight] = useState(false);
 
   const format = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v);
+
+  useEffect(() => {
+    if (uid && transactions.length > 0) {
+      const hasOldData = transactions.some(t => !t.walletName || !t.categoryName);
+      if (hasOldData) {
+        migrateTransactions(uid);
+      }
+    }
+  }, [uid, transactions.length]);
 
   useEffect(() => {
     const fetchInsight = async () => {
@@ -212,6 +226,9 @@ const Dashboard: React.FC<DashProps> = ({ transactions, goals, limits, wallets, 
       return { ...lim, pct };
     }).sort((a, b) => b.pct - a.pct);
 
+    const globalLimit = user?.spendingLimit || null;
+    const globalSpent = expense; // Total monthly expense
+
     // Projection
     const dailyAvg = currentDay > 0 ? expense / currentDay : 0;
     const projectedExpense = dailyAvg * daysInMonth;
@@ -272,7 +289,7 @@ const Dashboard: React.FC<DashProps> = ({ transactions, goals, limits, wallets, 
       projectedBalance, suggestion, upcomingBills, goalSuggestion, barData, pieData, COLORS,
       dailyStats, daysInMonth, firstDayOfMonth, currentMonth, currentYear,
       highlights: { maxIncomeDay, maxExpenseDay, bestDay, worstDay, maxIncome, maxExpense },
-      userLevel
+      userLevel, globalLimit, globalSpent
     };
   }, [transactions, goals, limits, wallets, reminders]);
 
@@ -287,8 +304,30 @@ const Dashboard: React.FC<DashProps> = ({ transactions, goals, limits, wallets, 
     setLimitCat(''); setLimitVal(''); setShowLimitModal(false);
   };
 
+  const handleSaveGlobalLimit = async () => {
+    if (!globalLimitVal) return;
+    await dispatchEvent(uid, {
+      type: 'UPDATE_USER',
+      payload: { spendingLimit: Number(globalLimitVal) },
+      source: 'ui',
+      createdAt: new Date()
+    });
+    setShowGlobalLimitModal(false);
+  };
+
+  const handleDeleteGlobalLimit = async () => {
+    await dispatchEvent(uid, {
+      type: 'UPDATE_USER',
+      payload: { spendingLimit: null },
+      source: 'ui',
+      createdAt: new Date()
+    });
+    setGlobalLimitVal('');
+  };
+
   const handleSaveTransaction = async () => {
-    if (!txDesc || txAmount <= 0 || !txCategory || !txWalletId) return;
+    const finalCategory = txCategory || 'Outros';
+    if (!txDesc || txAmount <= 0 || !txWalletId) return;
     setIsSaving(true);
     try {
       await dispatchEvent(uid, {
@@ -296,10 +335,11 @@ const Dashboard: React.FC<DashProps> = ({ transactions, goals, limits, wallets, 
         payload: {
           description: txDesc,
           amount: txAmount,
-          category: txCategory,
+          category: finalCategory,
           date: txDate,
           sourceWalletId: txWalletId,
-          paymentMethod: 'CASH' // Default for manual entry
+          targetWalletId: txWalletId,
+          paymentMethod: txPaymentMethod || null
         },
         source: 'ui',
         createdAt: new Date()
@@ -310,6 +350,7 @@ const Dashboard: React.FC<DashProps> = ({ transactions, goals, limits, wallets, 
       setTxAmount(0);
       setTxCategory('');
       setTxWalletId('');
+      setTxPaymentMethod('');
     } catch (error) {
       console.error("Erro ao salvar transação:", error);
     } finally {
@@ -370,8 +411,14 @@ const Dashboard: React.FC<DashProps> = ({ transactions, goals, limits, wallets, 
         {/* 3️⃣ Ranking de Gastos */}
         <ExpenseRanking ranking={stats.expenseRanking} />
 
-        {/* 4️⃣ Limites de Gastos */}
-        <SpendingLimitsCard limits={stats.spendingLimits} onAdd={() => setShowLimitModal(true)} />
+        {/* 4️⃣ Teto de Gastos Global */}
+        <GlobalSpendingLimitCard 
+          limit={stats.globalLimit} 
+          spent={stats.globalSpent} 
+          onAdd={() => setShowGlobalLimitModal(true)}
+          onEdit={() => setShowGlobalLimitModal(true)}
+          onDelete={handleDeleteGlobalLimit}
+        />
 
         {/* 9️⃣ Distribuição dos Gastos (Pie Chart) */}
         <CompositionChart pieData={stats.pieData} colors={stats.COLORS} totalExpense={stats.expense} />
@@ -392,6 +439,57 @@ const Dashboard: React.FC<DashProps> = ({ transactions, goals, limits, wallets, 
 
       {/* 7️⃣ Contas Próximas do Vencimento */}
       <UpcomingBillsCard bills={stats.upcomingBills} />
+
+      {/* Modal Limite Global */}
+      <AnimatePresence>
+        {showGlobalLimitModal && (
+          <div className="fixed inset-0 z-[200] flex items-center justify-center p-6">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowGlobalLimitModal(false)}
+              className="absolute inset-0 bg-black/80 backdrop-blur-xl"
+            />
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="bg-[var(--surface)] w-full max-w-sm rounded-[3rem] p-10 shadow-2xl relative border border-[var(--border)] animate-fade"
+            >
+              <button 
+                onClick={() => setShowGlobalLimitModal(false)} 
+                className="absolute top-8 right-8 w-10 h-10 bg-[var(--bg-body)] rounded-full flex items-center justify-center text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-all active:scale-90 border border-[var(--border)]"
+              >
+                ✕
+              </button>
+              
+              <div className="text-center mb-8">
+                <p className="text-[10px] font-black text-[var(--green-whatsapp)] uppercase tracking-[0.4em] mb-2">Planejamento</p>
+                <h3 className="text-2xl font-black text-[var(--text-primary)] uppercase italic tracking-tighter leading-none">Teto de Gastos</h3>
+              </div>
+
+              <div className="space-y-5">
+                <div className="space-y-1.5">
+                  <label className="text-[9px] font-black text-[var(--text-muted)] uppercase ml-4 tracking-widest">Valor Limite Mensal</label>
+                  <MoneyInput 
+                    value={Number(globalLimitVal) || 0}
+                    onChange={v => setGlobalLimitVal(v.toString())}
+                    className="w-full bg-[var(--bg-body)] rounded-2xl p-5 text-lg font-black text-[var(--text-primary)] outline-none border border-transparent focus:border-[var(--green-whatsapp)] transition-all shadow-inner"
+                  />
+                </div>
+                
+                <button 
+                  onClick={handleSaveGlobalLimit}
+                  className="w-full bg-[var(--green-whatsapp)] text-white py-5 rounded-2xl font-black text-[11px] uppercase shadow-xl shadow-[var(--green-whatsapp)]/20 mt-4 active:scale-95 transition-all"
+                >
+                  Salvar Teto
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       {/* Modal Limite */}
       <AnimatePresence>
@@ -556,23 +654,40 @@ const Dashboard: React.FC<DashProps> = ({ transactions, goals, limits, wallets, 
                   </div>
                 </div>
 
-                <div className="space-y-1.5">
-                  <label className="text-[9px] font-black text-[var(--text-muted)] uppercase ml-4 tracking-widest">Carteira / Conta</label>
-                  <select 
-                    className="w-full bg-[var(--bg-body)] rounded-2xl p-4 text-xs font-black text-[var(--text-primary)] outline-none border border-transparent focus:border-[var(--green-whatsapp)] transition-all shadow-inner appearance-none"
-                    value={txWalletId}
-                    onChange={e => setTxWalletId(e.target.value)}
-                  >
-                    <option value="">Selecionar Carteira</option>
-                    {wallets.filter(w => w.isActive !== false).map(w => (
-                      <option key={w.id} value={w.id}>{w.name} ({format(w.balance)})</option>
-                    ))}
-                  </select>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <label className="text-[9px] font-black text-[var(--text-muted)] uppercase ml-4 tracking-widest">Carteira / Conta</label>
+                    <select 
+                      className="w-full bg-[var(--bg-body)] rounded-2xl p-4 text-xs font-black text-[var(--text-primary)] outline-none border border-transparent focus:border-[var(--green-whatsapp)] transition-all shadow-inner appearance-none"
+                      value={txWalletId}
+                      onChange={e => setTxWalletId(e.target.value)}
+                    >
+                      <option value="">Selecionar</option>
+                      {wallets.filter(w => w.isActive !== false).map(w => (
+                        <option key={w.id} value={w.id}>{w.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-[9px] font-black text-[var(--text-muted)] uppercase ml-4 tracking-widest">Forma de Pagamento</label>
+                    <select 
+                      className="w-full bg-[var(--bg-body)] rounded-2xl p-4 text-xs font-black text-[var(--text-primary)] outline-none border border-transparent focus:border-[var(--green-whatsapp)] transition-all shadow-inner appearance-none"
+                      value={txPaymentMethod}
+                      onChange={e => setTxPaymentMethod(e.target.value)}
+                    >
+                      <option value="">Opcional</option>
+                      <option value="PIX">Pix</option>
+                      <option value="DEBIT">Débito</option>
+                      <option value="CREDIT">Crédito</option>
+                      <option value="CASH">Dinheiro</option>
+                      <option value="TRANSFER">Transferência</option>
+                    </select>
+                  </div>
                 </div>
 
                 <button 
                   onClick={handleSaveTransaction} 
-                  disabled={isSaving || !txDesc || txAmount <= 0 || !txCategory || !txWalletId}
+                  disabled={isSaving || !txDesc || txAmount <= 0 || !txWalletId}
                   className="w-full bg-[var(--green-whatsapp)] text-white py-5 rounded-2xl font-black text-[11px] uppercase shadow-xl shadow-[var(--green-whatsapp)]/20 mt-6 active:scale-95 transition-all disabled:opacity-50 disabled:active:scale-100"
                 >
                   {isSaving ? <Loader2 className="animate-spin mx-auto" size={18} /> : 'Salvar Transação'}

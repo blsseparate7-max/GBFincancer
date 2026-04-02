@@ -6,7 +6,7 @@ import { UserSession } from '../types';
 import { serverTimestamp } from 'firebase/firestore';
 import { auth, db } from '../services/firebaseConfig';
 import { QATestingService, QATestScenarioResult } from '../services/QATestingService';
-import { ChevronDown, ChevronUp, CheckCircle2, XCircle, AlertCircle, Play, RefreshCw, Activity, Terminal } from 'lucide-react';
+import { ChevronDown, ChevronUp, CheckCircle2, XCircle, AlertCircle, Play, RefreshCw, Activity, Terminal, Zap } from 'lucide-react';
 
 interface LogEntry {
   timestamp: string;
@@ -61,14 +61,20 @@ const QADiagnostic: React.FC<QADiagnosticProps> = ({ session }) => {
     }
   };
 
-  const runFunctionalTests = async () => {
+  const runFunctionalTests = async (cleanStart: boolean = false) => {
     if (isRunning) return;
     setIsRunning(true);
     setScenarioResults([]);
-    addLog("Iniciando bateria de testes funcionais automáticos...");
     
     const qaService = new QATestingService(session.uid);
 
+    if (cleanStart) {
+      addLog("Limpando ambiente para execução do zero...", 'info');
+      await qaService.cleanupQAData();
+    }
+
+    addLog("Iniciando bateria de testes funcionais automáticos...");
+    
     try {
       await qaService.runAllTests((result) => {
         setScenarioResults(prev => [...prev, result]);
@@ -84,6 +90,35 @@ const QADiagnostic: React.FC<QADiagnosticProps> = ({ session }) => {
       setIsRunning(false);
       addLog("Bateria de testes finalizada.");
     }
+  };
+
+  const generateGeminiFix = (scenario: QATestScenarioResult) => {
+    const failedSteps = scenario.steps.filter(s => s.status !== 'OK');
+    if (failedSteps.length === 0) return;
+
+    const prompt = `
+# RELATÓRIO DE ERRO QA - GBFINANCER
+O teste funcional "${scenario.name}" falhou. Preciso de uma correção técnica.
+
+## Detalhes da Falha:
+${failedSteps.map(s => `
+- Passo: ${s.name}
+- Ação: ${s.action}
+- Esperado: ${s.expected}
+- Encontrado: ${s.actual}
+- Causa Provável: ${s.probableCause || 'N/A'}
+- Módulo/Arquivo: ${s.moduleFile || 'N/A'}
+- Timestamp: ${s.timestamp}
+`).join('\n')}
+
+## Instrução:
+Por favor, analise o módulo mencionado e corrija a lógica para que o resultado esperado seja alcançado. 
+Certifique-se de não quebrar outras funcionalidades e mantenha a integridade dos dados no Firestore.
+Responda apenas com a explicação da correção e o código necessário.
+    `.trim();
+
+    navigator.clipboard.writeText(prompt);
+    addLog(`Prompt de correção para "${scenario.name}" copiado para o clipboard!`, 'success');
   };
 
   useEffect(() => {
@@ -112,7 +147,7 @@ const QADiagnostic: React.FC<QADiagnosticProps> = ({ session }) => {
           <div className="flex items-center gap-3 mb-2">
             <div className="w-3 h-3 rounded-full bg-emerald-500 animate-pulse shadow-[0_0_10px_rgba(16,185,129,0.5)]" />
             <h1 className="text-3xl font-black italic text-[var(--text-primary)] tracking-tighter uppercase">
-              QA Engine <span className="text-[var(--green-whatsapp)]">v3.0</span>
+              QA Engine <span className="text-[var(--green-whatsapp)]">v4.0</span>
             </h1>
           </div>
           <p className="text-xs font-bold text-[var(--text-muted)] uppercase tracking-[0.3em] opacity-70">
@@ -129,7 +164,19 @@ const QADiagnostic: React.FC<QADiagnosticProps> = ({ session }) => {
             Saúde do Sistema
           </button>
           <button 
-            onClick={runFunctionalTests}
+            onClick={() => runFunctionalTests(true)}
+            disabled={isRunning}
+            className={`flex items-center gap-3 px-8 py-4 rounded-2xl font-black text-xs uppercase tracking-widest transition-all shadow-2xl ${
+              isRunning 
+                ? 'bg-[var(--border)] text-[var(--text-muted)] cursor-not-allowed' 
+                : 'bg-rose-500 text-white shadow-rose-500/30 hover:scale-105 active:scale-95'
+            }`}
+          >
+            <RefreshCw size={16} className={isRunning ? 'animate-spin' : ''} />
+            Rodar do Zero (Limpar Tudo)
+          </button>
+          <button 
+            onClick={() => runFunctionalTests(false)}
             disabled={isRunning}
             className={`flex items-center gap-3 px-8 py-4 rounded-2xl font-black text-xs uppercase tracking-widest transition-all shadow-2xl ${
               isRunning 
@@ -145,7 +192,7 @@ const QADiagnostic: React.FC<QADiagnosticProps> = ({ session }) => {
             ) : (
               <>
                 <Play size={16} fill="currentColor" />
-                Rodar Testes Funcionais
+                Executar Testes
               </>
             )}
           </button>
@@ -223,11 +270,11 @@ const QADiagnostic: React.FC<QADiagnosticProps> = ({ session }) => {
                   expandedScenario === scenario.id ? 'border-[var(--text-primary)] shadow-2xl' : 'border-[var(--border)] hover:border-[var(--text-muted)]'
                 }`}
               >
-                <button 
-                  onClick={() => setExpandedScenario(expandedScenario === scenario.id ? null : scenario.id)}
-                  className="w-full p-6 flex items-center justify-between text-left"
-                >
-                  <div className="flex items-center gap-4">
+                <div className="w-full p-6 flex items-center justify-between text-left">
+                  <button 
+                    onClick={() => setExpandedScenario(expandedScenario === scenario.id ? null : scenario.id)}
+                    className="flex flex-1 items-center gap-4"
+                  >
                     <div className={`w-10 h-10 rounded-2xl flex items-center justify-center ${
                       scenario.success ? 'bg-emerald-500/10 text-emerald-500' : 'bg-rose-500/10 text-rose-500'
                     }`}>
@@ -239,9 +286,26 @@ const QADiagnostic: React.FC<QADiagnosticProps> = ({ session }) => {
                         {scenario.steps.length} Passos Executados • {scenario.success ? 'Integridade Confirmada' : 'Divergência Detectada'}
                       </p>
                     </div>
+                  </button>
+                  
+                  <div className="flex items-center gap-3">
+                    {!scenario.success && (
+                      <button 
+                        onClick={(e) => { e.stopPropagation(); generateGeminiFix(scenario); }}
+                        className="flex items-center gap-2 px-4 py-2 bg-blue-500 text-white rounded-xl text-[9px] font-black uppercase tracking-widest hover:bg-blue-600 transition-all shadow-lg shadow-blue-500/20"
+                      >
+                        <Zap size={12} fill="currentColor" />
+                        Gerar Correção Gemini
+                      </button>
+                    )}
+                    <button 
+                      onClick={() => setExpandedScenario(expandedScenario === scenario.id ? null : scenario.id)}
+                      className="p-2 hover:bg-[var(--border)] rounded-xl transition-all"
+                    >
+                      {expandedScenario === scenario.id ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
+                    </button>
                   </div>
-                  {expandedScenario === scenario.id ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
-                </button>
+                </div>
 
                 <AnimatePresence>
                   {expandedScenario === scenario.id && (
@@ -254,8 +318,9 @@ const QADiagnostic: React.FC<QADiagnosticProps> = ({ session }) => {
                       <div className="p-6 space-y-4">
                         <div className="grid grid-cols-12 gap-4 text-[9px] font-black text-[var(--text-muted)] uppercase tracking-widest px-4">
                           <div className="col-span-3">Passo / Ação</div>
-                          <div className="col-span-3">Esperado</div>
-                          <div className="col-span-4">Encontrado</div>
+                          <div className="col-span-2">Esperado</div>
+                          <div className="col-span-2">Encontrado</div>
+                          <div className="col-span-3">Causa Provável</div>
                           <div className="col-span-2 text-right">Status</div>
                         </div>
                         
@@ -266,8 +331,16 @@ const QADiagnostic: React.FC<QADiagnosticProps> = ({ session }) => {
                                 <p className="text-[10px] font-black text-[var(--text-primary)]">{step.name}</p>
                                 <p className="text-[9px] text-[var(--text-muted)] italic">{step.action}</p>
                               </div>
-                              <div className="col-span-3 text-[10px] font-bold text-emerald-500/80">{step.expected}</div>
-                              <div className="col-span-4 text-[10px] font-bold text-[var(--text-primary)]">{step.actual}</div>
+                              <div className="col-span-2 text-[10px] font-bold text-emerald-500/80">{step.expected}</div>
+                              <div className="col-span-2 text-[10px] font-bold text-[var(--text-primary)]">{step.actual}</div>
+                              <div className="col-span-3">
+                                {step.status !== 'OK' && (
+                                  <div className="space-y-1">
+                                    <p className="text-[9px] font-bold text-rose-500 uppercase tracking-tighter">{step.probableCause}</p>
+                                    <p className="text-[8px] text-[var(--text-muted)] font-mono">{step.moduleFile}</p>
+                                  </div>
+                                )}
+                              </div>
                               <div className="col-span-2 flex justify-end">
                                 <span className={`px-2 py-1 rounded-lg text-[8px] font-black uppercase ${
                                   step.status === 'OK' ? 'bg-emerald-500/10 text-emerald-500' : 'bg-rose-500/10 text-rose-500'
