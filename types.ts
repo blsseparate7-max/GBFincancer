@@ -132,10 +132,18 @@ export type EventType =
   | 'DELETE_DEBT'
   | 'REGISTER_DEBT_PAYMENT';
 
+export interface CategoryPattern {
+  id: string;
+  keyword: string;
+  category: string;
+  count: number;
+  lastUsed: any;
+}
+
 export interface FinanceEvent {
   type: EventType;
   payload: any;
-  source: 'chat' | 'ui' | 'admin';
+  source: 'chat' | 'ui' | 'admin' | 'system' | 'onboarding';
   createdAt: any;
 }
 

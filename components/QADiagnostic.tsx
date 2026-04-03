@@ -98,7 +98,7 @@ const QADiagnostic: React.FC<QADiagnosticProps> = ({ session }) => {
 
     const prompt = `
 # RELATÓRIO DE ERRO QA - GBFINANCER
-O teste funcional "${scenario.name}" falhou. Preciso de uma correção técnica.
+O teste funcional "${scenario.name}" falhou no perfil ${scenario.profile}. Preciso de uma correção técnica.
 
 ## Detalhes da Falha:
 ${failedSteps.map(s => `
@@ -106,6 +106,8 @@ ${failedSteps.map(s => `
 - Ação: ${s.action}
 - Esperado: ${s.expected}
 - Encontrado: ${s.actual}
+- Prioridade: ${s.priority}
+- Impacto: ${s.impact}
 - Causa Provável: ${s.probableCause || 'N/A'}
 - Módulo/Arquivo: ${s.moduleFile || 'N/A'}
 - Timestamp: ${s.timestamp}
@@ -281,7 +283,12 @@ Responda apenas com a explicação da correção e o código necessário.
                       {scenario.success ? <CheckCircle2 size={20} /> : <XCircle size={20} />}
                     </div>
                     <div>
-                      <h4 className="text-sm font-black text-[var(--text-primary)] uppercase tracking-tight">{scenario.name}</h4>
+                      <div className="flex items-center gap-2 mb-1">
+                        <h4 className="text-sm font-black text-[var(--text-primary)] uppercase tracking-tight">{scenario.name}</h4>
+                        <span className="px-1.5 py-0.5 rounded bg-[var(--border)] text-[var(--text-muted)] text-[8px] font-black uppercase">
+                          {scenario.profile}
+                        </span>
+                      </div>
                       <p className="text-[10px] font-bold text-[var(--text-muted)] uppercase opacity-60">
                         {scenario.steps.length} Passos Executados • {scenario.success ? 'Integridade Confirmada' : 'Divergência Detectada'}
                       </p>
@@ -320,8 +327,9 @@ Responda apenas com a explicação da correção e o código necessário.
                           <div className="col-span-3">Passo / Ação</div>
                           <div className="col-span-2">Esperado</div>
                           <div className="col-span-2">Encontrado</div>
-                          <div className="col-span-3">Causa Provável</div>
-                          <div className="col-span-2 text-right">Status</div>
+                          <div className="col-span-2">Prioridade / Impacto</div>
+                          <div className="col-span-2">Causa / Módulo</div>
+                          <div className="col-span-1 text-right">Status</div>
                         </div>
                         
                         <div className="space-y-2">
@@ -333,15 +341,25 @@ Responda apenas com a explicação da correção e o código necessário.
                               </div>
                               <div className="col-span-2 text-[10px] font-bold text-emerald-500/80">{step.expected}</div>
                               <div className="col-span-2 text-[10px] font-bold text-[var(--text-primary)]">{step.actual}</div>
-                              <div className="col-span-3">
+                              <div className="col-span-2 space-y-1">
+                                <span className={`px-1.5 py-0.5 rounded text-[7px] font-black uppercase ${
+                                  step.priority === 'CRITICAL' ? 'bg-rose-500 text-white' :
+                                  step.priority === 'HIGH' ? 'bg-orange-500 text-white' :
+                                  step.priority === 'MEDIUM' ? 'bg-amber-500 text-white' : 'bg-blue-500 text-white'
+                                }`}>
+                                  {step.priority}
+                                </span>
+                                <p className="text-[8px] text-[var(--text-muted)] leading-tight">{step.impact}</p>
+                              </div>
+                              <div className="col-span-2">
                                 {step.status !== 'OK' && (
                                   <div className="space-y-1">
                                     <p className="text-[9px] font-bold text-rose-500 uppercase tracking-tighter">{step.probableCause}</p>
-                                    <p className="text-[8px] text-[var(--text-muted)] font-mono">{step.moduleFile}</p>
+                                    <p className="text-[8px] text-[var(--text-muted)] font-mono truncate" title={step.moduleFile}>{step.moduleFile}</p>
                                   </div>
                                 )}
                               </div>
-                              <div className="col-span-2 flex justify-end">
+                              <div className="col-span-1 flex justify-end">
                                 <span className={`px-2 py-1 rounded-lg text-[8px] font-black uppercase ${
                                   step.status === 'OK' ? 'bg-emerald-500/10 text-emerald-500' : 'bg-rose-500/10 text-rose-500'
                                 }`}>

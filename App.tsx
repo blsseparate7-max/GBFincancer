@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { db, auth } from './services/firebaseConfig';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { collection, doc, onSnapshot, query, orderBy, limit, getDoc, where } from 'firebase/firestore';
-import { UserSession, Transaction, SavingGoal, Notification, Message, Bill, CategoryLimit, CreditCardInfo, Wallet, UserCategory, UserOnboarding } from './types';
+import { UserSession, Transaction, SavingGoal, Notification, Message, Bill, CategoryLimit, CreditCardInfo, Wallet, UserCategory, UserOnboarding, Debt, CategoryPattern } from './types';
 import Sidebar from './components/Sidebar';
 import Header from './components/Header';
 import Auth from './components/Auth';
@@ -35,7 +35,7 @@ import LegalModal from './components/LegalModal';
 import Paywall from './components/Paywall';
 import LandingPage from './components/LandingPage';
 import PWAInstallPrompt from './components/PWAInstallPrompt';
-import { normalizeCard, normalizeGoal, normalizeReminder, normalizeLimit, normalizeWallet, normalizeUserCategory, normalizeTransaction, assertSchema } from './services/normalizationService';
+import { normalizeCard, normalizeGoal, normalizeReminder, normalizeLimit, normalizeWallet, normalizeUserCategory, normalizeTransaction, normalizeDebt, assertSchema } from './services/normalizationService';
 
 import { motion, AnimatePresence } from 'motion/react';
 import { Zap } from 'lucide-react';
@@ -192,6 +192,15 @@ const App: React.FC = () => {
       setLoadingCategories(false);
     });
 
+    const unsubDebts = onSnapshot(collection(userRef, "debts"), (snap) => {
+      setDebts(snap.docs.map(d => normalizeDebt(d)));
+      setLoadingDebts(false);
+    });
+
+    const unsubPatterns = onSnapshot(collection(userRef, "categoryPatterns"), (snap) => {
+      setCategoryPatterns(snap.docs.map(d => ({ id: d.id, ...d.data() } as CategoryPattern)));
+    });
+
     const unsubNotifs = onSnapshot(query(collection(userRef, "notifications"), orderBy("createdAt", "desc"), limit(20)), (snap) => {
       setNotifications(snap.docs.map(d => ({ id: d.id, ...d.data() } as Notification)));
     });
@@ -221,7 +230,7 @@ const App: React.FC = () => {
 
     return () => { 
       unsubTrans(); unsubGoals(); unsubReminders(); 
-      unsubLimits(); unsubCards(); unsubWallets(); unsubNotifs(); unsubCats();
+      unsubLimits(); unsubCards(); unsubWallets(); unsubNotifs(); unsubCats(); unsubDebts(); unsubPatterns();
       unsubOnboarding(); unsubMessages(); unsubUser();
     };
   }, [session?.uid]);
@@ -236,6 +245,9 @@ const App: React.FC = () => {
   const [cards, setCards] = useState<CreditCardInfo[]>([]);
   const [wallets, setWallets] = useState<Wallet[]>([]);
   const [categories, setCategories] = useState<UserCategory[]>([]);
+  const [debts, setDebts] = useState<Debt[]>([]);
+  const [categoryPatterns, setCategoryPatterns] = useState<CategoryPattern[]>([]);
+  const [extratoFilters, setExtratoFilters] = useState<any>(null);
   const [onboarding, setOnboarding] = useState<UserOnboarding>({});
 
   const [loadingCards, setLoadingCards] = useState(true);
@@ -244,6 +256,7 @@ const App: React.FC = () => {
   const [loadingLimits, setLoadingLimits] = useState(true);
   const [loadingWallets, setLoadingWallets] = useState(true);
   const [loadingCategories, setLoadingCategories] = useState(true);
+  const [loadingDebts, setLoadingDebts] = useState(true);
 
   const handleOnboardingFinish = () => {
     setOnboardingStep('lgpd');
@@ -421,13 +434,46 @@ const App: React.FC = () => {
           wallets={wallets} 
           categories={categories} 
           goals={goals} 
+          debts={debts}
+          categoryPatterns={categoryPatterns}
           onToggleSidebar={handleToggleSidebar}
           onOpenProfile={() => setActiveTab('profile')}
+          onNavigateToExtrato={(filters) => {
+            setExtratoFilters(filters);
+            setActiveTab('extrato');
+          }}
         />
       ) : <LandingPage onLogin={(s) => setSession(s)} onOpenSupport={() => setActiveTab('support')} />;
-      case 'extrato': return session ? <Extrato uid={session.uid} transactions={transactions} loading={loadingTransactions} cards={cards} categories={categories} wallets={wallets} /> : null;
+      case 'extrato': return session ? (
+        <Extrato 
+          uid={session.uid} 
+          transactions={transactions} 
+          loading={loadingTransactions} 
+          cards={cards} 
+          categories={categories} 
+          wallets={wallets} 
+          initialFilters={extratoFilters}
+          onClearInitialFilters={() => setExtratoFilters(null)}
+        />
+      ) : null;
       case 'categories': return session ? <CategoriesTab uid={session.uid} categories={categories} transactions={transactions} loading={loadingCategories || loadingTransactions} /> : null;
-      case 'dash': return session ? <Dashboard transactions={transactions} goals={goals} limits={limits} wallets={wallets} reminders={reminders} categories={categories} uid={session.uid} user={session} loading={loadingCards || loadingGoals || loadingLimits || loadingWallets || loadingTransactions} /> : null;
+      case 'dash': return session ? (
+        <Dashboard 
+          transactions={transactions} 
+          goals={goals} 
+          limits={limits} 
+          wallets={wallets} 
+          reminders={reminders} 
+          categories={categories} 
+          uid={session.uid} 
+          user={session} 
+          loading={loadingCards || loadingGoals || loadingLimits || loadingWallets || loadingTransactions} 
+          onNavigateToExtrato={(filters) => {
+            setExtratoFilters(filters);
+            setActiveTab('extrato');
+          }}
+        />
+      ) : null;
       case 'calendar': return session ? <CalendarTab transactions={transactions} reminders={reminders} loading={loadingReminders || loadingTransactions} /> : null;
       case 'goals': return session ? <Goals goals={goals} transactions={transactions} wallets={wallets} uid={session.uid} user={session} loading={loadingGoals || loadingTransactions} /> : null;
       case 'cc': return session ? <CreditCard transactions={transactions} uid={session.uid} cards={cards} wallets={wallets} loading={loadingCards} /> : null;
@@ -437,7 +483,7 @@ const App: React.FC = () => {
       case 'insights': return session ? <Insights transactions={transactions} limits={limits} /> : null;
       case 'score': return session ? <HealthScoreTab transactions={transactions} limits={limits} goals={goals} /> : null;
       case 'stress': return session ? <ImpactSimulator transactions={transactions} /> : null;
-      case 'debts': return session ? <DebtAssistant uid={session.uid} transactions={transactions} wallets={wallets} user={session} goals={goals} cards={cards} /> : null;
+      case 'debts': return session ? <DebtAssistant uid={session.uid} transactions={transactions} wallets={wallets} user={session} goals={goals} cards={cards} debts={debts} /> : null;
       case 'profile': return session ? <ProfileEdit user={session} onUpdate={(d) => setSession(p => p ? {...p, ...d} : null)} onLogout={() => signOut(auth)} setActiveTab={setActiveTab} /> : null;
       case 'support': return <SupportTab user={session} onBackToAuth={() => setActiveTab('chat')} />;
       case 'admin_support': return session?.role === 'admin' ? <AdminSupport admin={session} /> : null;
@@ -459,12 +505,26 @@ const App: React.FC = () => {
         const totalSaved = goals.reduce((s, g) => s + (Number(g.currentAmount) || 0), 0);
         const freeBalance = income - expense - totalSaved;
         
-        return <WalletTab uid={session.uid} freeBalance={freeBalance} goals={goals} wallets={wallets} loading={loadingWallets || loadingGoals} />;
+        return (
+          <WalletTab 
+            uid={session.uid} 
+            freeBalance={freeBalance} 
+            goals={goals} 
+            wallets={wallets} 
+            transactions={transactions}
+            loading={loadingWallets || loadingGoals} 
+            onNavigateToExtrato={(filters) => {
+              setExtratoFilters(filters);
+              setActiveTab('extrato');
+            }}
+          />
+        );
       }
       default: return session ? (
         <ChatInterface 
           user={session} 
           messages={messages} 
+          setMessages={setMessages}
           transactions={transactions} 
           limits={limits} 
           reminders={reminders} 
@@ -472,8 +532,14 @@ const App: React.FC = () => {
           cards={cards}
           wallets={wallets}
           categories={categories}
+          debts={debts}
+          categoryPatterns={categoryPatterns}
           onToggleSidebar={handleToggleSidebar}
           onOpenProfile={() => setActiveTab('profile')}
+          onNavigateToExtrato={(filters) => {
+            setExtratoFilters(filters);
+            setActiveTab('extrato');
+          }}
         />
       ) : (
         <LandingPage onLogin={(s) => setSession(s)} onOpenSupport={() => setActiveTab('support')} />

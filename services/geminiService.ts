@@ -1,5 +1,6 @@
 
 import { GoogleGenAI, Type, ThinkingLevel } from "@google/genai";
+import { getCategoryMappingPrompt, suggestCategory } from "./categoryService";
 
 const getAI = () => {
   const v1 = (import.meta as any).env?.VITE_GEMINI_API_KEY;
@@ -34,7 +35,8 @@ const FINANCE_PARSER_SCHEMA = {
               'ADD_EXPENSE', 'ADD_INCOME', 'CREATE_GOAL', 'ADD_TO_GOAL', 
               'UPDATE_LIMIT', 'CREATE_REMINDER', 'ADD_CARD_CHARGE', 
               'PAY_CARD', 'TRANSFER_WALLET', 'CREATE_CATEGORY', 
-              'UPDATE_CATEGORY', 'DELETE_CATEGORY', 'MOVE_TRANSACTION_CATEGORY'
+              'UPDATE_CATEGORY', 'DELETE_CATEGORY', 'MOVE_TRANSACTION_CATEGORY',
+              'CREATE_DEBT', 'UPDATE_DEBT', 'DELETE_DEBT', 'REGISTER_DEBT_PAYMENT'
             ] 
           },
           payload: { 
@@ -47,11 +49,16 @@ const FINANCE_PARSER_SCHEMA = {
               cardId: { type: Type.STRING },
               dueDay: { type: Type.NUMBER },
               name: { type: Type.STRING },
+              totalAmount: { type: Type.NUMBER },
+              remainingAmount: { type: Type.NUMBER },
+              installmentAmount: { type: Type.NUMBER },
+              debtId: { type: Type.STRING },
               targetAmount: { type: Type.NUMBER },
               location: { type: Type.STRING },
               goalId: { type: Type.STRING },
               fromWalletId: { type: Type.STRING },
               toWalletId: { type: Type.STRING },
+              sourceWalletId: { type: Type.STRING },
               note: { type: Type.STRING },
               type: { type: Type.STRING, enum: ['PAY', 'RECEIVE'] },
               id: { type: Type.STRING },
@@ -71,7 +78,7 @@ const FINANCE_PARSER_SCHEMA = {
   required: ["reply"]
 };
 
-export const parseMessage = async (text: string, userName: string, context?: { reminders?: any[], cards?: any[], wallets?: any[], categories?: any[], transactions?: any[], goals?: any[], limits?: any[], spendingLimit?: number | null }) => {
+export const parseMessage = async (text: string, userName: string, context?: { reminders?: any[], cards?: any[], wallets?: any[], categories?: any[], transactions?: any[], goals?: any[], limits?: any[], debts?: any[], spendingLimit?: number | null, userPatterns?: any[] }) => {
   try {
     const ai = getAI();
     if (!ai) return { reply: "IA Indisponível." };
@@ -83,10 +90,18 @@ export const parseMessage = async (text: string, userName: string, context?: { r
       `CATEGORIAS DO USUÁRIO: ${JSON.stringify(context.categories.map(c => ({ id: c.id, nome: c.name, tipo: c.type })))}` :
       'Nenhuma categoria personalizada cadastrada ainda.';
 
+    // Contexto de Padrões Aprendidos
+    const patternsContext = getCategoryMappingPrompt(context?.userPatterns || []);
+
     // Contexto de Metas
     const goalsContext = context?.goals && context.goals.length > 0 ?
       `METAS DE ECONOMIA: ${JSON.stringify(context.goals.map(g => ({ id: g.id, nome: g.name, alvo: g.targetAmount, atual: g.currentAmount, progresso: ((g.currentAmount / g.targetAmount) * 100).toFixed(1) + '%' })))}` :
       'Sem metas cadastradas.';
+
+    // Contexto de Dívidas
+    const debtsContext = context?.debts && context.debts.length > 0 ?
+      `DÍVIDAS ATIVAS: ${JSON.stringify(context.debts.map(d => ({ id: d.id, nome: d.name, total: d.totalAmount, restante: d.remainingAmount, status: d.status })))}` :
+      'Nenhuma dívida registrada.';
 
     // Contexto de Limites
     const limitsContext = context?.limits && context.limits.length > 0 ?
@@ -160,6 +175,7 @@ export const parseMessage = async (text: string, userName: string, context?: { r
       
       ${categoriesContext}
       ${goalsContext}
+      ${debtsContext}
       ${limitsContext}
       ${categorySummary}
       ${categoryAverages}
@@ -169,6 +185,14 @@ export const parseMessage = async (text: string, userName: string, context?: { r
       ${walletsContext}
       ${spendingLimitContext}
 
+      ${patternsContext}
+
+      REGRAS DE CATEGORIZAÇÃO:
+      1. Se o usuário mencionar algo que combine com o MAPA DE PALAVRAS-CHAVE acima, use a categoria sugerida.
+      2. Priorize SEMPRE as CATEGORIAS DO USUÁRIO se houver uma correspondência semântica clara.
+      3. Se não houver correspondência clara, use "Outros". NUNCA retorne categoria vazia ou null.
+      4. Se o usuário disser "recebi" ou "ganhei", a categoria deve ser "Salário" ou similar (Entrada).
+      
       REGRAS DE OURO (FONTE DA VERDADE):
       1. Você deve SEMPRE priorizar os dados acima sobre qualquer conversa anterior.
       2. Se o usuário perguntar sobre pendências, verifique os LEMBRETES onde "pago" é false.
@@ -216,6 +240,19 @@ export const parseMessage = async (text: string, userName: string, context?: { r
     }
 
     const parsed = JSON.parse(response.text);
+    
+    // Post-process to ensure categories are never undefined
+    if (parsed.events) {
+      parsed.events = parsed.events.map((event: any) => {
+        if (event.payload && (event.type === 'ADD_EXPENSE' || event.type === 'ADD_INCOME' || event.type === 'CREATE_REMINDER' || event.type === 'ADD_CARD_CHARGE')) {
+          if (!event.payload.category || event.payload.category === 'null' || event.payload.category === 'undefined') {
+            event.payload.category = suggestCategory(event.payload.description || text, context?.userPatterns || []);
+          }
+        }
+        return event;
+      });
+    }
+
     console.log("GB Debug - IA Respondeu:", parsed);
     return parsed;
   } catch (e) {

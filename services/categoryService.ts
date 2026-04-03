@@ -1,74 +1,145 @@
-import { collection, getDocs, writeBatch, doc, serverTimestamp } from 'firebase/firestore';
-import { db } from './firebaseConfig';
+import { collection, getDocs, doc, setDoc, serverTimestamp, query, where, limit, increment, updateDoc, getDoc } from "firebase/firestore";
+import { db } from "./firebaseConfig";
 
-export const DEFAULT_CATEGORIES = [
-  { name: 'Alimentação', icon: 'Utensils', color: '#f43f5e', type: 'EXPENSE' },
-  { name: 'Mercado', icon: 'ShoppingCart', color: '#f43f5e', type: 'EXPENSE' },
-  { name: 'Restaurante', icon: 'Coffee', color: '#f43f5e', type: 'EXPENSE' },
-  { name: 'Lanche', icon: 'Pizza', color: '#f43f5e', type: 'EXPENSE' },
-  { name: 'Delivery', icon: 'Bike', color: '#f43f5e', type: 'EXPENSE' },
-  { name: 'Transporte', icon: 'Car', color: '#3b82f6', type: 'EXPENSE' },
-  { name: 'Combustível', icon: 'Fuel', color: '#3b82f6', type: 'EXPENSE' },
-  { name: 'Uber / Taxi', icon: 'Smartphone', color: '#3b82f6', type: 'EXPENSE' },
-  { name: 'Saúde', icon: 'HeartPulse', color: '#ef4444', type: 'EXPENSE' },
-  { name: 'Farmácia', icon: 'Pill', color: '#ef4444', type: 'EXPENSE' },
-  { name: 'Academia', icon: 'Dumbbell', color: '#ef4444', type: 'EXPENSE' },
-  { name: 'Educação', icon: 'GraduationCap', color: '#8b5cf6', type: 'EXPENSE' },
-  { name: 'Faculdade', icon: 'School', color: '#8b5cf6', type: 'EXPENSE' },
-  { name: 'Cursos', icon: 'BookOpen', color: '#8b5cf6', type: 'EXPENSE' },
-  { name: 'Lazer', icon: 'Palmtree', color: '#f59e0b', type: 'EXPENSE' },
-  { name: 'Cinema / Streaming', icon: 'Tv', color: '#f59e0b', type: 'EXPENSE' },
-  { name: 'Viagem', icon: 'Plane', color: '#f59e0b', type: 'EXPENSE' },
-  { name: 'Casa', icon: 'Home', color: '#6366f1', type: 'EXPENSE' },
-  { name: 'Água', icon: 'Droplets', color: '#6366f1', type: 'EXPENSE' },
-  { name: 'Luz', icon: 'Zap', color: '#6366f1', type: 'EXPENSE' },
-  { name: 'Internet', icon: 'Wifi', color: '#6366f1', type: 'EXPENSE' },
-  { name: 'Telefone', icon: 'Phone', color: '#6366f1', type: 'EXPENSE' },
-  { name: 'Aluguel', icon: 'Key', color: '#6366f1', type: 'EXPENSE' },
-  { name: 'Cartão de crédito', icon: 'CreditCard', color: '#64748b', type: 'EXPENSE' },
-  { name: 'Assinaturas', icon: 'Repeat', color: '#64748b', type: 'EXPENSE' },
-  { name: 'Pets', icon: 'Dog', color: '#ec4899', type: 'EXPENSE' },
-  { name: 'Roupas', icon: 'Shirt', color: '#ec4899', type: 'EXPENSE' },
-  { name: 'Beleza', icon: 'Sparkles', color: '#ec4899', type: 'EXPENSE' },
-  { name: 'Investimentos', icon: 'TrendingUp', color: '#10b981', type: 'EXPENSE' },
-  { name: 'Salário', icon: 'DollarSign', color: '#00A884', type: 'INCOME' },
-  { name: 'Comissão', icon: 'Percent', color: '#00A884', type: 'INCOME' },
-  { name: 'Freelance', icon: 'Briefcase', color: '#00A884', type: 'INCOME' },
-  { name: 'Pix recebido', icon: 'Smartphone', color: '#00A884', type: 'INCOME' },
-  { name: 'Presentes', icon: 'Gift', color: '#00A884', type: 'INCOME' },
-  { name: 'Outros', icon: 'Tag', color: '#94a3b8', type: 'EXPENSE' },
-];
+/**
+ * Inteligência de Categorização GBFinancer
+ * Mapeamento de palavras-chave para categorias sugeridas.
+ */
 
+export interface CategoryPattern {
+  id: string;
+  keyword: string;
+  category: string;
+  count: number;
+  lastUsed: any;
+}
+
+export const CATEGORY_KEYWORDS: Record<string, string[]> = {
+  'Alimentação': ['mercado', 'supermercado', 'atacado', 'compra do mês', 'padaria', 'açougue', 'hortifruti', 'ifood', 'lanche', 'hamburguer', 'restaurante', 'almoço', 'jantar', 'pizza', 'pastel', 'delivery', 'comida'],
+  'Transporte': ['uber', '99', 'taxi', 'gasolina', 'combustível', 'posto', 'estacionamento', 'pedágio', 'ônibus'],
+  'Saúde': ['farmácia', 'remédio', 'consulta', 'médico', 'exame', 'dentista', 'hospital'],
+  'Casa': ['água', 'luz', 'energia', 'internet', 'telefone', 'aluguel', 'condomínio', 'gás'],
+  'Educação': ['curso', 'faculdade', 'escola', 'material escolar', 'aula', 'mensalidade'],
+  'Lazer': ['cinema', 'netflix', 'spotify', 'passeio', 'viagem', 'parque', 'diversão', 'show'],
+  'Beleza': ['roupa', 'tênis', 'salão', 'manicure', 'barbearia', 'perfume', 'maquiagem'],
+  'Pets': ['petshop', 'ração', 'veterinário', 'cachorro', 'gato'],
+  'Salário': ['salário', 'comissão', 'pix recebido', 'pagamento recebido', 'venda', 'freelance', 'extra']
+};
+
+/**
+ * Garante que o usuário possua as categorias básicas.
+ */
 export const ensureDefaultCategories = async (uid: string) => {
   if (!uid) return;
   
-  try {
-    const userRef = doc(db, "users", uid);
-    const catRef = collection(userRef, "categories");
-    const snap = await getDocs(catRef);
+  const userCatsRef = collection(db, "users", uid, "categories");
+  const snap = await getDocs(userCatsRef);
+  
+  if (snap.empty) {
+    console.log("GB: Criando categorias padrão para o usuário...");
+    const defaults = [
+      { name: 'Alimentação', icon: 'Utensils', color: '#FF5722', type: 'EXPENSE' },
+      { name: 'Transporte', icon: 'Car', color: '#2196F3', type: 'EXPENSE' },
+      { name: 'Saúde', icon: 'HeartPulse', color: '#E91E63', type: 'EXPENSE' },
+      { name: 'Casa', icon: 'Home', color: '#795548', type: 'EXPENSE' },
+      { name: 'Lazer', icon: 'Gamepad2', color: '#9C27B0', type: 'EXPENSE' },
+      { name: 'Salário', icon: 'Banknote', color: '#4CAF50', type: 'INCOME' },
+      { name: 'Outros', icon: 'Tag', color: '#607D8B', type: 'EXPENSE' }
+    ];
     
-    const existingNames = new Set(snap.docs.map(d => d.data().name));
-    const batch = writeBatch(db);
-    let added = false;
-
-    for (const cat of DEFAULT_CATEGORIES) {
-      if (!existingNames.has(cat.name)) {
-        const newCatRef = doc(catRef);
-        batch.set(newCatRef, {
-          ...cat,
-          id: newCatRef.id,
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp()
-        });
-        added = true;
-      }
+    for (const cat of defaults) {
+      const id = cat.name.toLowerCase().replace(/\s+/g, '_');
+      await setDoc(doc(userCatsRef, id), {
+        ...cat,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      });
     }
-
-    if (added) {
-      await batch.commit();
-      console.log(`GB: Categorias padrão sincronizadas para o usuário ${uid}.`);
-    }
-  } catch (error) {
-    console.error("GB: Erro ao garantir categorias padrão:", error);
   }
+};
+
+/**
+ * Sugere uma categoria com base no texto fornecido e histórico do usuário.
+ * @param text Texto da transação ou mensagem do usuário
+ * @param userPatterns Padrões aprendidos do usuário
+ * @returns Categoria sugerida ou 'Outros'
+ */
+export const suggestCategory = (text: string, userPatterns: CategoryPattern[] = []): string => {
+  if (!text) return 'Outros';
+  
+  const lowerText = text.toLowerCase().trim();
+  
+  // 1. Prioridade: Histórico do Usuário (Match exato ou parcial forte)
+  const historyMatch = userPatterns
+    .filter(p => lowerText.includes(p.keyword.toLowerCase()))
+    .sort((a, b) => b.count - a.count || b.keyword.length - a.keyword.length)[0];
+    
+  if (historyMatch) {
+    console.log(`GB: Sugestão baseada no histórico: ${historyMatch.category} (keyword: ${historyMatch.keyword})`);
+    return historyMatch.category;
+  }
+  
+  // 2. Segunda Prioridade: Mapa de Palavras-Chave Global
+  for (const [category, keywords] of Object.entries(CATEGORY_KEYWORDS)) {
+    if (keywords.some(keyword => lowerText.includes(keyword.toLowerCase()))) {
+      return category;
+    }
+  }
+  
+  return 'Outros';
+};
+
+/**
+ * Aprende um novo padrão de categorização baseado na ação do usuário.
+ */
+export const learnCategoryPattern = async (uid: string, description: string, category: string) => {
+  if (!uid || !description || !category || category === 'Outros') return;
+  
+  const keyword = description.toLowerCase().trim();
+  if (keyword.length < 3) return; // Evita keywords muito curtas e genéricas
+
+  const patternId = btoa(keyword).replace(/=/g, ''); // ID determinístico baseado na keyword
+  const patternRef = doc(db, "users", uid, "categoryPatterns", patternId);
+  
+  try {
+    const snap = await getDoc(patternRef);
+    if (snap.exists()) {
+      await updateDoc(patternRef, {
+        count: increment(1),
+        category: category, // Atualiza se o usuário mudou de ideia sobre essa keyword
+        lastUsed: serverTimestamp()
+      });
+    } else {
+      await setDoc(patternRef, {
+        keyword,
+        category,
+        count: 1,
+        lastUsed: serverTimestamp()
+      });
+    }
+    console.log(`GB: Padrão aprendido: "${keyword}" -> ${category}`);
+  } catch (e) {
+    console.error("Erro ao aprender padrão de categoria:", e);
+  }
+};
+
+/**
+ * Retorna uma lista formatada para o prompt da IA.
+ */
+export const getCategoryMappingPrompt = (userPatterns: CategoryPattern[] = []): string => {
+  let prompt = "DIRETRIZES DE CATEGORIZAÇÃO (MAPA DE PALAVRAS-CHAVE):\n";
+  for (const [category, keywords] of Object.entries(CATEGORY_KEYWORDS)) {
+    prompt += `- ${category}: [${keywords.join(', ')}]\n`;
+  }
+  
+  if (userPatterns.length > 0) {
+    prompt += "\nHISTÓRICO DE APRENDIZADO DO USUÁRIO (ALTA PRIORIDADE):\n";
+    // Pegamos os 20 padrões mais frequentes para não estourar o contexto
+    const topPatterns = [...userPatterns].sort((a, b) => b.count - a.count).slice(0, 20);
+    topPatterns.forEach(p => {
+      prompt += `- "${p.keyword}" -> ${p.category} (usado ${p.count} vezes)\n`;
+    });
+  }
+  
+  return prompt;
 };

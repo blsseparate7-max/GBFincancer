@@ -7,6 +7,7 @@ import {
 } from "firebase/firestore";
 import { FinanceEvent, TransactionType } from "../types";
 import { normalizeCategoryName } from "./normalizationService";
+import { suggestCategory } from "./categoryService";
 
 async function getWalletInfo(uid: string, walletId: string) {
   if (!walletId) return null;
@@ -18,9 +19,25 @@ async function getWalletInfo(uid: string, walletId: string) {
   return null;
 }
 
-async function getCategoryInfo(uid: string, categoryName: string) {
-  if (!categoryName) return { id: 'outros', name: 'Outros' };
-  const normalized = normalizeCategoryName(categoryName);
+async function getCategoryInfo(uid: string, categoryName: string, description?: string) {
+  let nameToUse = categoryName;
+  
+  // Se a categoria for vazia ou "Outros", tenta sugerir pelo texto da descrição e histórico
+  if (!nameToUse || nameToUse.toLowerCase() === 'outros' || nameToUse === 'null' || nameToUse === 'undefined') {
+    if (description) {
+      try {
+        const patternsSnap = await getDocs(collection(db, "users", uid, "categoryPatterns"));
+        const patterns = patternsSnap.docs.map(d => ({ id: d.id, ...d.data() } as any));
+        nameToUse = suggestCategory(description, patterns);
+      } catch (e) {
+        nameToUse = suggestCategory(description);
+      }
+    } else {
+      nameToUse = 'Outros';
+    }
+  }
+
+  const normalized = normalizeCategoryName(nameToUse);
   const q = query(collection(db, "users", uid, "categories"), where("name", "==", normalized), limit(1));
   const snap = await getDocs(q);
   if (!snap.empty) {
@@ -150,7 +167,7 @@ export const dispatchEvent = async (uid: string, event: FinanceEvent) => {
           });
         }
 
-        const catInfo = await getCategoryInfo(uid, category);
+        const catInfo = await getCategoryInfo(uid, category, description);
         const walletInfo = await getWalletInfo(uid, sourceWalletId);
         
         const transRef = doc(collection(userRef, "transactions"));
@@ -205,7 +222,7 @@ export const dispatchEvent = async (uid: string, event: FinanceEvent) => {
 
       case 'ADD_INCOME': {
         const { amount, targetWalletId, description, category, date, paymentMethod } = payload;
-        const catInfo = await getCategoryInfo(uid, category || 'Recebimento');
+        const catInfo = await getCategoryInfo(uid, category || 'Recebimento', description);
         const walletInfo = await getWalletInfo(uid, targetWalletId);
         
         const transRef = doc(collection(userRef, "transactions"));
@@ -242,7 +259,7 @@ export const dispatchEvent = async (uid: string, event: FinanceEvent) => {
 
       case 'ADD_CARD_CHARGE': {
         let { amount, category, description, cardId, date, sourceWalletId, installments } = payload;
-        const catInfo = await getCategoryInfo(uid, category);
+        const catInfo = await getCategoryInfo(uid, category, description);
         const chargeDate = date ? new Date(date) : now;
         const numInstallments = installments || 1;
         const installmentAmount = amount / numInstallments;
@@ -407,10 +424,13 @@ export const dispatchEvent = async (uid: string, event: FinanceEvent) => {
 
       case 'CREATE_REMINDER': {
         const { description, amount, dueDay, category, type, recurring, targetWalletName } = event.payload;
+        const catInfo = await getCategoryInfo(uid, category || (type === 'RECEIVE' ? 'Recebimento' : 'Contas'), description);
         const dueDate = new Date(now.getFullYear(), now.getMonth(), dueDay).toISOString();
         
         await addDoc(collection(userRef, "reminders"), {
-          description, amount, dueDay, category: category || (type === 'RECEIVE' ? 'Recebimento' : 'Contas'),
+          description, amount, dueDay, category: catInfo.name,
+          categoryId: catInfo.id,
+          categoryName: catInfo.name,
           dueDate, isPaid: false, recurring: recurring !== undefined ? recurring : true,
           type: type || 'PAY',
           targetWalletName: targetWalletName || null,
@@ -1032,23 +1052,34 @@ export const dispatchEvent = async (uid: string, event: FinanceEvent) => {
       }
 
       case 'TRANSFER_WALLET': {
-        const { fromWalletId, toWalletId, amount, note, date } = event.payload;
+        const { fromWalletId, toWalletId, sourceWalletId, targetWalletId, amount, note, description, date } = event.payload;
+        const finalFrom = fromWalletId || sourceWalletId;
+        const finalTo = toWalletId || targetWalletId;
+        const finalNote = note || description || "Transferência";
+
+        if (!finalFrom || !finalTo) {
+          throw new Error("Origem ou destino da transferência não informados.");
+        }
         
         // 1. Decrementa da origem
-        await updateDoc(doc(userRef, "wallets", fromWalletId), {
+        await updateDoc(doc(userRef, "wallets", finalFrom), {
           balance: increment(-amount),
           updatedAt: serverTimestamp()
         });
 
         // 2. Incrementa no destino
-        await updateDoc(doc(userRef, "wallets", toWalletId), {
+        await updateDoc(doc(userRef, "wallets", finalTo), {
           balance: increment(amount),
           updatedAt: serverTimestamp()
         });
 
         // 3. Registra a transferência
         await addDoc(collection(userRef, "walletTransfers"), {
-          fromWalletId, toWalletId, amount, note, date: date || new Date().toISOString(),
+          fromWalletId: finalFrom, 
+          toWalletId: finalTo, 
+          amount, 
+          note: finalNote, 
+          date: date || new Date().toISOString(),
           isQA,
           createdAt: serverTimestamp()
         });

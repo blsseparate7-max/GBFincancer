@@ -40,12 +40,14 @@ interface DashProps {
   uid: string;
   user: any; // UserSession
   loading?: boolean;
+  onNavigateToExtrato?: (filters: any) => void;
 }
 
-const Dashboard: React.FC<DashProps> = ({ transactions, goals, limits, wallets, reminders, categories, uid, user, loading }) => {
+const Dashboard: React.FC<DashProps> = ({ transactions, goals, limits, wallets, reminders, categories, uid, user, loading, onNavigateToExtrato }) => {
   const [showLimitModal, setShowLimitModal] = useState(false);
   const [showGlobalLimitModal, setShowGlobalLimitModal] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   
   // Transaction Form State
   const [txType, setTxType] = useState<'INCOME' | 'EXPENSE'>('EXPENSE');
@@ -409,7 +411,10 @@ const Dashboard: React.FC<DashProps> = ({ transactions, goals, limits, wallets, 
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* 3️⃣ Ranking de Gastos */}
-        <ExpenseRanking ranking={stats.expenseRanking} />
+        <ExpenseRanking 
+          ranking={stats.expenseRanking} 
+          onCategoryClick={(cat) => setSelectedCategory(cat)}
+        />
 
         {/* 4️⃣ Teto de Gastos Global */}
         <GlobalSpendingLimitCard 
@@ -561,6 +566,102 @@ const Dashboard: React.FC<DashProps> = ({ transactions, goals, limits, wallets, 
       >
         <Plus size={32} />
       </motion.button>
+
+      {/* Modal Detalhe de Categoria */}
+      <AnimatePresence>
+        {selectedCategory && (
+          <div className="fixed inset-0 z-[200] flex items-center justify-center p-6">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setSelectedCategory(null)}
+              className="absolute inset-0 bg-black/80 backdrop-blur-xl"
+            />
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="bg-[var(--surface)] w-full max-w-2xl rounded-[3rem] p-8 shadow-2xl relative border border-[var(--border)] animate-fade max-h-[85vh] flex flex-col"
+            >
+              <button 
+                onClick={() => setSelectedCategory(null)} 
+                className="absolute top-6 right-6 w-10 h-10 bg-[var(--bg-body)] rounded-full flex items-center justify-center text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-all active:scale-90 border border-[var(--border)]"
+              >
+                ✕
+              </button>
+              
+              <div className="mb-6 flex items-center gap-4">
+                <div className="w-14 h-14 bg-[var(--green-whatsapp)]/20 rounded-2xl flex items-center justify-center text-[var(--green-whatsapp)]">
+                  <TrendingDown size={28} />
+                </div>
+                <div>
+                  <p className="text-[10px] font-black text-[var(--green-whatsapp)] uppercase tracking-[0.4em]">Detalhamento</p>
+                  <h3 className="text-2xl font-black text-[var(--text-primary)] uppercase italic tracking-tighter leading-none">{selectedCategory}</h3>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4 mb-6">
+                <div className="bg-[var(--bg-body)] p-4 rounded-2xl border border-[var(--border)]">
+                  <p className="text-[9px] font-black text-[var(--text-muted)] uppercase tracking-widest mb-1">Total Gasto</p>
+                  <p className="text-xl font-black text-white">
+                    {format(stats.expenseRanking.find(r => r.name === selectedCategory)?.value || 0)}
+                  </p>
+                </div>
+                <div className="bg-[var(--bg-body)] p-4 rounded-2xl border border-[var(--border)]">
+                  <p className="text-[9px] font-black text-[var(--text-muted)] uppercase tracking-widest mb-1">Lançamentos</p>
+                  <p className="text-xl font-black text-white">
+                    {transactions.filter(t => t.type === 'EXPENSE' && normalizeCategoryName(t.category) === selectedCategory && new Date(t.date).getMonth() === stats.currentMonth).length}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex-1 overflow-y-auto pr-2 space-y-3 custom-scrollbar">
+                {transactions
+                  .filter(t => t.type === 'EXPENSE' && normalizeCategoryName(t.category) === selectedCategory && new Date(t.date).getMonth() === stats.currentMonth)
+                  .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+                  .map(t => (
+                    <div key={t.id} className="bg-[var(--bg-body)] p-4 rounded-2xl border border-[var(--border)] flex justify-between items-center group">
+                      <div>
+                        <h4 className="text-xs font-black text-white uppercase tracking-tight">{t.description}</h4>
+                        <div className="flex items-center gap-3 mt-1">
+                          <span className="text-[9px] font-bold text-[var(--text-muted)] flex items-center gap-1">
+                            <Calendar size={10} /> {new Date(t.date).toLocaleDateString('pt-BR')}
+                          </span>
+                          <span className="text-[9px] font-bold text-[var(--text-muted)] flex items-center gap-1">
+                            <WalletIcon size={10} /> {t.walletName || 'Carteira'}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-sm font-black text-white">-{format(t.amount)}</p>
+                        <p className="text-[8px] font-black text-[var(--text-muted)] uppercase tracking-widest">{t.paymentMethod || 'Dinheiro'}</p>
+                      </div>
+                    </div>
+                  ))}
+              </div>
+
+              <div className="mt-6 pt-6 border-t border-[var(--border)]">
+                <button 
+                  onClick={() => {
+                    if (onNavigateToExtrato) {
+                      onNavigateToExtrato({
+                        category: selectedCategory,
+                        startDate: new Date(stats.currentYear, stats.currentMonth, 1).toISOString().split('T')[0],
+                        endDate: new Date(stats.currentYear, stats.currentMonth + 1, 0).toISOString().split('T')[0],
+                        type: 'EXPENSE'
+                      });
+                    }
+                  }}
+                  className="w-full bg-[var(--surface)] border border-[var(--border)] text-white py-4 rounded-2xl font-black text-[11px] uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-white/5 transition-all active:scale-95"
+                >
+                  Ver no Extrato Completo <ArrowRight size={14} />
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       {/* Modal Adicionar Transação */}
       <AnimatePresence>

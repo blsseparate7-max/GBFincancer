@@ -2,7 +2,7 @@
 import { db, isFirebaseConfigured } from "./firebaseConfig";
 import { doc, setDoc, getDoc, getDocs, collection, serverTimestamp, query, orderBy, deleteDoc, limit } from "firebase/firestore";
 import { CustomerData, Transaction, SavingGoal, Bill, CategoryLimit, CreditCardInfo, Wallet, UserCategory } from "../types";
-import { normalizeCard, normalizeGoal, normalizeReminder, normalizeLimit, normalizeWallet, normalizeUserCategory, normalizeTransaction } from "./normalizationService";
+import { normalizeCard, normalizeGoal, normalizeReminder, normalizeLimit, normalizeWallet, normalizeUserCategory, normalizeTransaction, normalizeDebt } from "./normalizationService";
 
 // Agora usamos 'users' para manter consistência com o restante do app
 const MAIN_COLLECTION = "users";
@@ -115,7 +115,8 @@ export const fetchChatContext = async (uid: string) => {
       limitsSnap,
       cardsSnap,
       walletsSnap,
-      catsSnap
+      catsSnap,
+      debtsSnap
     ] = await Promise.all([
       getDoc(userRef),
       getDocs(query(collection(userRef, "transactions"), orderBy("date", "desc"), limit(50))),
@@ -124,7 +125,8 @@ export const fetchChatContext = async (uid: string) => {
       getDocs(collection(userRef, "limits")),
       getDocs(collection(userRef, "cards")),
       getDocs(collection(userRef, "wallets")),
-      getDocs(collection(userRef, "categories"))
+      getDocs(collection(userRef, "categories")),
+      getDocs(collection(userRef, "debts"))
     ]);
 
     return {
@@ -135,7 +137,8 @@ export const fetchChatContext = async (uid: string) => {
       limits: limitsSnap.docs.map(d => normalizeLimit(d)),
       cards: cardsSnap.docs.map(d => normalizeCard(d, uid)),
       wallets: walletsSnap.docs.map(d => normalizeWallet(d, uid)),
-      categories: catsSnap.docs.map(d => normalizeUserCategory(d))
+      categories: catsSnap.docs.map(d => normalizeUserCategory(d)),
+      debts: debtsSnap.docs.map(d => normalizeDebt(d))
     };
   } catch (error) {
     console.error("GB: Erro ao buscar contexto do chat:", error);

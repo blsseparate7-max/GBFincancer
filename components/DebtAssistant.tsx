@@ -34,11 +34,11 @@ interface DebtAssistantProps {
   user: UserSession;
   goals: SavingGoal[];
   cards: CreditCardInfo[];
+  debts: Debt[];
 }
 
-const DebtAssistant: React.FC<DebtAssistantProps> = ({ uid, transactions, wallets, user, goals, cards }) => {
-  const [debts, setDebts] = useState<Debt[]>([]);
-  const [loading, setLoading] = useState(true);
+const DebtAssistant: React.FC<DebtAssistantProps> = ({ uid, transactions, wallets, user, goals, cards, debts }) => {
+  const [loading, setLoading] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingDebt, setEditingDebt] = useState<Debt | null>(null);
   const [filterStatus, setFilterStatus] = useState<DebtStatus | 'TODAS'>('TODAS');
@@ -60,14 +60,7 @@ const DebtAssistant: React.FC<DebtAssistantProps> = ({ uid, transactions, wallet
   });
 
   useEffect(() => {
-    if (!uid) return;
-    const q = query(collection(db, "users", uid, "debts"), orderBy("createdAt", "desc"));
-    const unsub = onSnapshot(q, (snap) => {
-      const data = snap.docs.map(d => normalizeDebt(d));
-      setDebts(data);
-      setLoading(false);
-    });
-    return () => unsub();
+    // Listener removido para usar props centralizadas do App.tsx
   }, [uid]);
 
   const format = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v);

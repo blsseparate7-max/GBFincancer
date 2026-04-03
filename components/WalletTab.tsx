@@ -6,22 +6,36 @@ import { dispatchEvent } from '../services/eventDispatcher';
 import MoneyInput from './MoneyInput';
 import { ConfirmModal, Notification } from './UI';
 import { motion } from 'framer-motion';
-import { MoreVertical, Edit2, Trash2, ArrowRightLeft } from 'lucide-react';
+import { 
+  MoreVertical, 
+  Edit2, 
+  Trash2, 
+  ArrowRightLeft, 
+  Wallet as WalletIcon, 
+  TrendingUp, 
+  TrendingDown, 
+  Calendar, 
+  Tag, 
+  ArrowRight 
+} from 'lucide-react';
 
 interface WalletTabProps {
   uid: string;
   freeBalance: number;
   goals: SavingGoal[];
   wallets: Wallet[];
+  transactions: any[];
   loading?: boolean;
+  onNavigateToExtrato?: (filters: any) => void;
 }
 
-const WalletTab: React.FC<WalletTabProps> = ({ uid, freeBalance, goals, wallets: walletsFromProps, loading }) => {
+const WalletTab: React.FC<WalletTabProps> = ({ uid, freeBalance, goals, wallets: walletsFromProps, transactions, loading, onNavigateToExtrato }) => {
   const [wallets, setWallets] = useState<Wallet[]>(walletsFromProps);
   const [transfers, setTransfers] = useState<WalletTransfer[]>([]);
   const [isAdding, setIsAdding] = useState(false);
   const [isTransferring, setIsTransferring] = useState(false);
   const [editingWallet, setEditingWallet] = useState<Wallet | null>(null);
+  const [selectedWallet, setSelectedWallet] = useState<Wallet | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
   // Form states
@@ -239,7 +253,11 @@ const WalletTab: React.FC<WalletTabProps> = ({ uid, freeBalance, goals, wallets:
       {/* Wallets Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
         {activeWallets.map(wallet => (
-          <div key={wallet.id} className="bg-[var(--surface)] p-7 rounded-[2.5rem] border border-[var(--border)] hover:border-[var(--green-whatsapp)]/30 transition-all group relative overflow-hidden shadow-sm hover:shadow-xl">
+          <div 
+            key={wallet.id} 
+            onClick={() => setSelectedWallet(wallet)}
+            className="bg-[var(--surface)] p-7 rounded-[2.5rem] border border-[var(--border)] hover:border-[var(--green-whatsapp)]/30 transition-all group relative overflow-hidden shadow-sm hover:shadow-xl cursor-pointer active:scale-[0.98]"
+          >
             <div className="absolute top-0 left-0 w-1.5 h-full opacity-50" style={{ backgroundColor: wallet.color || '#00a884' }} />
             
             <div className="flex justify-between items-start mb-6">
@@ -250,7 +268,10 @@ const WalletTab: React.FC<WalletTabProps> = ({ uid, freeBalance, goals, wallets:
               </div>
               <div className="relative">
                 <button 
-                  onClick={() => setActiveMenu(activeMenu === wallet.id ? null : wallet.id)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setActiveMenu(activeMenu === wallet.id ? null : wallet.id);
+                  }}
                   className="w-10 h-10 flex items-center justify-center text-[var(--text-muted)] hover:bg-[var(--bg-body)] rounded-xl transition-all border border-transparent hover:border-[var(--border)]"
                 >
                   <MoreVertical size={18} />
@@ -351,6 +372,110 @@ const WalletTab: React.FC<WalletTabProps> = ({ uid, freeBalance, goals, wallets:
       </div>
 
       {/* Modals */}
+      {selectedWallet && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-xl z-[300] flex items-center justify-center p-4 animate-fade">
+          <div className="bg-[var(--surface)] w-full max-w-2xl rounded-[3rem] border border-[var(--border)] p-8 shadow-2xl relative overflow-hidden flex flex-col max-h-[85vh]">
+            <button 
+              onClick={() => setSelectedWallet(null)} 
+              className="absolute top-6 right-6 w-10 h-10 bg-[var(--bg-body)] rounded-full flex items-center justify-center text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-all active:scale-90 border border-[var(--border)]"
+            >
+              ✕
+            </button>
+            
+            <div className="mb-6 flex items-center gap-4">
+              <div className="w-14 h-14 rounded-2xl flex items-center justify-center text-white shadow-lg" style={{ backgroundColor: selectedWallet.color || '#00a884' }}>
+                <WalletIcon size={28} />
+              </div>
+              <div>
+                <p className="text-[10px] font-black text-[var(--text-muted)] uppercase tracking-[0.4em]">Detalhamento da Conta</p>
+                <h3 className="text-2xl font-black text-[var(--text-primary)] uppercase italic tracking-tighter leading-none">{selectedWallet.name}</h3>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-3 gap-4 mb-6">
+              <div className="bg-[var(--bg-body)] p-4 rounded-2xl border border-[var(--border)]">
+                <p className="text-[9px] font-black text-[var(--text-muted)] uppercase tracking-widest mb-1">Saldo Atual</p>
+                <p className="text-lg font-black text-white">R$ {selectedWallet.balance.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+              </div>
+              <div className="bg-[var(--bg-body)] p-4 rounded-2xl border border-[var(--border)]">
+                <p className="text-[9px] font-black text-emerald-500 uppercase tracking-widest mb-1">Entradas (Mês)</p>
+                <p className="text-lg font-black text-emerald-400">
+                  R$ {transactions
+                    .filter(t => t.targetWalletId === selectedWallet.id && t.type === 'INCOME' && new Date(t.date).getMonth() === new Date().getMonth())
+                    .reduce((s, t) => s + (Number(t.amount) || 0), 0)
+                    .toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                </p>
+              </div>
+              <div className="bg-[var(--bg-body)] p-4 rounded-2xl border border-[var(--border)]">
+                <p className="text-[9px] font-black text-rose-500 uppercase tracking-widest mb-1">Saídas (Mês)</p>
+                <p className="text-lg font-black text-rose-400">
+                  R$ {transactions
+                    .filter(t => t.sourceWalletId === selectedWallet.id && t.type === 'EXPENSE' && new Date(t.date).getMonth() === new Date().getMonth())
+                    .reduce((s, t) => s + (Number(t.amount) || 0), 0)
+                    .toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto pr-2 space-y-3 custom-scrollbar">
+              <h4 className="text-[10px] font-black text-[var(--text-muted)] uppercase tracking-widest mb-2 px-2">Movimentações Recentes</h4>
+              {transactions
+                .filter(t => (t.sourceWalletId === selectedWallet.id || t.targetWalletId === selectedWallet.id) && new Date(t.date).getMonth() === new Date().getMonth())
+                .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+                .map(t => (
+                  <div key={t.id} className="bg-[var(--bg-body)] p-4 rounded-2xl border border-[var(--border)] flex justify-between items-center group">
+                    <div className="flex items-center gap-3">
+                      <div className={`w-8 h-8 rounded-xl flex items-center justify-center ${t.type === 'INCOME' ? 'bg-emerald-500/20 text-emerald-500' : 'bg-rose-500/20 text-rose-500'}`}>
+                        {t.type === 'INCOME' ? <TrendingUp size={16} /> : <TrendingDown size={16} />}
+                      </div>
+                      <div>
+                        <h4 className="text-xs font-black text-white uppercase tracking-tight">{t.description}</h4>
+                        <div className="flex items-center gap-3 mt-1">
+                          <span className="text-[9px] font-bold text-[var(--text-muted)] flex items-center gap-1">
+                            <Calendar size={10} /> {new Date(t.date).toLocaleDateString('pt-BR')}
+                          </span>
+                          <span className="text-[9px] font-bold text-[var(--text-muted)] flex items-center gap-1">
+                            <Tag size={10} /> {t.category}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <p className={`text-sm font-black ${t.type === 'INCOME' ? 'text-emerald-400' : 'text-white'}`}>
+                        {t.type === 'INCOME' ? '+' : '-'} R$ {t.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                      </p>
+                      <p className="text-[8px] font-black text-[var(--text-muted)] uppercase tracking-widest">{t.paymentMethod || 'Dinheiro'}</p>
+                    </div>
+                  </div>
+                ))}
+              
+              {transactions.filter(t => (t.sourceWalletId === selectedWallet.id || t.targetWalletId === selectedWallet.id) && new Date(t.date).getMonth() === new Date().getMonth()).length === 0 && (
+                <div className="py-10 text-center opacity-20">
+                  <p className="text-[10px] font-black uppercase tracking-widest">Nenhuma movimentação este mês</p>
+                </div>
+              )}
+            </div>
+
+            <div className="mt-6 pt-6 border-t border-[var(--border)]">
+              <button 
+                onClick={() => {
+                  if (onNavigateToExtrato) {
+                    onNavigateToExtrato({
+                      walletId: selectedWallet.id,
+                      startDate: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0],
+                      endDate: new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).toISOString().split('T')[0]
+                    });
+                  }
+                }}
+                className="w-full bg-[var(--surface)] border border-[var(--border)] text-white py-4 rounded-2xl font-black text-[11px] uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-white/5 transition-all active:scale-95"
+              >
+                Ver no Extrato Completo <ArrowRight size={14} />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {isAdding && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-xl z-[300] flex items-center justify-center p-4 animate-fade">
           <div className="bg-[var(--surface)] w-full max-w-md rounded-[3rem] border border-[var(--border)] p-10 space-y-8 shadow-2xl relative overflow-hidden">

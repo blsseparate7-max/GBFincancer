@@ -16,9 +16,15 @@ interface ExtratoProps {
   wallets: any[];
   transactions?: Transaction[];
   loading?: boolean;
+  initialFilters?: any;
+  onClearInitialFilters?: () => void;
 }
 
-const Extrato: React.FC<ExtratoProps> = ({ uid, cards, categories: userCategories, wallets, transactions: propsTransactions, loading: propsLoading }) => {
+const Extrato: React.FC<ExtratoProps> = ({ 
+  uid, cards, categories: userCategories, wallets, 
+  transactions: propsTransactions, loading: propsLoading,
+  initialFilters, onClearInitialFilters
+}) => {
   const [localTransactions, setLocalTransactions] = useState<Transaction[]>([]);
   const [localLoading, setLocalLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -35,8 +41,24 @@ const Extrato: React.FC<ExtratoProps> = ({ uid, cards, categories: userCategorie
   const [selectedCategory, setSelectedCategory] = useState('');
   const [selectedMethod, setSelectedMethod] = useState('');
   const [selectedCard, setSelectedCard] = useState('');
+  const [selectedWalletId, setSelectedWalletId] = useState('');
   const [minVal, setMinVal] = useState('');
   const [maxVal, setMaxVal] = useState('');
+
+  // Aplicar filtros iniciais se existirem
+  useEffect(() => {
+    if (initialFilters) {
+      if (initialFilters.category) setSelectedCategory(initialFilters.category);
+      if (initialFilters.walletId) setSelectedWalletId(initialFilters.walletId);
+      if (initialFilters.startDate) setStartDate(initialFilters.startDate);
+      if (initialFilters.endDate) setEndDate(initialFilters.endDate);
+      if (initialFilters.type) setFilterType(initialFilters.type);
+      setShowFilters(true);
+      
+      // Limpa os filtros iniciais do App.tsx para não re-aplicar ao voltar
+      if (onClearInitialFilters) onClearInitialFilters();
+    }
+  }, [initialFilters, onClearInitialFilters]);
 
   // Modal Edit State
   const [editingTrans, setEditingTrans] = useState<Transaction | null>(null);
@@ -232,13 +254,14 @@ const Extrato: React.FC<ExtratoProps> = ({ uid, cards, categories: userCategorie
       const matchesCategory = !selectedCategory || t.category === selectedCategory;
       const matchesMethod = !selectedMethod || t.paymentMethod === selectedMethod;
       const matchesCard = !selectedCard || t.cardId === selectedCard;
+      const matchesWallet = !selectedWalletId || t.sourceWalletId === selectedWalletId || t.targetWalletId === selectedWalletId;
       const matchesMin = !minVal || t.amount >= Number(minVal);
       const matchesMax = !maxVal || t.amount <= Number(maxVal);
 
       return matchesSearch && matchesType && 
-             matchesCategory && matchesMethod && matchesCard && matchesMin && matchesMax;
+             matchesCategory && matchesMethod && matchesCard && matchesWallet && matchesMin && matchesMax;
     });
-  }, [transactions, searchTerm, filterType, selectedCategory, selectedMethod, selectedCard, minVal, maxVal]);
+  }, [transactions, searchTerm, filterType, selectedCategory, selectedMethod, selectedCard, selectedWalletId, minVal, maxVal]);
 
   const categoriesList = useMemo(() => {
     const cats = new Set(transactions.map(t => t.category));
@@ -247,8 +270,8 @@ const Extrato: React.FC<ExtratoProps> = ({ uid, cards, categories: userCategorie
   }, [transactions, userCategories]);
 
   const isFiltered = useMemo(() => {
-    return startDate || endDate || selectedCategory || selectedMethod || selectedCard || minVal || maxVal;
-  }, [startDate, endDate, selectedCategory, selectedMethod, selectedCard, minVal, maxVal]);
+    return startDate || endDate || selectedCategory || selectedMethod || selectedCard || selectedWalletId || minVal || maxVal;
+  }, [startDate, endDate, selectedCategory, selectedMethod, selectedCard, selectedWalletId, minVal, maxVal]);
 
   const formatCurrency = (val: number) => {
     return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);

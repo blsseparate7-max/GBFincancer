@@ -1,8 +1,9 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { UserSession, Message, Transaction, CategoryLimit, Bill, CreditCardInfo, Wallet, UserCategory, SavingGoal } from '../types';
+import { UserSession, Message, Transaction, CategoryLimit, Bill, CreditCardInfo, Wallet, UserCategory, SavingGoal, Debt, CategoryPattern } from '../types';
 import { parseMessage } from '../services/geminiService';
 import { parseStatementFile } from '../services/statementService';
 import { dispatchEvent } from '../services/eventDispatcher';
+import { learnCategoryPattern } from '../services/categoryService';
 import { fetchChatContext } from '../services/databaseService';
 import { formatCurrency, calculateMonthlySummary } from '../services/summaryService';
 import ChatComposer from './ChatComposer';
@@ -20,18 +21,22 @@ interface ChatProps {
   wallets: Wallet[];
   categories: UserCategory[];
   goals: SavingGoal[];
+  debts: Debt[];
+  categoryPatterns: CategoryPattern[];
   onToggleSidebar: () => void;
   onOpenProfile: () => void;
+  setMessages?: (msgs: Message[]) => void;
 }
 
 const ChatInterface: React.FC<ChatProps> = ({ 
   user, messages, transactions, limits, reminders, 
-  cards, wallets, categories, goals, onToggleSidebar, onOpenProfile 
+  cards, wallets, categories, goals, debts, categoryPatterns, onToggleSidebar, onOpenProfile, setMessages 
 }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [pendingAction, setPendingAction] = useState<any>(null);
   const [pendingEvents, setPendingEvents] = useState<any[]>([]);
   const [isSelectingCard, setIsSelectingCard] = useState(false);
+  const [isChangingCategory, setIsChangingCategory] = useState(false);
   const [salaryCheckDone, setSalaryCheckDone] = useState(false);
   const [pendingSalaryReminder, setPendingSalaryReminder] = useState<Bill | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -197,7 +202,7 @@ const ChatInterface: React.FC<ChatProps> = ({
       // 1. Buscar contexto ATUALIZADO do Firestore (Fonte da Verdade)
       console.log("GB Chat: Buscando contexto atualizado...");
       const freshContext = await fetchChatContext(user.uid);
-      const finalContext = freshContext || { reminders, cards, wallets, categories, transactions, goals, limits };
+      const finalContext = freshContext ? { ...freshContext, userPatterns: categoryPatterns } : { reminders, cards, wallets, categories, transactions, goals, limits, debts, userPatterns: categoryPatterns };
 
       // 2. Processar com Gemini
       console.log("GB Chat: Chamando Gemini API...");
@@ -307,6 +312,11 @@ const ChatInterface: React.FC<ChatProps> = ({
         const eventToDispatch = { ...event };
         eventToDispatch.payload.confirmedBy = user.uid;
         
+        // Aprender padrão de categoria do extrato
+        if (eventToDispatch.payload.description && eventToDispatch.payload.category) {
+          await learnCategoryPattern(user.uid, eventToDispatch.payload.description, eventToDispatch.payload.category);
+        }
+
         if (isCard) {
           if (eventToDispatch.type === 'ADD_EXPENSE') eventToDispatch.type = 'ADD_CARD_CHARGE';
           eventToDispatch.payload.paymentMethod = 'CARD';
@@ -351,6 +361,11 @@ const ChatInterface: React.FC<ChatProps> = ({
     try {
       const eventToDispatch = { ...pendingAction };
       
+      // Aprender padrão de categoria
+      if (eventToDispatch.payload.description && eventToDispatch.payload.category) {
+        await learnCategoryPattern(user.uid, eventToDispatch.payload.description, eventToDispatch.payload.category);
+      }
+
       if (pendingAction.payload.reminderId) {
         await dispatchEvent(user.uid, {
           type: 'PAY_REMINDER',
@@ -679,10 +694,57 @@ const ChatInterface: React.FC<ChatProps> = ({
                     {pendingAction.type === 'ADD_INCOME' ? '+' : '-'}{formatCurrency(pendingAction.payload.amount)}
                   </span>
                 </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-[11px] text-[var(--text-muted)] font-bold uppercase">Categoria</span>
-                  <span className="text-xs font-black text-[var(--text-primary)] uppercase italic">{pendingAction.payload.category}</span>
+                
+                <div className="flex flex-col gap-1">
+                  <div className="flex justify-between items-center">
+                    <span className="text-[11px] text-[var(--text-muted)] font-bold uppercase">Categoria</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-black text-[var(--text-primary)] uppercase italic">{pendingAction.payload.category}</span>
+                      <button 
+                        onClick={() => setIsChangingCategory(!isChangingCategory)}
+                        className="text-[9px] text-[var(--green-whatsapp)] font-bold uppercase hover:underline"
+                      >
+                        {isChangingCategory ? 'Fechar' : 'Trocar'}
+                      </button>
+                    </div>
+                  </div>
+                  
+                  {isChangingCategory && (
+                    <div className="grid grid-cols-2 gap-1 mt-2 max-h-[120px] overflow-y-auto no-scrollbar p-1 bg-[var(--bg-body)] rounded-xl border border-[var(--border)]">
+                      {categories.map(cat => (
+                        <button 
+                          key={cat.id}
+                          onClick={() => {
+                            setPendingAction({
+                              ...pendingAction,
+                              payload: { ...pendingAction.payload, category: cat.name }
+                            });
+                            setIsChangingCategory(false);
+                          }}
+                          className="text-[9px] font-bold py-1.5 px-2 rounded-lg bg-[var(--surface)] border border-[var(--border)] hover:border-[var(--green-whatsapp)] text-left truncate"
+                        >
+                          {cat.name}
+                        </button>
+                      ))}
+                      <button 
+                        onClick={() => {
+                          const newCat = prompt("Nome da nova categoria:");
+                          if (newCat) {
+                            setPendingAction({
+                              ...pendingAction,
+                              payload: { ...pendingAction.payload, category: newCat }
+                            });
+                            setIsChangingCategory(false);
+                          }
+                        }}
+                        className="text-[9px] font-bold py-1.5 px-2 rounded-lg bg-[var(--green-whatsapp)]/10 border border-[var(--green-whatsapp)]/30 text-[var(--green-whatsapp)] text-left truncate"
+                      >
+                        + Criar Nova
+                      </button>
+                    </div>
+                  )}
                 </div>
+
                 <div className="flex justify-between items-center">
                   <span className="text-[11px] text-[var(--text-muted)] font-bold uppercase">Descrição</span>
                   <span className="text-xs font-medium text-[var(--text-primary)]">{pendingAction.payload.description}</span>
