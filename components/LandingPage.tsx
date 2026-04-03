@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion } from 'motion/react';
-import { CheckCircle2, MessageSquare, PieChart, CreditCard, Target, ArrowRight, ShieldCheck, Zap } from 'lucide-react';
+import { CheckCircle2, MessageSquare, PieChart, CreditCard, Target, ArrowRight, ShieldCheck, Zap, AlertCircle, Sparkles, ChevronLeft, ChevronRight } from 'lucide-react';
 import Auth from './Auth';
 import LegalModal from './LegalModal';
 import { UserSession } from '../types';
@@ -13,6 +13,14 @@ interface LandingPageProps {
 const LandingPage: React.FC<LandingPageProps> = ({ onLogin, onOpenSupport }) => {
   const [authMode, setAuthMode] = useState<'none' | 'login' | 'signup'>('none');
   const [legalView, setLegalView] = useState<'terms' | 'privacy' | 'none'>('none');
+  const carouselRef = React.useRef<HTMLDivElement>(null);
+
+  const scrollCarousel = (direction: 'left' | 'right') => {
+    if (carouselRef.current) {
+      const scrollAmount = direction === 'left' ? -600 : 600;
+      carouselRef.current.scrollBy({ left: scrollAmount, behavior: 'smooth' });
+    }
+  };
 
   if (authMode !== 'none') {
     return (
@@ -103,25 +111,259 @@ const LandingPage: React.FC<LandingPageProps> = ({ onLogin, onOpenSupport }) => 
           </p>
         </motion.div>
 
-        {/* App Preview Mockup */}
-        <motion.div 
-          initial={{ opacity: 0, scale: 0.95 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ delay: 0.3, duration: 0.8 }}
-          className="mt-24 relative max-w-5xl mx-auto"
-        >
-          <div className="absolute -inset-4 bg-gradient-to-b from-[#00A884]/20 to-transparent blur-3xl rounded-full opacity-50"></div>
-          <div className="relative bg-[#111B21] rounded-[2.5rem] border border-[#2A3942] shadow-2xl overflow-hidden aspect-video flex items-center justify-center group">
-            <div className="absolute inset-0 bg-gradient-to-tr from-[#00A884]/5 to-transparent"></div>
-            <div className="text-center space-y-4">
-              <div className="w-20 h-20 bg-[#00A884]/10 rounded-full flex items-center justify-center mx-auto border border-[#00A884]/20 group-hover:scale-110 transition-transform duration-500">
-                <Zap className="w-10 h-10 text-[#00A884]" />
-              </div>
-              <p className="text-[10px] font-black uppercase tracking-[0.5em] text-[#8696A0]">Visualização do Sistema</p>
-              <p className="text-xs text-[#8696A0]/60 italic">Mockup da interface premium</p>
+        {/* Veja o sistema em ação */}
+        <section className="mt-32 relative z-10 max-w-7xl mx-auto px-4 overflow-hidden">
+          <header className="text-center mb-16">
+            <h2 className="text-[10px] font-black text-[#00A884] uppercase tracking-[0.5em] mb-4">Experiência Premium</h2>
+            <h3 className="text-4xl font-black tracking-tighter uppercase italic">Veja o sistema em ação</h3>
+          </header>
+
+          <div className="relative group/carousel">
+            {/* Desktop Navigation Arrows */}
+            <button 
+              onClick={() => scrollCarousel('left')}
+              className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-6 z-20 w-12 h-12 bg-[#111B21] border border-[#2A3942] rounded-full hidden md:flex items-center justify-center text-[#8696A0] hover:text-white hover:border-[#00A884] transition-all shadow-xl opacity-0 group-hover/carousel:opacity-100"
+            >
+              <ChevronLeft size={24} />
+            </button>
+            <button 
+              onClick={() => scrollCarousel('right')}
+              className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-6 z-20 w-12 h-12 bg-[#111B21] border border-[#2A3942] rounded-full hidden md:flex items-center justify-center text-[#8696A0] hover:text-white hover:border-[#00A884] transition-all shadow-xl opacity-0 group-hover/carousel:opacity-100"
+            >
+              <ChevronRight size={24} />
+            </button>
+
+            {/* Carousel Container */}
+            <div 
+              ref={carouselRef}
+              className="flex gap-6 overflow-x-auto snap-x snap-mandatory no-scrollbar pb-12 px-4 md:px-12"
+              style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+            >
+              {/* A) Chat Card */}
+              <motion.div 
+                whileHover={{ scale: 1.02 }}
+                className="flex-shrink-0 w-[85vw] md:w-[600px] snap-center bg-[#111B21] rounded-[3rem] border border-[#2A3942] p-8 md:p-10 shadow-2xl relative overflow-hidden group hover:border-[#00A884]/30 transition-all"
+              >
+                <div className="absolute top-0 right-0 w-48 h-48 bg-[#00A884]/5 rounded-full -mr-24 -mt-24 blur-3xl"></div>
+                <div className="flex items-center gap-4 mb-10">
+                  <div className="w-10 h-10 bg-[#00A884] rounded-2xl flex items-center justify-center text-white shadow-lg shadow-[#00A884]/20">
+                    <MessageSquare size={20} />
+                  </div>
+                  <div>
+                    <span className="text-[10px] font-black uppercase tracking-[0.2em] text-[#8696A0]">Interface de Conversa</span>
+                    <h4 className="text-lg font-black text-white uppercase italic tracking-tight">Chat Inteligente</h4>
+                  </div>
+                </div>
+                
+                <div className="space-y-6">
+                  <div className="bg-[#202C33] p-6 rounded-3xl rounded-tl-none max-w-[90%] border border-white/5 shadow-xl">
+                    <p className="text-[10px] font-black text-[#00A884] uppercase tracking-widest mb-3">Resumo Rápido</p>
+                    <div className="space-y-2">
+                      <div className="flex justify-between text-sm font-bold">
+                        <span className="text-[#8696A0]">Saldo:</span>
+                        <span className="text-white">R$ 1.280,00</span>
+                      </div>
+                      <div className="flex justify-between text-sm font-bold">
+                        <span className="text-[#8696A0]">Entradas:</span>
+                        <span className="text-[#00A884]">R$ 2.000,00</span>
+                      </div>
+                      <div className="flex justify-between text-sm font-bold">
+                        <span className="text-[#8696A0]">Saídas:</span>
+                        <span className="text-rose-500">R$ 720,00</span>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div className="bg-[#00A884]/10 p-6 rounded-3xl rounded-tr-none max-w-[90%] border border-[#00A884]/20 ml-auto shadow-xl">
+                    <div className="flex items-center gap-2 mb-2">
+                      <CheckCircle2 size={14} className="text-[#00A884]" />
+                      <span className="text-[10px] font-black text-[#00A884] uppercase tracking-widest">Lançamento Confirmado</span>
+                    </div>
+                    <p className="text-sm font-black text-white italic">R$ 50,00 — Mercado Muffato</p>
+                  </div>
+                </div>
+              </motion.div>
+
+              {/* B) Dashboard Card (Pie Chart) */}
+              <motion.div 
+                whileHover={{ scale: 1.02 }}
+                className="flex-shrink-0 w-[85vw] md:w-[600px] snap-center bg-[#111B21] rounded-[3rem] border border-[#2A3942] p-8 md:p-10 shadow-2xl relative overflow-hidden group hover:border-[#00A884]/30 transition-all"
+              >
+                <div className="flex items-center justify-between mb-10">
+                  <div className="flex items-center gap-4">
+                    <div className="w-10 h-10 bg-[#00A884] rounded-2xl flex items-center justify-center text-white shadow-lg shadow-[#00A884]/20">
+                      <PieChart size={20} />
+                    </div>
+                    <div>
+                      <span className="text-[10px] font-black uppercase tracking-[0.2em] text-[#8696A0]">Visão Geral</span>
+                      <h4 className="text-lg font-black text-white uppercase italic tracking-tight">Dashboard</h4>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-[9px] font-black text-[#8696A0] uppercase tracking-widest mb-1">Saldo Disponível</p>
+                    <p className="text-2xl font-black text-white italic tracking-tighter">R$ 1.280,00</p>
+                  </div>
+                </div>
+
+                <div className="flex flex-col md:flex-row items-center gap-10">
+                  {/* Pie Chart SVG */}
+                  <div className="relative w-40 h-40">
+                    <svg viewBox="0 0 32 32" className="w-full h-full -rotate-90">
+                      {/* Alimentação 40% */}
+                      <circle r="16" cx="16" cy="16" fill="transparent" stroke="#00A884" strokeWidth="32" strokeDasharray="40 100" />
+                      {/* Transporte 20% */}
+                      <circle r="16" cx="16" cy="16" fill="transparent" stroke="#128c7e" strokeWidth="32" strokeDasharray="20 100" strokeDashoffset="-40" />
+                      {/* Lazer 10% */}
+                      <circle r="16" cx="16" cy="16" fill="transparent" stroke="#34b7f1" strokeWidth="32" strokeDasharray="10 100" strokeDashoffset="-60" />
+                      {/* Outros 30% */}
+                      <circle r="16" cx="16" cy="16" fill="transparent" stroke="#202C33" strokeWidth="32" strokeDasharray="30 100" strokeDashoffset="-70" />
+                    </svg>
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <div className="w-20 h-20 bg-[#111B21] rounded-full flex items-center justify-center border border-[#2A3942]">
+                        <span className="text-[10px] font-black text-white uppercase italic">Gastos</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex-1 space-y-4 w-full">
+                    <p className="text-[9px] font-black text-[#8696A0] uppercase tracking-[0.2em]">Onde seu dinheiro está indo</p>
+                    {[
+                      { name: 'Alimentação', val: 420, p: 40, color: '#00A884' },
+                      { name: 'Transporte', val: 180, p: 20, color: '#128c7e' },
+                      { name: 'Lazer', val: 120, p: 10, color: '#34b7f1' }
+                    ].map((item, i) => (
+                      <div key={i} className="space-y-1.5">
+                        <div className="flex justify-between text-[10px] font-black uppercase italic">
+                          <div className="flex items-center gap-2">
+                            <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: item.color }} />
+                            <span className="text-white">{item.name}</span>
+                          </div>
+                          <span className="text-[#8696A0]">R$ {item.val}</span>
+                        </div>
+                        <div className="h-1 w-full bg-[#202C33] rounded-full overflow-hidden">
+                          <div className="h-full" style={{ width: `${item.p}%`, backgroundColor: item.color }}></div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </motion.div>
+
+              {/* C) Estou Endividado Card */}
+              <motion.div 
+                whileHover={{ scale: 1.02 }}
+                className="flex-shrink-0 w-[85vw] md:w-[600px] snap-center bg-[#111B21] rounded-[3rem] border border-[#2A3942] p-8 md:p-10 shadow-2xl relative overflow-hidden group hover:border-rose-500/30 transition-all"
+              >
+                <div className="flex items-center gap-4 mb-10">
+                  <div className="w-10 h-10 bg-rose-500 rounded-2xl flex items-center justify-center text-white shadow-lg shadow-rose-500/20">
+                    <Zap size={20} />
+                  </div>
+                  <div>
+                    <span className="text-[10px] font-black uppercase tracking-[0.2em] text-[#8696A0]">Recuperação</span>
+                    <h4 className="text-lg font-black text-white uppercase italic tracking-tight">Estou Endividado</h4>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-6 mb-8">
+                  <div className="bg-[#202C33] p-6 rounded-[2rem] border border-white/5 shadow-xl">
+                    <p className="text-[9px] font-black text-[#8696A0] uppercase tracking-widest mb-2">Dívida Total</p>
+                    <p className="text-2xl font-black text-rose-500 italic tracking-tighter leading-none">R$ 4.800,00</p>
+                  </div>
+                  <div className="bg-[#202C33] p-6 rounded-[2rem] border border-white/5 shadow-xl">
+                    <p className="text-[9px] font-black text-[#8696A0] uppercase tracking-widest mb-2">Parcela Mensal</p>
+                    <p className="text-2xl font-black text-white italic tracking-tighter leading-none">R$ 300,00</p>
+                  </div>
+                </div>
+
+                <div className="space-y-5">
+                  <div className="flex justify-between items-end">
+                    <div>
+                      <p className="text-[9px] font-black text-[#8696A0] uppercase tracking-widest mb-1">Progresso de Quitação</p>
+                      <p className="text-sm font-black text-white uppercase italic">22% Concluído</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-[9px] font-black text-[#00A884] uppercase tracking-widest mb-1">Previsão</p>
+                      <p className="text-xs font-black text-white uppercase italic">16 meses</p>
+                    </div>
+                  </div>
+                  <div className="h-4 w-full bg-[#202C33] rounded-full overflow-hidden p-1 border border-white/5">
+                    <div className="h-full bg-gradient-to-r from-rose-500 to-rose-400 rounded-full shadow-[0_0_15px_rgba(244,63,94,0.3)]" style={{ width: '22%' }}></div>
+                  </div>
+                  <div className="bg-rose-500/10 border border-rose-500/20 p-4 rounded-2xl flex items-center gap-4">
+                    <AlertCircle size={20} className="text-rose-500 shrink-0" />
+                    <p className="text-[10px] font-black text-rose-500 uppercase tracking-widest leading-relaxed">
+                      Prioridade: Renegociar juros do cartão de crédito para acelerar quitação.
+                    </p>
+                  </div>
+                </div>
+              </motion.div>
+
+              {/* D) Score Card */}
+              <motion.div 
+                whileHover={{ scale: 1.02 }}
+                className="flex-shrink-0 w-[85vw] md:w-[600px] snap-center bg-[#111B21] rounded-[3rem] border border-[#2A3942] p-8 md:p-10 shadow-2xl relative overflow-hidden group hover:border-amber-500/30 transition-all"
+              >
+                <div className="flex items-center gap-4 mb-10">
+                  <div className="w-10 h-10 bg-amber-500 rounded-2xl flex items-center justify-center text-white shadow-lg shadow-amber-500/20">
+                    <ShieldCheck size={20} />
+                  </div>
+                  <div>
+                    <span className="text-[10px] font-black uppercase tracking-[0.2em] text-[#8696A0]">Saúde Financeira</span>
+                    <h4 className="text-lg font-black text-white uppercase italic tracking-tight">Score GB</h4>
+                  </div>
+                </div>
+
+                <div className="flex flex-col md:flex-row items-center gap-10 py-2">
+                  <div className="relative w-40 h-40 flex items-center justify-center">
+                    <svg className="w-full h-full -rotate-90">
+                      <circle cx="80" cy="80" r="70" fill="none" stroke="#202C33" strokeWidth="12" />
+                      <motion.circle 
+                        initial={{ strokeDashoffset: 440 }}
+                        whileInView={{ strokeDashoffset: 440 * (1 - 0.74) }}
+                        cx="80" cy="80" r="70" fill="none" stroke="url(#score-gradient-landing)" strokeWidth="12" 
+                        strokeDasharray="440"
+                        strokeLinecap="round"
+                        transition={{ duration: 2, ease: "easeOut" }}
+                      />
+                      <defs>
+                        <linearGradient id="score-gradient-landing" x1="0%" y1="0%" x2="100%" y2="0%">
+                          <stop offset="0%" stopColor="#f59e0b" />
+                          <stop offset="100%" stopColor="#10b981" />
+                        </linearGradient>
+                      </defs>
+                    </svg>
+                    <div className="absolute inset-0 flex flex-col items-center justify-center">
+                      <span className="text-5xl font-black italic tracking-tighter text-white leading-none">74</span>
+                      <span className="text-[10px] font-black text-[#8696A0] uppercase tracking-widest mt-2">Pontos</span>
+                    </div>
+                  </div>
+                  
+                  <div className="flex-1 space-y-6 text-center md:text-left">
+                    <div className="inline-block px-4 py-2 bg-amber-500/10 border border-amber-500/20 rounded-2xl">
+                      <p className="text-[10px] font-black text-amber-500 uppercase tracking-widest">Status: Em evolução constante</p>
+                    </div>
+                    <div className="space-y-3">
+                      <p className="text-sm font-medium text-[#8696A0] leading-relaxed italic">
+                        "Você está melhorando seu controle financeiro. Seu comportamento de gastos este mês está 15% mais eficiente que o anterior."
+                      </p>
+                      <div className="flex items-center gap-2 justify-center md:justify-start">
+                        <Sparkles size={14} className="text-amber-500" />
+                        <span className="text-[9px] font-black text-white uppercase tracking-widest">Dica da IA: Mantenha o foco em lazer</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </motion.div>
+            </div>
+
+            {/* Carousel Navigation Hints */}
+            <div className="flex justify-center gap-2 mt-4 md:hidden">
+              {[0, 1, 2, 3].map(i => (
+                <div key={i} className={`w-1.5 h-1.5 rounded-full ${i === 0 ? 'bg-[#00A884]' : 'bg-[#2A3942]'}`} />
+              ))}
             </div>
           </div>
-        </motion.div>
+        </section>
       </section>
 
       {/* Benefits Section */}
