@@ -7,6 +7,8 @@ interface WelcomeOnboardingProps {
 }
 
 const WelcomeOnboarding: React.FC<WelcomeOnboardingProps> = ({ userName, onFinish }) => {
+  const displayFirstName = (userName || 'Usuário').split(' ')[0];
+
   return (
     <div className="fixed inset-0 z-[6000] bg-[#0B141A] flex items-center justify-center p-4 sm:p-6 overflow-y-auto animate-fade">
       <div className="absolute inset-0 whatsapp-pattern opacity-[0.05] pointer-events-none"></div>
@@ -18,7 +20,7 @@ const WelcomeOnboarding: React.FC<WelcomeOnboardingProps> = ({ userName, onFinis
           <div className="w-20 h-20 bg-[#00A884] rounded-[2.2rem] flex items-center justify-center mx-auto mb-6 shadow-2xl shadow-[#00A884]/20 text-white text-4xl font-black italic transform -rotate-3 border-4 border-white/10">
             GB
           </div>
-          <h2 className="text-2xl font-black text-[#E9EDEF] uppercase tracking-tighter">Bem-vindo ao GBFinancer, {userName.split(' ')[0]}!</h2>
+          <h2 className="text-2xl font-black text-[#E9EDEF] uppercase tracking-tighter">Bem-vindo ao GBFinancer, {displayFirstName}!</h2>
           <p className="text-[11px] font-bold text-[#8696A0] uppercase tracking-[0.2em] mt-2 italic">A clareza que seu bolso merece.</p>
         </div>
 

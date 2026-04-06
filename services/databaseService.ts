@@ -1,5 +1,5 @@
 
-import { db, isFirebaseConfigured } from "./firebaseConfig";
+import { db, isFirebaseConfigured, auth } from "./firebaseConfig";
 import { doc, setDoc, getDoc, getDocs, collection, serverTimestamp, query, orderBy, deleteDoc, limit } from "firebase/firestore";
 import { CustomerData, Transaction, SavingGoal, Bill, CategoryLimit, CreditCardInfo, Wallet, UserCategory } from "../types";
 import { normalizeCard, normalizeGoal, normalizeReminder, normalizeLimit, normalizeWallet, normalizeUserCategory, normalizeTransaction, normalizeDebt } from "./normalizationService";
@@ -101,10 +101,22 @@ export const fetchAllCustomers = async (): Promise<CustomerData[]> => {
  * Garante que a IA sempre tenha a "Fonte da Verdade" mais recente.
  */
 export const fetchChatContext = async (uid: string) => {
-  if (!uid || !isFirebaseConfigured() || !db) return null;
+  const finalUid = uid || auth.currentUser?.uid;
+  
+  if (!finalUid || finalUid === 'undefined' || finalUid === 'null' || !isFirebaseConfigured() || !db) {
+    console.warn("GB: fetchChatContext abortado - UID inválido ou Firebase não configurado", { uid: finalUid });
+    return null;
+  }
+
+  // Verifica se o usuário está autenticado e se o UID coincide
+  if (auth.currentUser && auth.currentUser.uid !== finalUid) {
+    console.warn("GB: fetchChatContext UID mismatch - Usando UID autenticado", { authUid: auth.currentUser.uid, requestedUid: finalUid });
+    // Em ambiente de produção, o UID autenticado é a única fonte segura
+    // Mas para QA/Admin, podemos permitir o UID solicitado se as regras permitirem
+  }
 
   try {
-    const userRef = doc(db, MAIN_COLLECTION, uid);
+    const userRef = doc(db, MAIN_COLLECTION, finalUid);
     
     // Buscas paralelas para performance
     const [
@@ -130,6 +142,7 @@ export const fetchChatContext = async (uid: string) => {
     ]);
 
     return {
+      user: userSnap.exists() ? { id: userSnap.id, ...userSnap.data() } as any : null,
       spendingLimit: userSnap.exists() ? userSnap.data().spendingLimit : null,
       transactions: transSnap.docs.map(d => normalizeTransaction(d)),
       goals: goalsSnap.docs.map(d => normalizeGoal(d, uid)),

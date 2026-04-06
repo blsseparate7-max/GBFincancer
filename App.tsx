@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { db, auth } from './services/firebaseConfig';
+import { db, auth, clearIndexedDbPersistence } from './services/firebaseConfig';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { collection, doc, onSnapshot, query, orderBy, limit, getDoc, where } from 'firebase/firestore';
 import { UserSession, Transaction, SavingGoal, Notification, Message, Bill, CategoryLimit, CreditCardInfo, Wallet, UserCategory, UserOnboarding, Debt, CategoryPattern } from './types';
@@ -16,6 +16,7 @@ import Messages from './components/Messages';
 import ProfileEdit from './components/ProfileEdit';
 import AdminPanel from './components/AdminPanel';
 import SetupWizard from './components/SetupWizard';
+import GuidedOnboarding from './components/GuidedOnboarding';
 import WelcomeOnboarding from './components/WelcomeOnboarding';
 import LGPDOnboarding from './components/LGPDOnboarding';
 import ImpactSimulator from './components/ImpactSimulator';
@@ -50,7 +51,27 @@ const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState('chat');
   const [sidebarExpanded, setSidebarExpanded] = useState(false); // Oculto por padrão
   const [isMobile, setIsMobile] = useState(window.innerWidth < 1024);
-  const [onboardingStep, setOnboardingStep] = useState<'none' | 'welcome' | 'lgpd' | 'setup'>('none');
+  const [onboardingStep, setOnboardingStep] = useState<'none' | 'welcome' | 'lgpd' | 'setup' | 'guided'>('none');
+  const [indexedDbError, setIndexedDbError] = useState(false);
+
+  useEffect(() => {
+    const handleIndexedDbError = (event: any) => {
+      const msg = event.reason?.message || event.message || "";
+      if (msg.includes("Indexed Database server lost") || msg.includes("IndexedDB")) {
+        console.error("GB: Erro crítico de IndexedDB detectado:", msg);
+        localStorage.setItem('gb_disable_persistence', 'true');
+        setIndexedDbError(true);
+      }
+    };
+
+    window.addEventListener('unhandledrejection', handleIndexedDbError);
+    window.addEventListener('error', handleIndexedDbError);
+
+    return () => {
+      window.removeEventListener('unhandledrejection', handleIndexedDbError);
+      window.removeEventListener('error', handleIndexedDbError);
+    };
+  }, []);
 
   useEffect(() => {
     const handleResize = () => {
@@ -92,10 +113,13 @@ const App: React.FC = () => {
               subscriptionEndsAt: userData.subscriptionEndsAt,
               paymentProvider: userData.paymentProvider,
               onboardingSeen: userData.onboardingSeen,
+              onboardingStatus: userData.onboardingStatus || { step: 1, completed: false },
               lgpdAccepted: userData.lgpdAccepted,
               status: userData.status || 'active',
               photoURL: userData.photoURL,
-              spendingLimit: userData.spendingLimit
+              spendingLimit: userData.spendingLimit,
+              incomeProfile: userData.incomeProfile,
+              suggestedGoals: userData.suggestedGoals
             };
             setSession(userSession);
 
@@ -150,6 +174,11 @@ const App: React.FC = () => {
     const now = new Date();
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
 
+    const handleError = (err: any, name: string) => {
+      console.error(`GB: Erro no listener ${name}:`, err);
+      // Opcional: Notificar usuário ou tentar reconectar
+    };
+
     const unsubTrans = onSnapshot(query(
       collection(userRef, "transactions"), 
       where("date", ">=", startOfMonth),
@@ -160,57 +189,65 @@ const App: React.FC = () => {
       setTransactions(normalized);
       setLoadingTransactions(false);
       assertSchema(session.uid, { transactions: normalized, goals, cards });
-    });
+    }, (err) => handleError(err, "Transactions"));
 
     const unsubGoals = onSnapshot(collection(userRef, "goals"), (snap) => {
       setGoals(snap.docs.map(d => normalizeGoal(d, session.uid)));
       setLoadingGoals(false);
-    });
+    }, (err) => handleError(err, "Goals"));
 
     const unsubReminders = onSnapshot(collection(userRef, "reminders"), (snap) => {
       setReminders(snap.docs.map(d => normalizeReminder(d)));
       setLoadingReminders(false);
-    });
+    }, (err) => handleError(err, "Reminders"));
 
     const unsubLimits = onSnapshot(collection(userRef, "limits"), (snap) => {
       setLimits(snap.docs.map(d => normalizeLimit(d)));
       setLoadingLimits(false);
-    });
+    }, (err) => handleError(err, "Limits"));
 
     const unsubCards = onSnapshot(collection(userRef, "cards"), (snap) => {
       setCards(snap.docs.map(d => normalizeCard(d, session.uid)));
       setLoadingCards(false);
-    });
+    }, (err) => handleError(err, "Cards"));
 
     const unsubWallets = onSnapshot(collection(userRef, "wallets"), (snap) => {
       setWallets(snap.docs.map(d => normalizeWallet(d, session.uid)));
       setLoadingWallets(false);
-    });
+    }, (err) => handleError(err, "Wallets"));
 
     const unsubCats = onSnapshot(collection(userRef, "categories"), (snap) => {
       setCategories(snap.docs.map(d => normalizeUserCategory(d)));
       setLoadingCategories(false);
-    });
+    }, (err) => handleError(err, "Categories"));
 
     const unsubDebts = onSnapshot(collection(userRef, "debts"), (snap) => {
       setDebts(snap.docs.map(d => normalizeDebt(d)));
       setLoadingDebts(false);
-    });
+    }, (err) => handleError(err, "Debts"));
 
     const unsubPatterns = onSnapshot(collection(userRef, "categoryPatterns"), (snap) => {
       setCategoryPatterns(snap.docs.map(d => ({ id: d.id, ...d.data() } as CategoryPattern)));
-    });
+    }, (err) => handleError(err, "Patterns"));
 
     const unsubNotifs = onSnapshot(query(collection(userRef, "notifications"), orderBy("createdAt", "desc"), limit(20)), (snap) => {
       setNotifications(snap.docs.map(d => ({ id: d.id, ...d.data() } as Notification)));
-    });
+    }, (err) => handleError(err, "Notifications"));
 
     const unsubUser = onSnapshot(userRef, (snap) => {
       if (snap.exists()) {
         const userData = snap.data();
-        setSession(prev => prev ? { ...prev, ...userData } : null);
+        setSession(prev => {
+          if (!prev) return null;
+          const isAdminEmail = prev.email?.toLowerCase() === 'gbfinancer@gmail.com' || prev.email?.toLowerCase() === 'blsseparate7@gmail.com';
+          return { 
+            ...prev, 
+            ...userData,
+            role: isAdminEmail ? 'admin' : (userData.role || prev.role || 'user')
+          };
+        });
       }
-    });
+    }, (err) => handleError(err, "User"));
 
     const unsubOnboarding = onSnapshot(doc(db, "users", session.uid, "onboarding", "flags"), (snap) => {
       if (snap.exists()) {
@@ -218,7 +255,7 @@ const App: React.FC = () => {
       } else {
         setOnboarding({});
       }
-    });
+    }, (err) => handleError(err, "Onboarding"));
 
     const unsubMessages = onSnapshot(query(
       collection(userRef, "messages"),
@@ -226,7 +263,7 @@ const App: React.FC = () => {
       limit(50)
     ), (snap) => {
       setMessages(snap.docs.map(d => ({ id: d.id, ...d.data() } as Message)));
-    });
+    }, (err) => handleError(err, "Messages"));
 
     return () => { 
       unsubTrans(); unsubGoals(); unsubReminders(); 
@@ -271,7 +308,7 @@ const App: React.FC = () => {
       lgpdVersion: "1.0"
     });
     setSession(prev => prev ? { ...prev, lgpdAccepted: true } : null);
-    setOnboardingStep('setup');
+    setOnboardingStep('guided');
   };
 
   const handleSetupComplete = async (data: { incomeProfile: any; bills: any[]; goals: any[] }) => {
@@ -540,6 +577,7 @@ const App: React.FC = () => {
             setExtratoFilters(filters);
             setActiveTab('extrato');
           }}
+          highlightInput={onboardingStep === 'guided' && session.onboardingStatus?.step === 3}
         />
       ) : (
         <LandingPage onLogin={(s) => setSession(s)} onOpenSupport={() => setActiveTab('support')} />
@@ -554,6 +592,42 @@ const App: React.FC = () => {
   return (
     <div className={`flex h-dvh w-full overflow-hidden bg-[var(--bg-body)] text-[var(--text-primary)] transition-colors duration-300`}>
       
+      {/* Erro Crítico de IndexedDB */}
+      {indexedDbError && (
+        <div className="fixed inset-0 z-[9999] bg-black/80 backdrop-blur-md flex items-center justify-center p-6 text-center">
+          <div className="bg-[var(--bg-card)] p-8 rounded-2xl shadow-2xl max-w-md border border-[var(--border-primary)]">
+            <div className="w-16 h-16 bg-red-500/20 text-red-500 rounded-full flex items-center justify-center mx-auto mb-4">
+              <Zap className="w-8 h-8" />
+            </div>
+            <h2 className="text-xl font-bold mb-2">Conexão com Banco de Dados Perdida</h2>
+            <p className="text-[var(--text-secondary)] text-sm mb-6">
+              O navegador perdeu a conexão com o banco de dados local (IndexedDB). 
+              Isso pode acontecer devido a economia de energia ou limpeza de cache.
+            </p>
+            <div className="flex flex-col gap-3">
+              <button 
+                onClick={() => window.location.reload()}
+                className="w-full py-3 bg-[var(--green-whatsapp)] text-white font-bold rounded-xl hover:opacity-90 transition-opacity"
+              >
+                Recarregar Página
+              </button>
+              <button 
+                onClick={async () => {
+                  localStorage.removeItem('gb_disable_persistence');
+                  try {
+                    await clearIndexedDbPersistence(db);
+                  } catch (e) {}
+                  window.location.reload();
+                }}
+                className="w-full py-2 text-[var(--text-secondary)] text-xs hover:underline"
+              >
+                Tentar reativar banco de dados local
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Overlay para fechar menu ao clicar fora */}
       {sidebarExpanded && (
         <div 
@@ -578,6 +652,7 @@ const App: React.FC = () => {
             setExpanded={setSidebarExpanded} 
             role={session.role}
             onClose={() => setSidebarExpanded(false)}
+            highlightedTab={onboardingStep === 'guided' && session.onboardingStatus?.step === 6 ? 'dash' : undefined}
           />
         </div>
       )}
@@ -637,6 +712,20 @@ const App: React.FC = () => {
         {/* PWA Install Prompt */}
         {session && onboardingStep === 'none' && (
           <PWAInstallPrompt onClose={() => {}} />
+        )}
+
+        {/* Guided Onboarding Overlay */}
+        {session && onboardingStep === 'guided' && (
+          <GuidedOnboarding 
+            user={session} 
+            onComplete={handleSetupComplete} 
+            onUpdateStatus={async (status) => {
+              if (!session?.uid) return;
+              const { syncUserData } = await import('./services/databaseService');
+              await syncUserData(session.uid, { onboardingStatus: { ...session.onboardingStatus, ...status } as any });
+            }}
+            onNavigateToTab={(tab) => setActiveTab(tab)}
+          />
         )}
       </div>
     </div>

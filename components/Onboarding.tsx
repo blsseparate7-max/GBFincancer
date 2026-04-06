@@ -57,7 +57,7 @@ const Onboarding: React.FC<OnboardingProps> = ({ user, onComplete }) => {
         {step === 0 && (
           <div className="text-center space-y-6">
             <div className="w-20 h-20 bg-[var(--green-whatsapp)] rounded-full flex items-center justify-center mx-auto shadow-lg text-white text-4xl font-black italic">GB</div>
-            <h2 className="text-2xl font-black text-[var(--text-primary)] uppercase tracking-tighter">Olá, {user.name.split(' ')[0]}!</h2>
+            <h2 className="text-2xl font-black text-[var(--text-primary)] uppercase tracking-tighter">Olá, {(user.name || 'Usuário').split(' ')[0]}!</h2>
             <p className="text-sm text-[var(--text-muted)] leading-relaxed">
               Sou seu novo Mentor Financeiro. Para começar a auditar seu dinheiro, preciso conhecer o básico do seu estilo de vida.
             </p>

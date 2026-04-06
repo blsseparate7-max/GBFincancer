@@ -8,7 +8,7 @@ import { fetchChatContext } from '../services/databaseService';
 import { formatCurrency, calculateMonthlySummary } from '../services/summaryService';
 import ChatComposer from './ChatComposer';
 
-import { db } from '../services/firebaseConfig';
+import { db, auth } from '../services/firebaseConfig';
 import { collection, addDoc, serverTimestamp, query, where, getDocs, limit, doc, updateDoc, getDoc } from 'firebase/firestore';
 
 interface ChatProps {
@@ -26,11 +26,13 @@ interface ChatProps {
   onToggleSidebar: () => void;
   onOpenProfile: () => void;
   setMessages?: (msgs: Message[]) => void;
+  onNavigateToExtrato?: (filters: any) => void;
+  highlightInput?: boolean;
 }
 
 const ChatInterface: React.FC<ChatProps> = ({ 
   user, messages, transactions, limits, reminders, 
-  cards, wallets, categories, goals, debts, categoryPatterns, onToggleSidebar, onOpenProfile, setMessages 
+  cards, wallets, categories, goals, debts, categoryPatterns, onToggleSidebar, onOpenProfile, setMessages, onNavigateToExtrato, highlightInput 
 }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [pendingAction, setPendingAction] = useState<any>(null);
@@ -42,16 +44,18 @@ const ChatInterface: React.FC<ChatProps> = ({
   const scrollRef = useRef<HTMLDivElement>(null);
   const isProcessingRef = useRef(false);
   const summarySentRef = useRef(false);
+  const onboardingPromptSentRef = useRef(false);
 
   // Helper para enviar mensagem para o Firestore (Sincronização Total)
   const sendMessageToFirestore = async (text: string, sender: 'user' | 'ai', dedupeKey?: string) => {
-    if (!user.uid) return;
+    const uid = user.uid || auth.currentUser?.uid;
+    if (!uid) return;
     
     console.log(`GB Chat: Enviando mensagem (${sender}): "${text.substring(0, 30)}..."`);
     
     if (dedupeKey) {
       const q = query(
-        collection(db, "users", user.uid, "messages"),
+        collection(db, "users", uid, "messages"),
         where("dedupeKey", "==", dedupeKey),
         limit(1)
       );
@@ -63,7 +67,7 @@ const ChatInterface: React.FC<ChatProps> = ({
     }
 
     try {
-      await addDoc(collection(db, "users", user.uid, "messages"), {
+      await addDoc(collection(db, "users", uid, "messages"), {
         text,
         sender,
         timestamp: serverTimestamp(),
@@ -162,6 +166,53 @@ const ChatInterface: React.FC<ChatProps> = ({
     return () => clearTimeout(timer);
   }, [user, reminders, transactions]);
 
+  // Onboarding Welcome Message
+  useEffect(() => {
+    if (!user || !user.uid || !user.onboardingStatus || user.onboardingStatus.completed || onboardingPromptSentRef.current) return;
+    
+    const checkOnboardingChat = async () => {
+      if (user.onboardingStatus?.step === 3 && !user.onboardingStatus?.chatContextResponded) {
+        const dedupeKey = `onboarding-welcome-${user.uid}`;
+        
+        // Verificar se já perguntamos
+        const q = query(
+          collection(db, "users", user.uid, "messages"),
+          where("dedupeKey", "==", dedupeKey),
+          limit(1)
+        );
+        const snap = await getDocs(q);
+        
+        if (snap.empty) {
+          onboardingPromptSentRef.current = true;
+          const income = user.incomeProfile?.sources?.[0];
+          const amount = income?.amountExpected || 2000;
+          const wallet = income?.targetWalletName || 'Nubank';
+          
+          const firstName = (user.name || 'Usuário').split(' ')[0];
+          
+          await sendMessageToFirestore(
+            `Olá ${firstName}! Vi que você recebe **${formatCurrency(amount)}** no **${wallet}**. Já caiu na conta este mês? 💰`,
+            'ai',
+            dedupeKey
+          );
+          
+          setPendingSalaryReminder({
+            id: 'onboarding-income',
+            description: income?.description || 'Salário',
+            amount: amount,
+            dueDay: 1,
+            category: 'Recebimento',
+            type: 'RECEIVE',
+            recurring: true,
+            targetWalletName: wallet
+          } as any);
+        }
+      }
+    };
+
+    checkOnboardingChat();
+  }, [user.onboardingStatus?.step, user.uid]);
+
   const handleSalaryConfirm = async (confirmed: boolean) => {
     if (!pendingSalaryReminder) return;
 
@@ -187,22 +238,63 @@ const ChatInterface: React.FC<ChatProps> = ({
       await sendMessageToFirestore("Sem problemas! Me avise quando o dinheiro cair para eu atualizar seus saldos. 😉", 'ai');
     }
     
+    // Update onboarding status if this was the onboarding step
+    if (user.onboardingStatus?.step === 3) {
+       const { syncUserData } = await import('../services/databaseService');
+       await syncUserData(user.uid, { 
+         onboardingStatus: { 
+           ...user.onboardingStatus, 
+           chatContextResponded: true
+         } as any 
+       });
+    }
+    
     setPendingSalaryReminder(null);
   };
 
   const handleSend = async (text: string) => {
     if (!text.trim() || isLoading || isProcessingRef.current) return;
+
+    // INTERCEPTAÇÃO CRÍTICA: Verificar se há confirmação pendente de onboarding antes da IA
+    if (pendingSalaryReminder && (
+      text.toLowerCase().includes('sim') || 
+      text.toLowerCase() === 's' || 
+      text.toLowerCase().includes('claro') ||
+      text.toLowerCase().includes('já')
+    )) {
+      await handleSalaryConfirm(true);
+      return; // Interrompe o fluxo para não chamar a IA desnecessariamente
+    }
     
+    const uid = user.uid || auth.currentUser?.uid;
+    if (!uid) {
+      console.error("GB Chat: UID não encontrado para envio.");
+      return;
+    }
+
     console.log(`GB Chat: handleSend recebido: "${text}"`);
     isProcessingRef.current = true;
     await sendMessageToFirestore(text.trim(), 'user');
     setIsLoading(true);
 
     try {
+      // Update onboarding status if this was the onboarding step
+      if (user.onboardingStatus?.step === 3 && !user.onboardingStatus?.chatContextResponded) {
+        const { syncUserData } = await import('../services/databaseService');
+        await syncUserData(uid, { 
+          onboardingStatus: { 
+            ...user.onboardingStatus, 
+            chatContextResponded: true
+          } as any 
+        });
+      }
+
       // 1. Buscar contexto ATUALIZADO do Firestore (Fonte da Verdade)
       console.log("GB Chat: Buscando contexto atualizado...");
-      const freshContext = await fetchChatContext(user.uid);
-      const finalContext = freshContext ? { ...freshContext, userPatterns: categoryPatterns } : { reminders, cards, wallets, categories, transactions, goals, limits, debts, userPatterns: categoryPatterns };
+      const freshContext = await fetchChatContext(uid);
+      const finalContext = freshContext 
+        ? { ...freshContext, userPatterns: categoryPatterns } 
+        : { user, reminders, cards, wallets, categories, transactions, goals, limits, debts, userPatterns: categoryPatterns };
 
       // 2. Processar com Gemini
       console.log("GB Chat: Chamando Gemini API...");
@@ -820,11 +912,13 @@ const ChatInterface: React.FC<ChatProps> = ({
       </div>
 
       {/* Composer */}
-      <ChatComposer 
-        onSendText={(text) => handleSend(text)} 
-        onSendFile={(file) => handleSendFile(file)}
-        isLoading={isLoading || !!pendingAction || pendingEvents.length > 0}
-      />
+      <div className={highlightInput ? 'onboarding-highlight' : ''}>
+        <ChatComposer 
+          onSendText={(text) => handleSend(text)} 
+          onSendFile={(file) => handleSendFile(file)}
+          isLoading={isLoading || !!pendingAction || pendingEvents.length > 0}
+        />
+      </div>
     </div>
   );
 };

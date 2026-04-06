@@ -99,7 +99,8 @@ export const normalizeCard = (docSnap: any, uid?: string): CreditCardInfo => {
     invoiceAmount: currentInvoiceAmount,
     dueDay: data.dueDay || 10,
     closingDay: data.closingDay || 7,
-    updatedAt: data.updatedAt || null
+    updatedAt: data.updatedAt || null,
+    isQA: !!data.isQA
   };
 };
 
@@ -130,7 +131,8 @@ export const normalizeGoal = (docSnap: any, uid?: string): SavingGoal => {
     // Novos campos
     status: data.status || 'ACTIVE',
     resolved: !!data.resolved,
-    lastPromptedAt: data.lastPromptedAt || null
+    lastPromptedAt: data.lastPromptedAt || null,
+    isQA: !!data.isQA
   };
 };
 
@@ -155,7 +157,8 @@ export const normalizeWallet = (docSnap: any, uid?: string): Wallet => {
     note: data.note || '',
     isActive: data.isActive !== undefined ? data.isActive : true,
     createdAt: data.createdAt || null,
-    updatedAt: data.updatedAt || null
+    updatedAt: data.updatedAt || null,
+    isQA: !!data.isQA
   };
 };
 
@@ -172,12 +175,23 @@ export const normalizeReminder = (docSnap: any): Bill => {
     normalizedType = 'RECEIVE';
   }
 
+  const rawDate = data.dueDate || data.date;
+  let dueDate = new Date().toISOString();
+  try {
+    if (rawDate) {
+      const d = new Date(rawDate);
+      if (!isNaN(d.getTime())) {
+        dueDate = d.toISOString();
+      }
+    }
+  } catch (e) {}
+
   return {
     id,
     description: data.description || data.desc || data.name || 'Sem descrição',
     amount: data.amount || data.value || 0,
-    dueDate: data.dueDate || data.date || new Date().toISOString(),
-    dueDay: data.dueDay || (data.dueDate ? new Date(data.dueDate).getDate() : (data.day || 1)),
+    dueDate: dueDate,
+    dueDay: data.dueDay || (dueDate ? new Date(dueDate).getDate() : (data.day || 1)),
     isPaid: data.isPaid || data.paid || false,
     paidAt: data.paidAt || null,
     monthKey: data.monthKey || '',
@@ -187,11 +201,12 @@ export const normalizeReminder = (docSnap: any): Bill => {
     isActive: data.isActive !== undefined ? data.isActive : true,
     cardId: data.cardId || null,
     // Novos campos
-    status: data.status || (data.isPaid ? 'PAID' : 'PENDING'),
+    status: data.status || (data.isPaid ? 'paid' : 'pending'),
     cycleKey: data.cycleKey || null,
     lastPromptedAt: data.lastPromptedAt || null,
     resolved: !!data.resolved,
-    dedupeKey: data.dedupeKey || null
+    dedupeKey: data.dedupeKey || null,
+    isQA: !!data.isQA
   };
 };
 
@@ -208,7 +223,8 @@ export const normalizeLimit = (docSnap: any): CategoryLimit => {
     limit: data.limit !== undefined ? data.limit : (data.amount || data.maxAmount || 0),
     spent: data.spent || data.used || 0,
     isActive: data.isActive !== undefined ? data.isActive : true,
-    updatedAt: data.updatedAt || null
+    updatedAt: data.updatedAt || null,
+    isQA: !!data.isQA
   };
 };
 
@@ -259,7 +275,8 @@ export const normalizeDebt = (docSnap: any): any => {
     observation: data.observation || '',
     strategy: data.strategy || null,
     createdAt: data.createdAt || null,
-    updatedAt: data.updatedAt || null
+    updatedAt: data.updatedAt || null,
+    isQA: !!data.isQA
   };
 };
 
@@ -274,6 +291,17 @@ export const normalizeTransaction = (docSnap: any): any => {
   const rawAmount = data.amount !== undefined ? data.amount : (data.value || 0);
   const amount = Number(rawAmount) || 0;
 
+  const rawDate = data.date || data.timestamp;
+  let finalDate = new Date().toISOString().split('T')[0];
+  try {
+    if (rawDate) {
+      const d = new Date(rawDate);
+      if (!isNaN(d.getTime())) {
+        finalDate = d.toISOString().split('T')[0];
+      }
+    }
+  } catch (e) {}
+
   return {
     id,
     description: data.description || data.desc || data.name || 'Sem descrição',
@@ -281,7 +309,7 @@ export const normalizeTransaction = (docSnap: any): any => {
     category: normalizeCategoryName(data.category || data.tag || 'Outros'),
     type: data.type || (amount < 0 ? 'EXPENSE' : 'INCOME'),
     paymentMethod: data.paymentMethod === 'CREDIT' ? 'CARD' : (data.paymentMethod || data.method || 'PIX'),
-    date: data.date || data.timestamp || new Date().toISOString().split('T')[0],
+    date: finalDate,
     createdAt: data.createdAt || null,
     cardId: data.cardId || null,
     sourceWalletId: data.sourceWalletId || data.walletId || null,
@@ -297,7 +325,11 @@ export const normalizeTransaction = (docSnap: any): any => {
     dedupeKey: data.dedupeKey || null,
     resolved: !!data.resolved,
     source: data.source || 'CHAT',
-    confirmedBy: data.confirmedBy || null
+    confirmedBy: data.confirmedBy || null,
+    isQA: !!data.isQA,
+    installmentNumber: data.installmentNumber || null,
+    totalInstallments: data.totalInstallments || null,
+    originalAmount: data.originalAmount || null
   };
 };
 
@@ -315,7 +347,8 @@ export const normalizeUserCategory = (docSnap: any): UserCategory => {
     color: data.color || '#128C7E',
     type: data.type || 'EXPENSE',
     createdAt: data.createdAt || null,
-    updatedAt: data.updatedAt || null
+    updatedAt: data.updatedAt || null,
+    isQA: !!data.isQA
   };
 };
 

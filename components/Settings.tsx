@@ -63,6 +63,36 @@ const Settings: React.FC<SettingsProps> = ({ user, onLogout }) => {
           </div>
           <div className="w-10 h-5 bg-[var(--green-whatsapp)] rounded-full relative"><div className="w-4 h-4 bg-white rounded-full absolute right-0.5 top-0.5 shadow-sm"></div></div>
         </div>
+
+        <div className="p-5 border-b border-[var(--border)]">
+          <div className="flex justify-between items-center">
+            <div>
+              <h4 className="text-sm font-bold text-[var(--text-primary)]">Moeda do Sistema</h4>
+              <p className="text-[10px] text-[var(--text-muted)]">Selecione sua moeda preferida</p>
+            </div>
+            <select 
+              className="bg-[var(--bg-body)] text-[var(--text-primary)] text-xs font-bold p-2 rounded-lg border border-[var(--border)] outline-none"
+              defaultValue={user.currency || 'BRL'}
+              onChange={async (e) => {
+                const newCurrency = e.target.value;
+                if (window.confirm("⚠️ ATENÇÃO: Mudar a moeda não converte os valores existentes. Todos os seus registros atuais permanecerão com os mesmos números, mas serão exibidos com o novo símbolo. Deseja continuar?")) {
+                  const { syncUserData } = await import('../services/databaseService');
+                  await syncUserData(user.uid, { currency: newCurrency });
+                } else {
+                  e.target.value = user.currency || 'BRL';
+                }
+              }}
+            >
+              <option value="BRL">R$ (Real)</option>
+              <option value="USD">$ (Dólar)</option>
+              <option value="EUR">€ (Euro)</option>
+              <option value="GBP">£ (Libra)</option>
+            </select>
+          </div>
+          <p className="mt-2 text-[9px] text-rose-500 font-bold uppercase tracking-tighter animate-pulse">
+            * A mudança de moeda não realiza conversão de câmbio automática.
+          </p>
+        </div>
       </div>
 
       <button 

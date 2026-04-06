@@ -41,12 +41,13 @@ const HealthScoreTab: React.FC<HealthScoreTabProps> = ({ transactions = [], limi
     // 4. Progresso de Metas
     const goalsWithProgress = goals.filter(g => g.targetAmount > 0);
     const avgGoalProgress = goalsWithProgress.length > 0 
-      ? goalsWithProgress.reduce((s, g) => s + (g.currentAmount / g.targetAmount), 0) / goalsWithProgress.length * 100
+      ? goalsWithProgress.reduce((s, g) => s + (Number(g.currentAmount) / Number(g.targetAmount) || 0), 0) / goalsWithProgress.length * 100
       : 0;
     const goalActivity = goals.some(g => {
         if (!g.updatedAt) return false;
-        const updatedAt = g.updatedAt?.toDate ? g.updatedAt.toDate() : new Date(g.updatedAt);
-        return updatedAt >= sevenDaysAgo;
+        const dateValue = g.updatedAt?.toDate ? g.updatedAt.toDate() : new Date(g.updatedAt);
+        if (isNaN(dateValue.getTime())) return false;
+        return dateValue >= sevenDaysAgo;
     }) ? 100 : 50;
 
     // CÁLCULO FINAL DO SCORE (0-100)
@@ -57,18 +58,19 @@ const HealthScoreTab: React.FC<HealthScoreTabProps> = ({ transactions = [], limi
     // 20% - Metas (Futuro)
 
     let balancePoints = 0;
-    if (savingsRate >= 30) balancePoints = 100;
-    else if (savingsRate >= 15) balancePoints = 85;
-    else if (savingsRate >= 5) balancePoints = 70;
-    else if (savingsRate >= 0) balancePoints = 50;
-    else if (savingsRate >= -20) balancePoints = 25;
+    const safeSavingsRate = isNaN(savingsRate) ? 0 : savingsRate;
+    if (safeSavingsRate >= 30) balancePoints = 100;
+    else if (safeSavingsRate >= 15) balancePoints = 85;
+    else if (safeSavingsRate >= 5) balancePoints = 70;
+    else if (safeSavingsRate >= 0) balancePoints = 50;
+    else if (safeSavingsRate >= -20) balancePoints = 25;
     else balancePoints = 0;
 
     const finalScore = Math.round(
       (balancePoints * 0.4) + 
-      (limitHealth * 0.2) + 
-      (consistencyScore * 0.2) + 
-      ((avgGoalProgress * 0.5 + goalActivity * 0.5) * 0.2)
+      ((isNaN(limitHealth) ? 100 : limitHealth) * 0.2) + 
+      ((isNaN(consistencyScore) ? 0 : consistencyScore) * 0.2) + 
+      (((isNaN(avgGoalProgress) ? 0 : avgGoalProgress) * 0.5 + (isNaN(goalActivity) ? 50 : goalActivity) * 0.5) * 0.2)
     );
 
     // Níveis

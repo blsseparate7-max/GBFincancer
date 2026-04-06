@@ -39,6 +39,28 @@ body {
     transition: background-color 0.3s ease, color 0.3s ease;
 }
 
+@keyframes onboarding-glow {
+  0% { box-shadow: 0 0 5px rgba(0, 168, 132, 0.4); border-color: rgba(0, 168, 132, 0.4); }
+  50% { box-shadow: 0 0 20px rgba(0, 168, 132, 0.8); border-color: rgba(0, 168, 132, 1); }
+  100% { box-shadow: 0 0 5px rgba(0, 168, 132, 0.4); border-color: rgba(0, 168, 132, 0.4); }
+}
+
+.onboarding-highlight {
+  position: relative;
+  z-index: 10001 !important;
+  animation: onboarding-glow 2s infinite;
+  border: 2px solid #00a884 !important;
+  pointer-events: auto !important;
+}
+
+.onboarding-overlay-active {
+  pointer-events: none;
+}
+
+.onboarding-overlay-active .onboarding-highlight {
+  pointer-events: auto;
+}
+
 .whatsapp-pattern {
     background-image: url('https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png');
     background-repeat: repeat;

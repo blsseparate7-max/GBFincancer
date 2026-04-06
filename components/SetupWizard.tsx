@@ -197,7 +197,7 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ user, onComplete }) => {
           <div className="text-center space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
             <div className="w-24 h-24 bg-[#00A884] rounded-[2.5rem] flex items-center justify-center mx-auto shadow-2xl text-white text-5xl font-black italic transform -rotate-6">GB</div>
             <div className="space-y-4">
-              <h2 className="text-3xl font-black text-[#E9EDEF] uppercase tracking-tighter leading-tight">Olá, {user.name.split(' ')[0]}!</h2>
+              <h2 className="text-3xl font-black text-[#E9EDEF] uppercase tracking-tighter leading-tight">Olá, {(user.name || 'Usuário').split(' ')[0]}!</h2>
               <p className="text-base text-[#8696A0] leading-relaxed max-w-xs mx-auto">
                 Vamos configurar sua inteligência financeira. Preciso entender como seu dinheiro entra para te dar os melhores insights.
               </p>
@@ -309,6 +309,64 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ user, onComplete }) => {
                       </select>
                     </div>
                   </div>
+
+                  {newSourceFreq === 'MONTHLY' && (
+                    <div className="space-y-1">
+                      <label className="text-[9px] font-black text-[#8696A0] uppercase ml-2">Dia do Recebimento (1-31)</label>
+                      <input 
+                        type="number" min="1" max="31"
+                        placeholder="Ex: 5"
+                        className="w-full bg-[#111B21] p-4 rounded-xl text-sm font-bold text-[#E9EDEF] outline-none border-2 border-transparent focus:border-[#00A884] transition-all"
+                        value={newSourceDates[0] || ''} 
+                        onChange={e => {
+                          const val = parseInt(e.target.value);
+                          if (!isNaN(val) && val >= 1 && val <= 31) {
+                            setNewSourceDates([val]);
+                          } else if (e.target.value === '') {
+                            setNewSourceDates([]);
+                          }
+                        }}
+                      />
+                    </div>
+                  )}
+
+                  {newSourceFreq === 'BIWEEKLY' && (
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1">
+                        <label className="text-[9px] font-black text-[#8696A0] uppercase ml-2">1º Dia (1-31)</label>
+                        <input 
+                          type="number" min="1" max="31"
+                          className="w-full bg-[#111B21] p-4 rounded-xl text-sm font-bold text-[#E9EDEF] outline-none border-2 border-transparent focus:border-[#00A884] transition-all"
+                          value={newSourceDates[0] || ''} 
+                          onChange={e => {
+                            const val = parseInt(e.target.value);
+                            const current = [...newSourceDates];
+                            if (!isNaN(val) && val >= 1 && val <= 31) {
+                              current[0] = val;
+                              setNewSourceDates(current);
+                            }
+                          }}
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[9px] font-black text-[#8696A0] uppercase ml-2">2º Dia (1-31)</label>
+                        <input 
+                          type="number" min="1" max="31"
+                          className="w-full bg-[#111B21] p-4 rounded-xl text-sm font-bold text-[#E9EDEF] outline-none border-2 border-transparent focus:border-[#00A884] transition-all"
+                          value={newSourceDates[1] || ''} 
+                          onChange={e => {
+                            const val = parseInt(e.target.value);
+                            const current = [...newSourceDates];
+                            if (!isNaN(val) && val >= 1 && val <= 31) {
+                              current[1] = val;
+                              setNewSourceDates(current);
+                            }
+                          }}
+                        />
+                      </div>
+                    </div>
+                  )}
+
                   <div className="space-y-1">
                     <label className="text-[9px] font-black text-[#8696A0] uppercase ml-2">Valor Médio (Opcional)</label>
                     <MoneyInput 

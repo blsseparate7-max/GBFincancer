@@ -7,9 +7,10 @@ interface SidebarProps {
   setExpanded: (val: boolean) => void;
   role?: string;
   onClose?: () => void;
+  highlightedTab?: string;
 }
 
-const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, expanded, setExpanded, role, onClose }) => {
+const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, expanded, setExpanded, role, onClose, highlightedTab }) => {
   const isAdmin = role === 'admin';
 
   const groups = [
@@ -110,7 +111,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, expanded, se
               <button
                 key={item.id}
                 onClick={() => { setActiveTab(item.id); if(onClose) onClose(); }}
-                className={`w-full flex items-center gap-4 p-4 rounded-3xl transition-all relative group ${activeTab === item.id ? 'bg-[var(--bg-body)] text-[var(--green-whatsapp)] shadow-inner border border-[var(--border)]' : 'text-[var(--text-muted)] hover:bg-black/5 hover:text-[var(--text-primary)]'}`}
+                className={`w-full flex items-center gap-4 p-4 rounded-3xl transition-all relative group ${activeTab === item.id ? 'bg-[var(--bg-body)] text-[var(--green-whatsapp)] shadow-inner border border-[var(--border)]' : 'text-[var(--text-muted)] hover:bg-black/5 hover:text-[var(--text-primary)]'} ${highlightedTab === item.id ? 'onboarding-highlight' : ''}`}
               >
                 <span className={`text-xl min-w-[24px] text-center transition-transform ${activeTab === item.id ? 'scale-110' : 'opacity-50 group-hover:opacity-100'}`}>{item.icon}</span>
                 {expanded && <span className="text-[14px] font-bold whitespace-nowrap tracking-tight">{item.label}</span>}

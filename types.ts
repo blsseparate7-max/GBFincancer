@@ -29,6 +29,7 @@ export interface SavingGoal {
   status?: 'active' | 'completed' | 'canceled';
   resolved?: boolean;
   lastPromptedAt?: any;
+  isQA?: boolean;
 }
 
 export interface Transaction {
@@ -57,6 +58,7 @@ export interface Transaction {
   cycleKey?: string;
   status?: 'confirmed' | 'pending' | 'canceled';
   resolved?: boolean;
+  isQA?: boolean;
 }
 
 export interface CategoryLimit {
@@ -68,6 +70,7 @@ export interface CategoryLimit {
   notified80Month?: string;
   notified100Month?: string;
   updatedAt: any;
+  isQA?: boolean;
 }
 
 export interface CreditCardInfo {
@@ -81,6 +84,7 @@ export interface CreditCardInfo {
   dueDay: number;     
   closingDay: number; 
   updatedAt: any;
+  isQA?: boolean;
 }
 
 export interface Message {
@@ -93,6 +97,7 @@ export interface Message {
   actionType?: string;
   actionPayload?: any;
   lastPromptedAt?: any;
+  isQA?: boolean;
 }
 
 export type EventType = 
@@ -130,7 +135,8 @@ export type EventType =
   | 'CREATE_DEBT'
   | 'UPDATE_DEBT'
   | 'DELETE_DEBT'
-  | 'REGISTER_DEBT_PAYMENT';
+  | 'REGISTER_DEBT_PAYMENT'
+  | 'UPDATE_ONBOARDING';
 
 export interface CategoryPattern {
   id: string;
@@ -176,6 +182,7 @@ export interface Bill {
   resolved?: boolean;
   dedupeKey?: string;
   status?: 'pending' | 'paid' | 'received' | 'canceled';
+  isQA?: boolean;
 }
 
 export type IncomeFrequency = 'MONTHLY' | 'BIWEEKLY' | 'WEEKLY' | 'DAILY' | 'VARIABLE';
@@ -216,7 +223,18 @@ export interface UserOnboarding {
 }
 
 export type SubscriptionStatus = 'trial' | 'active' | 'inactive';
-export type SubscriptionPlan = 'mensal' | 'anual';
+export type SubscriptionPlan = 'mensal' | 'anual' | 'premium';
+
+export interface OnboardingStatus {
+  step: number;
+  completed: boolean;
+  incomeCaptured?: boolean;
+  billsCaptured?: boolean;
+  chatContextResponded?: boolean;
+  limitsCaptured?: boolean;
+  goalsCaptured?: boolean;
+  tabsPresented?: boolean;
+}
 
 export interface UserSession {
   uid: string;
@@ -231,6 +249,7 @@ export interface UserSession {
   subscriptionEndsAt?: any;
   paymentProvider?: 'kiwify';
   onboardingSeen?: boolean;
+  onboardingStatus?: OnboardingStatus;
   lgpdAccepted?: boolean;
   lgpdAcceptedAt?: any;
   lgpdVersion?: string;
@@ -238,12 +257,14 @@ export interface UserSession {
   defaultReceivingWallet?: string;
   spendingLimit?: number;
   suggestedGoals?: any[];
+  currency?: string;
   status?: 'active' | 'blocked' | 'deleted';
   lastLogin?: any;
   createdAt?: any;
   id?: string;
   password?: string;
   photoURL?: string;
+  isQA?: boolean;
 }
 
 export interface AdminConfig {
@@ -273,6 +294,7 @@ export interface CustomerData {
   subscriptionEndsAt?: any;
   paymentProvider?: 'kiwify';
   onboardingSeen?: boolean;
+  onboardingStatus?: OnboardingStatus;
   lgpdAccepted?: boolean;
   lgpdAcceptedAt?: any;
   lgpdVersion?: string;
@@ -280,9 +302,11 @@ export interface CustomerData {
   defaultReceivingWallet?: string;
   spendingLimit?: number;
   suggestedGoals?: any[];
+  currency?: string;
   createdAt?: any;
   lastLogin?: any;
   localUpdatedAt?: string;
+  isQA?: boolean;
 }
 
 export interface UserCategory {
@@ -293,6 +317,7 @@ export interface UserCategory {
   type: 'INCOME' | 'EXPENSE';
   createdAt: any;
   updatedAt: any;
+  isQA?: boolean;
 }
 
 export interface Note {
@@ -342,6 +367,7 @@ export interface Wallet {
   isActive?: boolean;
   createdAt: any;
   updatedAt: any;
+  isQA?: boolean;
 }
 
 export interface WalletTransfer {
@@ -371,6 +397,7 @@ export interface Debt {
   strategy?: 'SNOWBALL' | 'AVALANCHE';
   createdAt: any;
   updatedAt: any;
+  isQA?: boolean;
 }
 
 export type DebtPayment = {

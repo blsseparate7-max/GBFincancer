@@ -42,7 +42,7 @@ const FINANCE_PARSER_SCHEMA = {
           payload: { 
             type: Type.OBJECT,
             properties: {
-              amount: { type: Type.NUMBER },
+              amount: { type: Type.NUMBER, description: "VALOR TOTAL da compra. Se o usuário disser '100 em 12x', calcule o total (1200)." },
               category: { type: Type.STRING },
               description: { type: Type.STRING },
               paymentMethod: { type: Type.STRING, enum: ['PIX', 'DEBIT', 'CREDIT', 'CASH', 'TRANSFER', 'CARD'] },
@@ -56,9 +56,12 @@ const FINANCE_PARSER_SCHEMA = {
               targetAmount: { type: Type.NUMBER },
               location: { type: Type.STRING },
               goalId: { type: Type.STRING },
+              targetWalletId: { type: Type.STRING, description: "ID da carteira de destino para entradas ou transferências" },
+              sourceWalletId: { type: Type.STRING, description: "ID da carteira de origem para saídas ou transferências" },
+              targetWalletName: { type: Type.STRING, description: "Nome da carteira de destino" },
+              sourceWalletName: { type: Type.STRING, description: "Nome da carteira de origem" },
               fromWalletId: { type: Type.STRING },
               toWalletId: { type: Type.STRING },
-              sourceWalletId: { type: Type.STRING },
               note: { type: Type.STRING },
               type: { type: Type.STRING, enum: ['PAY', 'RECEIVE'] },
               id: { type: Type.STRING },
@@ -66,7 +69,7 @@ const FINANCE_PARSER_SCHEMA = {
               oldName: { type: Type.STRING },
               transactionId: { type: Type.STRING },
               newCategory: { type: Type.STRING },
-              installments: { type: Type.NUMBER, description: "Número de parcelas para compras no cartão de crédito" }
+              installments: { type: Type.NUMBER, description: "Número de parcelas (ex: 12). Se for compra parcelada, este campo é OBRIGATÓRIO." }
             }
           }
         },
@@ -78,7 +81,7 @@ const FINANCE_PARSER_SCHEMA = {
   required: ["reply"]
 };
 
-export const parseMessage = async (text: string, userName: string, context?: { reminders?: any[], cards?: any[], wallets?: any[], categories?: any[], transactions?: any[], goals?: any[], limits?: any[], debts?: any[], spendingLimit?: number | null, userPatterns?: any[] }) => {
+export const parseMessage = async (text: string, userName: string, context?: { user?: any, reminders?: any[], cards?: any[], wallets?: any[], categories?: any[], transactions?: any[], goals?: any[], limits?: any[], debts?: any[], spendingLimit?: number | null, userPatterns?: any[] }) => {
   try {
     const ai = getAI();
     if (!ai) return { reply: "IA Indisponível." };
@@ -150,6 +153,14 @@ export const parseMessage = async (text: string, userName: string, context?: { r
       `TETO DE GASTOS GLOBAL MENSAL: R$ ${context.spendingLimit}` : 
       'TETO DE GASTOS GLOBAL: Não definido.';
 
+    const incomeProfileContext = context?.user?.incomeProfile ?
+      `PERFIL DE RENDA (Fontes Esperadas): ${JSON.stringify(context.user.incomeProfile)}` :
+      'Perfil de renda não configurado.';
+
+    const onboardingContext = context?.user?.onboardingStatus ?
+      `STATUS DO ONBOARDING: Passo ${context.user.onboardingStatus.step}, Completado: ${context.user.onboardingStatus.completed}. ${context.user.onboardingStatus.step === 3 ? 'O usuário deve confirmar se já recebeu o salário este mês. Se ele disser "Sim" ou confirmar, você DEVE gerar o evento ADD_INCOME usando os dados do PERFIL DE RENDA.' : ''}` :
+      '';
+
     // Contexto de Médias por Categoria (para detecção de gastos suspeitos)
     const categoryAverages = context?.transactions ? 
       (() => {
@@ -184,6 +195,8 @@ export const parseMessage = async (text: string, userName: string, context?: { r
       ${cardsContext}
       ${walletsContext}
       ${spendingLimitContext}
+      ${incomeProfileContext}
+      ${onboardingContext}
 
       ${patternsContext}
 
@@ -191,11 +204,19 @@ export const parseMessage = async (text: string, userName: string, context?: { r
       1. Se o usuário mencionar algo que combine com o MAPA DE PALAVRAS-CHAVE acima, use a categoria sugerida.
       2. Priorize SEMPRE as CATEGORIAS DO USUÁRIO se houver uma correspondência semântica clara.
       3. Se não houver correspondência clara, use "Outros". NUNCA retorne categoria vazia ou null.
-      4. Se o usuário disser "recebi" ou "ganhei", a categoria deve ser "Salário" ou similar (Entrada).
+      4. Se o usuário disser "recebi", "ganhei" ou confirmar um recebimento, a categoria deve ser "Recebimento" ou similar (Entrada) e você deve gerar um evento ADD_INCOME.
       
       REGRAS DE OURO (FONTE DA VERDADE):
       1. Você deve SEMPRE priorizar os dados acima sobre qualquer conversa anterior.
       2. Se o usuário perguntar sobre pendências, verifique os LEMBRETES onde "pago" é false.
+      3. MAPEAMENTO DE CARTEIRAS: Sempre que o usuário mencionar uma carteira pelo nome (ex: 'Nubank', 'Carteira'), procure o 'id' correspondente na lista de CARTEIRAS e use-o em 'sourceWalletId' ou 'targetWalletId'.
+      4. CONFIRMAÇÕES (ONBOARDING): Se o usuário confirmar um recebimento (ex: 'Sim', 'Já recebi', 'Confirmado') e estiver no Passo 3 do Onboarding, você DEVE OBRIGATORIAMENTE gerar o evento ADD_INCOME correspondente. 
+         - Use o valor de 'amountExpected' das fontes do PERFIL DE RENDA como 'amount'.
+         - Use o 'targetWalletName' das fontes do PERFIL DE RENDA como 'targetWalletName'.
+         - Se houver múltiplas fontes, use a primeira ou a que melhor se encaixar no valor mencionado.
+         - Não pergunte novamente, apenas registre.
+      5. CONFIRMAÇÕES GERAIS: Se o valor ou carteira não estiverem na mensagem atual, tente inferir dos LEMBRETES (tipo RECEIVE), PERFIL DE RENDA ou CARTEIRAS disponíveis no contexto. Se o usuário confirmar algo que você acabou de perguntar, gere o evento correspondente.
+      6. Se o usuário disser apenas "Sim", "Ok", "Confirmado" ou similar, e houver uma ação pendente óbvia no contexto (como um lembrete de salário no onboarding), gere o evento para essa ação. Use os campos 'targetWalletName' para entradas e 'sourceWalletName' para saídas.
       
       INTELIGÊNCIA FINANCEIRA (UPGRADES):
       1. DETECÇÃO DE GASTOS SUSPEITOS:
@@ -207,10 +228,12 @@ export const parseMessage = async (text: string, userName: string, context?: { r
       3. PREVISÃO:
       - Se o usuário perguntar "como vou terminar o mês?", use os dados para estimar se o saldo será positivo ou negativo.
       4. PARCELAMENTO (CARTÃO DE CRÉDITO):
-      - Se o usuário disser algo como "gastei 100 em 3x" ou "comprei 300 no cartão em 6x", você deve identificar que é uma compra parcelada.
+      - Se o usuário disser algo como "gastei 1200 em 12x" ou "comprei 300 no cartão em 6x", você deve identificar que é uma compra parcelada.
       - O evento deve ser ADD_CARD_CHARGE.
-      - O "amount" deve ser o VALOR TOTAL da compra.
-      - O campo "installments" deve conter o número de parcelas (ex: 3 ou 6).
+      - O "amount" deve ser o VALOR TOTAL da compra (ex: 1200).
+      - O campo "installments" deve conter o número de parcelas (ex: 12).
+      - Se o usuário disser "paguei 100 em 12x", o "amount" deve ser 1200 (100 * 12).
+      - NUNCA envie o valor da parcela no campo "amount". O sistema faz a divisão automaticamente.
 
       OBJETIVO: Analisar a mensagem e retornar um JSON com "reply" e opcionalmente uma lista de "events".
       
@@ -241,12 +264,20 @@ export const parseMessage = async (text: string, userName: string, context?: { r
 
     const parsed = JSON.parse(response.text);
     
-    // Post-process to ensure categories are never undefined
+    // Injetar isQA se o contexto for de teste (Fonte da Verdade)
+    const isQA = context?.user?.isQA || false;
+    
+    // Post-process to ensure categories are never undefined and inject isQA
     if (parsed.events) {
       parsed.events = parsed.events.map((event: any) => {
-        if (event.payload && (event.type === 'ADD_EXPENSE' || event.type === 'ADD_INCOME' || event.type === 'CREATE_REMINDER' || event.type === 'ADD_CARD_CHARGE')) {
-          if (!event.payload.category || event.payload.category === 'null' || event.payload.category === 'undefined') {
-            event.payload.category = suggestCategory(event.payload.description || text, context?.userPatterns || []);
+        if (event.payload) {
+          // Injetar isQA
+          if (isQA) event.payload.isQA = true;
+
+          if (event.type === 'ADD_EXPENSE' || event.type === 'ADD_INCOME' || event.type === 'CREATE_REMINDER' || event.type === 'ADD_CARD_CHARGE') {
+            if (!event.payload.category || event.payload.category === 'null' || event.payload.category === 'undefined') {
+              event.payload.category = suggestCategory(event.payload.description || text, context?.userPatterns || []);
+            }
           }
         }
         return event;
