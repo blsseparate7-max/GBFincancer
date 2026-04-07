@@ -87,7 +87,7 @@ const Header: React.FC<HeaderProps> = ({ activeTab, userName, photoURL, notifica
               <img src={photoURL} alt="Perfil" className="w-full h-full object-cover group-hover:scale-110 transition-transform" />
             ) : (
               <div className="w-full h-full flex items-center justify-center bg-[var(--green-whatsapp)]/10">
-                <span className="text-lg font-black text-[var(--green-whatsapp)]">{userName.charAt(0).toUpperCase()}</span>
+                <span className="text-lg font-black text-[var(--green-whatsapp)]">{(userName || 'U').charAt(0).toUpperCase()}</span>
               </div>
             )}
           </button>

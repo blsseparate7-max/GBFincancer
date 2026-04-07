@@ -178,7 +178,7 @@ const ProfileEdit: React.FC<ProfileEditProps> = ({ user, onUpdate, onLogout, set
             {photoURL ? (
               <img src={photoURL} alt="Foto de Perfil" className="w-full h-full object-cover" />
             ) : (
-              <span>{name.charAt(0).toUpperCase()}</span>
+              <span>{(name || 'U').charAt(0).toUpperCase()}</span>
             )}
             
             <div className="absolute inset-0 bg-black/50 flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">

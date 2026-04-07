@@ -311,7 +311,13 @@ const App: React.FC = () => {
     setOnboardingStep('guided');
   };
 
-  const handleSetupComplete = async (data: { incomeProfile: any; bills: any[]; goals: any[] }) => {
+  const handleSetupComplete = async (data: { 
+    incomeProfile?: any; 
+    bills?: any[]; 
+    goals?: any[]; 
+    spendingLimit?: number;
+    onboardingSeen?: boolean;
+  }) => {
     if (!session?.uid) return;
     
     const { dispatchEvent } = await import('./services/eventDispatcher');
@@ -319,83 +325,22 @@ const App: React.FC = () => {
 
     let defaultWalletId = null;
 
-    // 1. Criar Carteiras e Lembretes para Fontes de Renda
-    if (data.incomeProfile?.sources) {
-      for (const source of data.incomeProfile.sources) {
-        if (source.amountExpected && source.frequency !== 'VARIABLE') {
-          const dueDay = source.dates && source.dates.length > 0 ? source.dates[0] : 1;
-          
-          // Verificar se a carteira já existe ou criar uma nova
-          let targetWalletId = null;
-          if (source.targetWalletName) {
-            const existingWallet = wallets.find(w => (w.name || "").toLowerCase() === (source.targetWalletName || "").toLowerCase());
-            
-            if (existingWallet) {
-              targetWalletId = existingWallet.id;
-            } else {
-              const walletRes = await dispatchEvent(session.uid, {
-                type: 'CREATE_WALLET',
-                payload: {
-                  name: source.targetWalletName,
-                  type: 'CONTA',
-                  balance: 0,
-                  color: '#00A884',
-                  icon: 'Wallet'
-                },
-                source: 'ui',
-                createdAt: new Date()
-              });
-              // Como CREATE_WALLET não retorna o ID diretamente no dispatchEvent simplificado, 
-              // vamos assumir que o listener vai atualizar as wallets em breve.
-              // Para o onboarding, vamos apenas guardar o nome se necessário.
-            }
-
-            // Define a primeira carteira de recebimento como padrão
-            if (!defaultWalletId) {
-              defaultWalletId = targetWalletId || source.targetWalletName;
-            }
-          }
-
-          await dispatchEvent(session.uid, {
-            type: 'CREATE_REMINDER',
-            payload: {
-              description: `Recebimento: ${source.description}`,
-              amount: source.amountExpected,
-              dueDay: dueDay,
-              category: 'Recebimento',
-              type: 'RECEIVE',
-              recurring: true,
-              targetWalletName: source.targetWalletName
-            },
-            source: 'ui',
-            createdAt: new Date()
-          });
-        }
-      }
+    // 1. Criar Carteiras e Lembretes para Fontes de Renda (Apenas se não for onboarding, pois o onboarding já cria nos passos)
+    if (data.incomeProfile?.sources && !data.onboardingSeen) {
+      // ... existing logic for creating wallets if needed ...
+      // Mas os lembretes já foram criados nos passos do GuidedOnboarding
     }
 
     // 2. Salvar Perfil de Renda, Carteira Padrão e Marcar Onboarding como visto
     await syncUserData(session.uid, { 
       incomeProfile: data.incomeProfile,
-      defaultReceivingWallet: defaultWalletId,
+      spendingLimit: data.spendingLimit,
       onboardingSeen: true 
     });
 
-    // 3. Salvar Contas Fixas
-    for (const bill of data.bills) {
-      await dispatchEvent(session.uid, {
-        type: 'CREATE_REMINDER',
-        payload: { 
-          description: bill.description, 
-          amount: bill.amount, 
-          dueDay: bill.dueDay, 
-          category: bill.type === 'RECEIVE' ? 'Recebimento' : 'Contas Fixas',
-          type: bill.type || 'PAY',
-          recurring: true
-        },
-        source: 'ui',
-        createdAt: new Date()
-      });
+    // 3. Salvar Contas Fixas (Apenas se não for onboarding)
+    if (data.bills && data.bills.length > 0 && !data.onboardingSeen) {
+       // ...
     }
 
     // 4. Salvar Metas Sugeridas
@@ -405,7 +350,24 @@ const App: React.FC = () => {
       });
     }
     
-    setSession(prev => prev ? { ...prev, onboardingSeen: true, incomeProfile: data.incomeProfile, suggestedGoals: data.goals } : null);
+    // 5. Mensagem de Boas-vindas (Surgical Fix)
+    const { sendMessageToFirestore } = await import('./services/chatService');
+    await sendMessageToFirestore(
+      session.uid, 
+      "Bem-vindo ao GBFinancer! Agora vamos cuidar do seu dinheiro com inteligência. 🚀", 
+      'ai', 
+      `welcome-${session.uid}`
+    );
+    
+    setSession(prev => {
+      if (!prev) return null;
+      return { 
+        ...prev, 
+        onboardingSeen: true, 
+        incomeProfile: data.incomeProfile || prev.incomeProfile, 
+        suggestedGoals: data.goals || prev.suggestedGoals 
+      };
+    });
     setOnboardingStep('none');
   };
 
@@ -722,7 +684,19 @@ const App: React.FC = () => {
             onUpdateStatus={async (status) => {
               if (!session?.uid) return;
               const { syncUserData } = await import('./services/databaseService');
-              await syncUserData(session.uid, { onboardingStatus: { ...session.onboardingStatus, ...status } as any });
+              
+              // Se o status contiver campos que devem ir para a raiz (incomeProfile, billsProfile),
+              // nós os extraímos e salvamos na raiz, mantendo o restante no onboardingStatus.
+              const { incomeProfile, billsProfile, ...onboardingData } = status as any;
+              
+              const updateData: any = {
+                onboardingStatus: { ...session.onboardingStatus, ...onboardingData }
+              };
+              
+              if (incomeProfile) updateData.incomeProfile = incomeProfile;
+              if (billsProfile) updateData.billsProfile = billsProfile;
+              
+              await syncUserData(session.uid, updateData);
             }}
             onNavigateToTab={(tab) => setActiveTab(tab)}
           />

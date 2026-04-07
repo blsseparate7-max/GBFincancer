@@ -158,7 +158,7 @@ export const parseMessage = async (text: string, userName: string, context?: { u
       'Perfil de renda não configurado.';
 
     const onboardingContext = context?.user?.onboardingStatus ?
-      `STATUS DO ONBOARDING: Passo ${context.user.onboardingStatus.step}, Completado: ${context.user.onboardingStatus.completed}. ${context.user.onboardingStatus.step === 3 ? 'O usuário deve confirmar se já recebeu o salário este mês. Se ele disser "Sim" ou confirmar, você DEVE gerar o evento ADD_INCOME usando os dados do PERFIL DE RENDA.' : ''}` :
+      `STATUS DO ONBOARDING: Passo ${context.user.onboardingStatus.step}, Completado: ${context.user.onboardingStatus.completed}. ${context.user.onboardingStatus.step === 3 ? 'O usuário deve confirmar se já recebeu o salário este mês. Se ele disser "Sim" ou confirmar explicitamente o recebimento, você DEVE gerar o evento ADD_INCOME usando os dados do PERFIL DE RENDA. Caso contrário, apenas converse e aguarde a confirmação.' : ''}` :
       '';
 
     // Contexto de Médias por Categoria (para detecção de gastos suspeitos)

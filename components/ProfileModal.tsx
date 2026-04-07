@@ -70,7 +70,7 @@ const ProfileModal: React.FC<ProfileModalProps> = ({
               {photoURL ? (
                 <img src={photoURL} alt="Foto" className="w-full h-full object-cover" />
               ) : (
-                <span className="text-3xl font-black text-[var(--green-whatsapp)]">{name.charAt(0).toUpperCase()}</span>
+                <span className="text-3xl font-black text-[var(--green-whatsapp)]">{(name || 'U').charAt(0).toUpperCase()}</span>
               )}
             </div>
           </div>

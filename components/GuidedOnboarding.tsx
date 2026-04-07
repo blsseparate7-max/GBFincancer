@@ -38,6 +38,15 @@ const GuidedOnboarding: React.FC<GuidedOnboardingProps> = ({
   const status = user.onboardingStatus || { step: 1, completed: false };
   const [currentStep, setCurrentStep] = useState(status.step || 1);
   const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+  const [isMinimized, setIsMinimized] = useState(false);
+
+  // Auto-unminimize when user responds in chat during step 3
+  useEffect(() => {
+    if (isMinimized && user.onboardingStatus?.chatContextResponded) {
+      console.log("GB Onboarding: Resposta detectada no chat, restaurando overlay.");
+      setIsMinimized(false);
+    }
+  }, [user.onboardingStatus?.chatContextResponded, isMinimized]);
 
   // Step 1: Income
   const [incomeSources, setIncomeSources] = useState<IncomeSource[]>(user.incomeProfile?.sources || []);
@@ -73,6 +82,88 @@ const GuidedOnboarding: React.FC<GuidedOnboardingProps> = ({
   }, [currentStep]);
 
   const handleNext = async () => {
+    // Sincroniza dados parciais no Firestore para que o Chat (passo 3) tenha contexto real
+    if (currentStep === 1) {
+      // Validação Obrigatória Passo 1: Salário e Carteira
+      const mainSource = incomeSources[0];
+      if (!mainSource || !mainSource.amountExpected || mainSource.amountExpected <= 0 || !mainSource.targetWalletName) {
+        setNotification({ message: "Por favor, informe seu salário e a carteira onde recebe.", type: 'error' });
+        return;
+      }
+
+      const incomeProfile = { 
+        occupationType: 'OTHER' as any,
+        sources: incomeSources,
+        totalExpectedMonthly: incomeSources.reduce((acc, s) => acc + (s.amountExpected || 0), 0)
+      };
+      
+      await onUpdateStatus({ 
+        incomeProfile,
+        incomeCaptured: true
+      } as any);
+
+      // Criar lembretes de recebimento e carteiras imediatamente para o passo 3
+      const { dispatchEvent } = await import('../services/eventDispatcher');
+      for (const source of incomeSources) {
+        // Criar carteira se informada
+        if (source.targetWalletName) {
+          await dispatchEvent(user.uid, {
+            type: 'CREATE_WALLET',
+            payload: { 
+              name: source.targetWalletName, 
+              balance: 0, 
+              type: 'CHECKING' 
+            },
+            source: 'onboarding',
+            createdAt: new Date()
+          });
+        }
+
+        if (source.amountExpected && source.frequency !== 'VARIABLE') {
+          const dueDay = source.dates && source.dates.length > 0 ? source.dates[0] : 1;
+          await dispatchEvent(user.uid, {
+            type: 'CREATE_REMINDER',
+            payload: {
+              description: `Recebimento: ${source.description}`,
+              amount: source.amountExpected,
+              dueDay: dueDay,
+              category: 'Recebimento',
+              type: 'RECEIVE',
+              recurring: true,
+              targetWalletName: source.targetWalletName
+            },
+            source: 'onboarding',
+            createdAt: new Date()
+          });
+        }
+      }
+    }
+    
+    if (currentStep === 2) {
+      await onUpdateStatus({ 
+        billsProfile: { bills: bills },
+        billsCaptured: true
+      } as any);
+
+      // Criar lembretes de contas fixas imediatamente
+      const { dispatchEvent } = await import('../services/eventDispatcher');
+      for (const bill of bills) {
+        await dispatchEvent(user.uid, {
+          type: 'CREATE_REMINDER',
+          payload: { 
+            description: bill.description, 
+            amount: bill.amount, 
+            dueDay: bill.dueDay, 
+            category: 'Contas Fixas',
+            type: 'PAY',
+            recurring: true
+          },
+          source: 'onboarding',
+          createdAt: new Date()
+        });
+      }
+    }
+
     if (currentStep < totalSteps) {
       // Special check for Step 3 (Chat)
       if (currentStep === 3 && !user.onboardingStatus?.chatContextResponded) {
@@ -326,8 +417,12 @@ const GuidedOnboarding: React.FC<GuidedOnboardingProps> = ({
                 <div className="bg-[#202C33] p-6 rounded-3xl border-2 border-dashed border-[#00A884]/40 text-center space-y-4 animate-pulse">
                   <p className="text-xs text-[#E9EDEF] font-black uppercase italic">Vá para o chat e responda à pergunta do Assistente GB!</p>
                   <button 
-                    onClick={() => onNavigateToTab('chat')}
-                    className="bg-[#00A884] text-white px-6 py-3 rounded-xl text-[10px] font-black uppercase shadow-lg"
+                    onClick={() => {
+                      console.log("GB Onboarding: Navegando para o chat e minimizando onboarding.");
+                      onNavigateToTab('chat');
+                      setIsMinimized(true);
+                    }}
+                    className="bg-[#00A884] text-white px-6 py-3 rounded-xl text-[10px] font-black uppercase shadow-lg hover:scale-105 transition-all active:scale-95"
                   >
                     Ir para o Chat
                   </button>
@@ -488,81 +583,114 @@ const GuidedOnboarding: React.FC<GuidedOnboardingProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-[10000] bg-[#0B141A]/95 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto">
-      <div className="absolute inset-0 whatsapp-pattern opacity-[0.05] pointer-events-none"></div>
-      
-      <motion.div 
-        initial={{ opacity: 0, scale: 0.9, y: 20 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
-        className="relative z-10 w-full max-w-md bg-[#111B21] rounded-[3rem] shadow-2xl p-8 border border-[#2A3942]/60 flex flex-col min-h-[550px]"
-      >
-        {/* Progress Bar */}
-        <div className="w-full h-1.5 bg-[#202C33] rounded-full mb-8 overflow-hidden">
+    <AnimatePresence mode="wait">
+      {isMinimized ? (
+        <motion.div 
+          key="minimized"
+          initial={{ opacity: 0, scale: 0.8, y: 50 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          exit={{ opacity: 0, scale: 0.8, y: 50 }}
+          className="fixed bottom-6 right-6 z-[10001]"
+        >
+          <button 
+            onClick={() => setIsMinimized(false)}
+            className="bg-[#00A884] text-white p-4 rounded-full shadow-2xl flex items-center gap-3 border-2 border-white/20 hover:scale-105 transition-all group"
+          >
+            <div className="w-8 h-8 bg-white/20 rounded-full flex items-center justify-center">
+              <MessageSquare size={18} />
+            </div>
+            <div className="text-left pr-2">
+              <p className="text-[8px] font-black uppercase opacity-70">Onboarding Ativo</p>
+              <p className="text-[10px] font-black uppercase italic">Passo {currentStep} de {totalSteps}</p>
+            </div>
+          </button>
+        </motion.div>
+      ) : (
+        <motion.div 
+          key="full"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 z-[10000] bg-[#0B141A]/95 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto"
+        >
+          <div className="absolute inset-0 whatsapp-pattern opacity-[0.05] pointer-events-none"></div>
+          
           <motion.div 
-            className="h-full bg-[#00A884] shadow-[0_0_15px_rgba(0,168,132,0.6)]" 
-            initial={{ width: 0 }}
-            animate={{ width: `${progress}%` }}
-            transition={{ duration: 0.5, ease: "easeOut" }}
-          />
-        </div>
-
-        {/* Header Info */}
-        <div className="flex justify-between items-center mb-6">
-          <span className="text-[10px] font-black text-[#00A884] uppercase tracking-widest bg-[#00A884]/10 px-3 py-1 rounded-full border border-[#00A884]/20">
-            Passo {currentStep} de {totalSteps}
-          </span>
-          <button 
-            onClick={() => onComplete({ onboardingSeen: true })}
-            className="text-[#8696A0] hover:text-white transition-all text-[10px] font-black uppercase tracking-widest flex items-center gap-1"
+            initial={{ opacity: 0, scale: 0.9, y: 20 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            className="relative z-10 w-full max-w-md bg-[#111B21] rounded-[3rem] shadow-2xl p-8 border border-[#2A3942]/60 flex flex-col min-h-[550px]"
           >
-            Pular <X size={14} />
-          </button>
-        </div>
+            {/* Progress Bar */}
+            <div className="w-full h-1.5 bg-[#202C33] rounded-full mb-8 overflow-hidden">
+              <motion.div 
+                className="h-full bg-[#00A884] shadow-[0_0_15px_rgba(0,168,132,0.6)]" 
+                initial={{ width: 0 }}
+                animate={{ width: `${progress}%` }}
+                transition={{ duration: 0.5, ease: "easeOut" }}
+              />
+            </div>
 
-        {/* Content Area */}
-        <div className="flex-1 flex flex-col justify-center">
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={currentStep}
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -20 }}
-              transition={{ duration: 0.3 }}
-              className="flex-1 flex flex-col justify-center"
-            >
-              {renderStepContent()}
-            </motion.div>
-          </AnimatePresence>
-        </div>
+            {/* Header Info */}
+            <div className="flex justify-between items-center mb-6">
+              <span className="text-[10px] font-black text-[#00A884] uppercase tracking-widest bg-[#00A884]/10 px-3 py-1 rounded-full border border-[#00A884]/20">
+                Passo {currentStep} de {totalSteps}
+              </span>
+              <button 
+                onClick={() => onComplete({ onboardingSeen: true })}
+                className="text-[#8696A0] hover:text-white transition-all text-[10px] font-black uppercase tracking-widest flex items-center gap-1"
+              >
+                Pular <X size={14} />
+              </button>
+            </div>
 
-        {/* Footer Navigation */}
-        <div className="mt-8 flex gap-3">
-          {currentStep > 1 && (
-            <button 
-              onClick={handleBack}
-              className="px-6 bg-[#202C33] text-[#8696A0] font-black py-5 rounded-2xl hover:bg-[#2A3942] transition-all uppercase tracking-widest text-[10px] flex items-center justify-center"
-            >
-              <ArrowLeft size={18} />
-            </button>
-          )}
-          <button 
-            onClick={handleNext}
-            className="flex-1 bg-[#00A884] text-white font-black py-5 rounded-2xl shadow-xl active:scale-95 transition-all uppercase tracking-widest text-xs flex items-center justify-center gap-3"
-          >
-            {currentStep === totalSteps ? 'Começar Agora' : 'Continuar'} 
-            <ArrowRight size={18} />
-          </button>
-        </div>
-      </motion.div>
+            {/* Content Area */}
+            <div className="flex-1 flex flex-col justify-center">
+              <AnimatePresence mode="wait">
+                <motion.div
+                  key={currentStep}
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -20 }}
+                  transition={{ duration: 0.3 }}
+                  className="flex-1 flex flex-col justify-center"
+                >
+                  {renderStepContent()}
+                </motion.div>
+              </AnimatePresence>
+            </div>
+
+            {/* Footer Navigation */}
+            <div className="mt-8 flex gap-3">
+              {currentStep > 1 && (
+                <button 
+                  onClick={handleBack}
+                  className="px-6 bg-[#202C33] text-[#8696A0] font-black py-5 rounded-2xl hover:bg-[#2A3942] transition-all uppercase tracking-widest text-[10px] flex items-center justify-center"
+                >
+                  <ArrowLeft size={18} />
+                </button>
+              )}
+              <button 
+                onClick={handleNext}
+                className="flex-1 bg-[#00A884] text-white font-black py-5 rounded-2xl shadow-xl active:scale-95 transition-all uppercase tracking-widest text-xs flex items-center justify-center gap-3"
+              >
+                {currentStep === totalSteps ? 'Começar Agora' : 'Continuar'} 
+                <ArrowRight size={18} />
+              </button>
+            </div>
+          </motion.div>
+        </motion.div>
+      )}
 
       {notification && (
-        <Notification
-          message={notification.message}
-          type={notification.type}
-          onClose={() => setNotification(null)}
-        />
+        <div className="fixed top-4 right-4 z-[10002]">
+          <Notification
+            message={notification.message}
+            type={notification.type}
+            onClose={() => setNotification(null)}
+          />
+        </div>
       )}
-    </div>
+    </AnimatePresence>
   );
 };
 

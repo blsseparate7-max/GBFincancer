@@ -255,7 +255,7 @@ const AdminPanel: React.FC<{ currentAdminId: string }> = ({ currentAdminId }) =>
                           <td className="p-4">
                             <div className="flex items-center gap-3">
                               <div className="w-8 h-8 rounded-full bg-[var(--green-whatsapp)]/20 flex items-center justify-center font-black text-[var(--green-whatsapp)] text-xs uppercase">
-                                {user.userName?.charAt(0)}
+                                {(user.userName || 'U').charAt(0)}
                               </div>
                               <span className="font-bold">{user.userName}</span>
                             </div>

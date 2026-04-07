@@ -4,6 +4,7 @@ import { parseMessage } from '../services/geminiService';
 import { parseStatementFile } from '../services/statementService';
 import { dispatchEvent } from '../services/eventDispatcher';
 import { learnCategoryPattern } from '../services/categoryService';
+import { sendMessageToFirestore } from '../services/chatService';
 import { fetchChatContext } from '../services/databaseService';
 import { formatCurrency, calculateMonthlySummary } from '../services/summaryService';
 import ChatComposer from './ChatComposer';
@@ -47,38 +48,8 @@ const ChatInterface: React.FC<ChatProps> = ({
   const onboardingPromptSentRef = useRef(false);
 
   // Helper para enviar mensagem para o Firestore (Sincronização Total)
-  const sendMessageToFirestore = async (text: string, sender: 'user' | 'ai', dedupeKey?: string) => {
-    const uid = user.uid || auth.currentUser?.uid;
-    if (!uid) return;
-    
-    console.log(`GB Chat: Enviando mensagem (${sender}): "${text.substring(0, 30)}..."`);
-    
-    if (dedupeKey) {
-      const q = query(
-        collection(db, "users", uid, "messages"),
-        where("dedupeKey", "==", dedupeKey),
-        limit(1)
-      );
-      const snap = await getDocs(q);
-      if (!snap.empty) {
-        console.log(`GB Chat: Mensagem ignorada (dedupeKey duplicado: ${dedupeKey})`);
-        return; 
-      }
-    }
-
-    try {
-      await addDoc(collection(db, "users", uid, "messages"), {
-        text,
-        sender,
-        timestamp: serverTimestamp(),
-        dedupeKey: dedupeKey || null,
-        source: 'chat',
-        resolved: false
-      });
-      console.log(`GB Chat: Mensagem salva no Firestore com sucesso.`);
-    } catch (err) {
-      console.error("GB Chat: Erro ao salvar mensagem no Firestore:", err);
-    }
+  const sendMessage = async (text: string, sender: 'user' | 'ai', dedupeKey?: string) => {
+    await sendMessageToFirestore(user.uid, text, sender, dedupeKey);
   };
 
   useEffect(() => {
@@ -101,7 +72,8 @@ const ChatInterface: React.FC<ChatProps> = ({
 
   // Orquestração de Lembretes e Alertas (Premium)
   useEffect(() => {
-    if (!user || !user.uid || !reminders.length) return;
+    // Bloqueia alertas gerais durante o onboarding para evitar atropelar o fluxo
+    if (!user || !user.uid || !reminders.length || !user.onboardingStatus?.completed) return;
 
     const checkReminders = async () => {
       const now = new Date();
@@ -127,7 +99,7 @@ const ChatInterface: React.FC<ChatProps> = ({
         const snap = await getDocs(q);
         
         if (snap.empty) {
-          await sendMessageToFirestore(
+          await sendMessage(
             `Olá ${user.displayName || 'amigo'}! Notei que seu salário de **${formatCurrency(salaryReminder.amount)}** ainda não foi registrado. Já caiu na conta? 💰`,
             'ai',
             dedupeKey
@@ -157,7 +129,7 @@ const ChatInterface: React.FC<ChatProps> = ({
         const snap = await getDocs(q);
         
         if (snap.empty) {
-          await sendMessageToFirestore(riskMsg, 'ai', dedupeKey);
+          await sendMessage(riskMsg, 'ai', dedupeKey);
         }
       }
     };
@@ -168,33 +140,26 @@ const ChatInterface: React.FC<ChatProps> = ({
 
   // Onboarding Welcome Message
   useEffect(() => {
-    if (!user || !user.uid || !user.onboardingStatus || user.onboardingStatus.completed || onboardingPromptSentRef.current) return;
+    // Só dispara se estiver EXATAMENTE no passo 3 e ainda não respondeu
+    if (!user || !user.uid || !user.onboardingStatus || user.onboardingStatus.completed || user.onboardingStatus.step !== 3 || onboardingPromptSentRef.current) return;
     
     const checkOnboardingChat = async () => {
       if (user.onboardingStatus?.step === 3 && !user.onboardingStatus?.chatContextResponded) {
         const dedupeKey = `onboarding-welcome-${user.uid}`;
         
-        // Verificar se já perguntamos
-        const q = query(
-          collection(db, "users", user.uid, "messages"),
-          where("dedupeKey", "==", dedupeKey),
-          limit(1)
+        // Tenta encontrar o lembrete REAL criado no passo 1
+        const salaryReminder = reminders.find(r => 
+          r.type === 'RECEIVE' && 
+          (r.description.toLowerCase().includes('recebimento') || r.description.toLowerCase().includes('salário'))
         );
-        const snap = await getDocs(q);
-        
-        if (snap.empty) {
-          onboardingPromptSentRef.current = true;
+
+        if (salaryReminder) {
+          setPendingSalaryReminder(salaryReminder);
+        } else {
+          // Fallback se o lembrete ainda não tiver sido carregado
           const income = user.incomeProfile?.sources?.[0];
           const amount = income?.amountExpected || 2000;
-          const wallet = income?.targetWalletName || 'Nubank';
-          
-          const firstName = (user.name || 'Usuário').split(' ')[0];
-          
-          await sendMessageToFirestore(
-            `Olá ${firstName}! Vi que você recebe **${formatCurrency(amount)}** no **${wallet}**. Já caiu na conta este mês? 💰`,
-            'ai',
-            dedupeKey
-          );
+          const wallet = income?.targetWalletName || 'Carteira Principal';
           
           setPendingSalaryReminder({
             id: 'onboarding-income',
@@ -207,63 +172,157 @@ const ChatInterface: React.FC<ChatProps> = ({
             targetWalletName: wallet
           } as any);
         }
+
+        // Verificar se já perguntamos no Firestore para não duplicar a mensagem visual
+        const q = query(
+          collection(db, "users", user.uid, "messages"),
+          where("dedupeKey", "==", dedupeKey),
+          limit(1)
+        );
+        const snap = await getDocs(q);
+        
+        if (snap.empty) {
+          onboardingPromptSentRef.current = true;
+          const firstName = (user.name || 'Usuário').split(' ')[0];
+          const income = user.incomeProfile?.sources?.[0];
+          const amount = income?.amountExpected || 2000;
+          const wallet = income?.targetWalletName || 'Carteira Principal';
+          
+          await sendMessage(
+            `Olá ${firstName}! Vi que você recebe **${formatCurrency(amount)}** no **${wallet}**. Já caiu na conta este mês? 💰`,
+            'ai',
+            dedupeKey
+          );
+        }
       }
     };
 
-    checkOnboardingChat();
-  }, [user.onboardingStatus?.step, user.uid]);
+    const timer = setTimeout(checkOnboardingChat, 1000);
+    return () => clearTimeout(timer);
+  }, [user.onboardingStatus?.step, user.uid, reminders.length]);
+
+  // 2. Lembretes de Recebimento Atrasados (Pós-Onboarding ou Geral)
+  useEffect(() => {
+    if (!user || !user.uid || user.onboardingStatus?.step === 3) return; // Step 3 já tem seu próprio prompter
+
+    const checkOverdueIncome = async () => {
+      const now = new Date();
+      const today = now.getDate();
+      
+      // Encontra recebimentos pendentes que já deveriam ter caído (dueDay <= hoje)
+      const overdueIncome = reminders.find(r => 
+        r.type === 'RECEIVE' && 
+        !r.isPaid && 
+        !r.resolved &&
+        r.dueDay <= today &&
+        (!r.lastPromptedAt || (now.getTime() - (r.lastPromptedAt as any).toDate().getTime() > 24 * 60 * 60 * 1000))
+      );
+
+      if (overdueIncome) {
+        const dedupeKey = `overdue-income-${overdueIncome.id}-${new Date().toISOString().split('T')[0]}`;
+        
+        // Verificar se já perguntamos hoje
+        const q = query(
+          collection(db, "users", user.uid, "messages"),
+          where("dedupeKey", "==", dedupeKey),
+          limit(1)
+        );
+        const snap = await getDocs(q);
+        
+        if (snap.empty) {
+          setPendingSalaryReminder(overdueIncome);
+          await sendMessage(
+            `Oi! Notei que o recebimento **${overdueIncome.description}** (${formatCurrency(overdueIncome.amount)}) estava previsto para o dia ${overdueIncome.dueDay}. Já recebeu esse valor? 💸`,
+            'ai',
+            dedupeKey
+          );
+          
+          // Atualiza o lembrete para não perguntar de novo hoje
+          const reminderRef = doc(db, "users", user.uid, "reminders", overdueIncome.id);
+          await updateDoc(reminderRef, { lastPromptedAt: serverTimestamp() });
+        }
+      }
+    };
+
+    const timer = setTimeout(checkOverdueIncome, 5000); // Espera 5s após carregar
+    return () => clearTimeout(timer);
+  }, [user?.uid, reminders.length]);
 
   const handleSalaryConfirm = async (confirmed: boolean) => {
     if (!pendingSalaryReminder) return;
 
     const today = new Date();
-    const cycleKey = `${today.getMonth() + 1}-${today.getFullYear()}`;
+    const cycleKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
 
     if (confirmed) {
-      setPendingAction({
+      const { dispatchEvent } = await import('../services/eventDispatcher');
+      const incomePayload = {
+        amount: pendingSalaryReminder.amount,
+        category: pendingSalaryReminder.category || 'Recebimento',
+        description: pendingSalaryReminder.description,
+        date: new Date().toISOString(),
+        // Se for onboarding e não tiver ID real, passamos null
+        reminderId: pendingSalaryReminder.id === 'onboarding-income' ? null : pendingSalaryReminder.id,
+        cycleKey,
+        targetWalletName: (pendingSalaryReminder as any).targetWalletName,
+        source: 'onboarding'
+      };
+
+      const result = await dispatchEvent(user.uid, {
         type: 'ADD_INCOME',
-        payload: {
-          amount: pendingSalaryReminder.amount,
-          category: pendingSalaryReminder.category || 'Recebimento',
-          description: pendingSalaryReminder.description,
-          date: new Date().toISOString(),
-          reminderId: pendingSalaryReminder.id,
-          cycleKey,
-          targetWalletName: (pendingSalaryReminder as any).targetWalletName
-        }
+        payload: incomePayload,
+        source: 'onboarding',
+        createdAt: new Date()
       });
-      
-      await sendMessageToFirestore("Excelente! Em qual carteira esse dinheiro entrou?", 'ai');
+
+      if (result.success) {
+        await sendMessage(`Excelente! Registrei o recebimento de **${formatCurrency(pendingSalaryReminder.amount)}** na sua carteira **${(pendingSalaryReminder as any).targetWalletName || 'Principal'}**. Seu saldo e dashboard já foram atualizados! 🚀`, 'ai');
+      } else {
+        await sendMessage("Houve um probleminha ao registrar seu salário. Mas não se preocupe, você pode tentar novamente ou registrar manualmente no Dashboard.", 'ai');
+      }
     } else {
-      await sendMessageToFirestore("Sem problemas! Me avise quando o dinheiro cair para eu atualizar seus saldos. 😉", 'ai');
+      await sendMessage("Entendido. Vou manter esse recebimento como pendente e te pergunto novamente em breve! 👍", 'ai');
+      
+      // Se for um lembrete real, atualiza o lastPromptedAt para não perguntar de novo imediatamente
+      if (pendingSalaryReminder.id !== 'onboarding-income') {
+        const reminderRef = doc(db, "users", user.uid, "reminders", pendingSalaryReminder.id);
+        await updateDoc(reminderRef, { lastPromptedAt: serverTimestamp() });
+      }
     }
     
     // Update onboarding status if this was the onboarding step
     if (user.onboardingStatus?.step === 3) {
+       console.log("GB Chat: Confirmação de salário detectada no passo 3 do onboarding. Atualizando chatContextResponded para true.");
        const { syncUserData } = await import('../services/databaseService');
        await syncUserData(user.uid, { 
          onboardingStatus: { 
            ...user.onboardingStatus, 
-           chatContextResponded: true
+           chatContextResponded: true,
+           salaryConfirmed: confirmed
          } as any 
        });
     }
     
-    setPendingSalaryReminder(null);
+    // Se não confirmou, limpa o estado para não ficar travado
+    if (!confirmed) {
+      setPendingSalaryReminder(null);
+    }
   };
 
   const handleSend = async (text: string) => {
     if (!text.trim() || isLoading || isProcessingRef.current) return;
 
     // INTERCEPTAÇÃO CRÍTICA: Verificar se há confirmação pendente de onboarding antes da IA
-    if (pendingSalaryReminder && (
-      text.toLowerCase().includes('sim') || 
-      text.toLowerCase() === 's' || 
-      text.toLowerCase().includes('claro') ||
-      text.toLowerCase().includes('já')
-    )) {
-      await handleSalaryConfirm(true);
-      return; // Interrompe o fluxo para não chamar a IA desnecessariamente
+    const lowerText = text.toLowerCase();
+    if (pendingSalaryReminder) {
+      if (lowerText.includes('sim') || lowerText === 's' || lowerText.includes('claro') || lowerText.includes('já')) {
+        await handleSalaryConfirm(true);
+        return;
+      }
+      if (lowerText.includes('não') || lowerText === 'n' || lowerText.includes('ainda não')) {
+        await handleSalaryConfirm(false);
+        return;
+      }
     }
     
     const uid = user.uid || auth.currentUser?.uid;
@@ -274,20 +333,13 @@ const ChatInterface: React.FC<ChatProps> = ({
 
     console.log(`GB Chat: handleSend recebido: "${text}"`);
     isProcessingRef.current = true;
-    await sendMessageToFirestore(text.trim(), 'user');
+    await sendMessage(text.trim(), 'user');
     setIsLoading(true);
 
     try {
-      // Update onboarding status if this was the onboarding step
-      if (user.onboardingStatus?.step === 3 && !user.onboardingStatus?.chatContextResponded) {
-        const { syncUserData } = await import('../services/databaseService');
-        await syncUserData(uid, { 
-          onboardingStatus: { 
-            ...user.onboardingStatus, 
-            chatContextResponded: true
-          } as any 
-        });
-      }
+      // No passo 3 do onboarding, não avançamos apenas por "responder" algo genérico.
+      // O avanço deve ser via confirmação/negação do salário no fluxo específico (handleSalaryConfirm).
+      // Removido o bloco que marcava chatContextResponded como true aqui.
 
       // 1. Buscar contexto ATUALIZADO do Firestore (Fonte da Verdade)
       console.log("GB Chat: Buscando contexto atualizado...");
@@ -313,11 +365,11 @@ const ChatInterface: React.FC<ChatProps> = ({
       }
 
       // 3. Enviar resposta da IA para o Firestore
-      await sendMessageToFirestore(result.reply || "Entendido. ✅", 'ai');
+      await sendMessage(result.reply || "Entendido. ✅", 'ai');
 
     } catch (e) {
       console.error("GB Chat: Erro no processamento:", e);
-      await sendMessageToFirestore("Houve um pequeno erro na análise, mas anotei sua intenção. Pode repetir? 😅", 'ai');
+      await sendMessage("Houve um pequeno erro na análise, mas anotei sua intenção. Pode repetir? 😅", 'ai');
     } finally {
       setIsLoading(false);
       isProcessingRef.current = false;
@@ -328,7 +380,7 @@ const ChatInterface: React.FC<ChatProps> = ({
     if (isLoading) return;
     
     setIsLoading(true);
-    await sendMessageToFirestore(`📎 Enviou arquivo: ${file.name}`, 'user');
+    await sendMessage(`📎 Enviou arquivo: ${file.name}`, 'user');
 
     try {
       const result = await parseStatementFile(file);
@@ -367,12 +419,12 @@ const ChatInterface: React.FC<ChatProps> = ({
           setPendingAction(null);
         }
         const bankInfo = result.summary?.bankName ? ` do ${result.summary.bankName}` : '';
-        await sendMessageToFirestore(`Li seu extrato${bankInfo}! Encontrei ${events.length} lançamentos. Confira a prévia abaixo.`, 'ai');
+        await sendMessage(`Li seu extrato${bankInfo}! Encontrei ${events.length} lançamentos. Confira a prévia abaixo.`, 'ai');
       } else {
-        await sendMessageToFirestore("Não consegui encontrar transações nesse arquivo.", 'ai');
+        await sendMessage("Não consegui encontrar transações nesse arquivo.", 'ai');
       }
     } catch (error) {
-      await sendMessageToFirestore("Houve um erro ao processar seu arquivo.", 'ai');
+      await sendMessage("Houve um erro ao processar seu arquivo.", 'ai');
     } finally {
       setIsLoading(false);
     }
@@ -429,10 +481,10 @@ const ChatInterface: React.FC<ChatProps> = ({
       }
 
       const name = isCard ? cards.find(c => c.id === id)?.name || 'Cartão' : wallets.find(w => w.id === id)?.name || 'Carteira';
-      await sendMessageToFirestore(`✅ Sucesso! Importei ${selectedEvents.length} lançamentos para sua conta (${name}).`, 'ai');
+      await sendMessage(`✅ Sucesso! Importei ${selectedEvents.length} lançamentos para sua conta (${name}).`, 'ai');
       setPendingEvents([]);
     } catch (e) {
-      await sendMessageToFirestore("Ocorreu um erro ao salvar alguns lançamentos.", 'ai');
+      await sendMessage("Ocorreu um erro ao salvar alguns lançamentos.", 'ai');
     } finally {
       setIsLoading(false);
     }
@@ -500,7 +552,7 @@ const ChatInterface: React.FC<ChatProps> = ({
       const amountFormatted = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(pendingAction.payload.amount);
       const feedback = `${typeLabel}  \n\n${amountFormatted} — ${pendingAction.payload.description}\nCarteira: ${name}\nCategoria: ${pendingAction.payload.category}`;
       
-      await sendMessageToFirestore(feedback, 'ai');
+      await sendMessage(feedback, 'ai');
       setPendingAction(null);
     } catch (e) {
       console.error(e);
@@ -509,16 +561,20 @@ const ChatInterface: React.FC<ChatProps> = ({
     }
   };
 
+  const isOnboardingStep3 = user.onboardingStatus?.step === 3 && !user.onboardingStatus?.chatContextResponded;
+
   return (
     <div className="flex-1 flex flex-col w-full bg-transparent overflow-hidden relative min-h-0">
       {/* Header do Chat (Estilo WhatsApp) */}
       <div className="shrink-0 h-16 bg-[var(--surface)] border-b border-[var(--border)] flex items-center px-4 gap-3 z-20 shadow-sm">
-        <button 
-          onClick={onToggleSidebar}
-          className="w-10 h-10 flex items-center justify-center bg-[var(--green-whatsapp)] text-white rounded-full hover:bg-[var(--green-whatsapp-dark)] transition-all active:scale-90 shadow-lg shrink-0"
-        >
-          <span className="text-xl font-black italic">$</span>
-        </button>
+        {!isOnboardingStep3 && (
+          <button 
+            onClick={onToggleSidebar}
+            className="w-10 h-10 flex items-center justify-center bg-[var(--green-whatsapp)] text-white rounded-full hover:bg-[var(--green-whatsapp-dark)] transition-all active:scale-90 shadow-lg shrink-0"
+          >
+            <span className="text-xl font-black italic">$</span>
+          </button>
+        )}
 
         <div className="flex flex-1 items-center gap-3 min-w-0">
           <div className="w-10 h-10 rounded-full bg-[var(--green-whatsapp)] flex items-center justify-center text-white shadow-md shrink-0">
@@ -533,18 +589,20 @@ const ChatInterface: React.FC<ChatProps> = ({
           </div>
         </div>
 
-        <button 
-          onClick={onOpenProfile}
-          className="w-10 h-10 bg-[var(--bg-body)] rounded-full border border-[var(--border)] flex items-center justify-center overflow-hidden shadow-md active:scale-95 transition-all shrink-0"
-        >
-          {user.photoURL ? (
-            <img src={user.photoURL} alt="Perfil" className="w-full h-full object-cover" />
-          ) : (
-            <div className="w-full h-full flex items-center justify-center bg-[var(--green-whatsapp)]/20">
-              <span className="text-sm font-black text-[var(--green-whatsapp)]">{user.name.charAt(0).toUpperCase()}</span>
-            </div>
-          )}
-        </button>
+        {!isOnboardingStep3 && (
+          <button 
+            onClick={onOpenProfile}
+            className="w-10 h-10 bg-[var(--bg-body)] rounded-full border border-[var(--border)] flex items-center justify-center overflow-hidden shadow-md active:scale-95 transition-all shrink-0"
+          >
+            {user.photoURL ? (
+              <img src={user.photoURL} alt="Perfil" className="w-full h-full object-cover" />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center bg-[var(--green-whatsapp)]/20">
+                <span className="text-sm font-black text-[var(--green-whatsapp)]">{(user.name || 'U').charAt(0).toUpperCase()}</span>
+              </div>
+            )}
+          </button>
+        )}
       </div>
 
       {/* Mensagens */}
@@ -553,48 +611,85 @@ const ChatInterface: React.FC<ChatProps> = ({
         className="flex-1 min-h-0 overflow-y-auto px-4 py-4 space-y-3 overscroll-contain relative z-10 no-scrollbar"
         style={{ scrollBehavior: 'smooth' }}
       >
-        {messages.length === 0 && !isLoading && (
-          <div className="flex justify-center my-10">
-            <div className="bg-[var(--surface)] px-4 py-2 rounded-xl text-[10px] text-[var(--text-muted)] shadow-sm uppercase font-black border border-[var(--border)] text-center">
-              🔒 Auditoria IA Ativa • Mensagens Protegidas
-            </div>
-          </div>
-        )}
-        
-        {messages.map(msg => (
-          <div key={msg.id} className={`flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'} animate-fade`}>
-            <div className={`max-w-[85%] px-3 py-2 text-[15px] relative shadow-lg ${msg.sender === 'user' ? 'bubble-user' : 'bubble-ai'}`}>
-              <div className="leading-tight pr-10 whitespace-pre-wrap">{msg.text}</div>
-              <div className="text-[9px] text-[var(--text-muted)] text-right absolute bottom-1 right-2 font-medium opacity-70">
-                {(() => {
-                  if (!msg.timestamp) return '';
-                  const d = msg.timestamp.toDate ? msg.timestamp.toDate() : new Date(msg.timestamp);
-                  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-                })()}
-              </div>
-            </div>
-          </div>
-        ))}
-
-        {pendingSalaryReminder && (
-          <div className="flex flex-col items-start gap-2 animate-fade-in-up">
-            <div className="bg-[var(--surface)] border border-[var(--border)] rounded-3xl p-5 shadow-xl w-full max-w-[90%]">
-               <div className="flex gap-2">
-                 <button 
-                   onClick={() => handleSalaryConfirm(true)}
-                   className="flex-1 bg-[var(--green-whatsapp)] text-white py-3 rounded-2xl font-black text-[10px] uppercase transition-all active:scale-95"
-                 >
-                   Sim, recebi
-                 </button>
-                 <button 
-                   onClick={() => handleSalaryConfirm(false)}
-                   className="flex-1 bg-[var(--bg-body)] text-[var(--text-muted)] border border-[var(--border)] py-3 rounded-2xl font-black text-[10px] uppercase transition-all active:scale-95"
-                 >
-                   Ainda não
-                 </button>
+        {isOnboardingStep3 ? (
+          <div className="flex flex-col items-center justify-center h-full space-y-6 px-4 text-center animate-fade">
+             <div className="w-20 h-20 rounded-full bg-[var(--green-whatsapp)]/10 flex items-center justify-center mb-4">
+                <span className="text-4xl">💰</span>
+             </div>
+             
+             {messages.filter(m => m.sender === 'ai').slice(-1).map(msg => (
+               <div key={msg.id} className="bg-[var(--surface)] border border-[var(--border)] rounded-3xl p-6 shadow-xl max-w-md w-full">
+                 <p className="text-[var(--text-primary)] font-bold text-lg leading-tight mb-6">
+                   {msg.text.replace(/\*\*/g, '')}
+                 </p>
+                 
+                 <div className="flex gap-3">
+                   <button 
+                     onClick={() => handleSalaryConfirm(true)}
+                     className="flex-1 bg-[var(--green-whatsapp)] text-white py-4 rounded-2xl font-black text-xs uppercase transition-all active:scale-95 shadow-lg shadow-[var(--green-whatsapp)]/20"
+                   >
+                     Sim, recebi
+                   </button>
+                   <button 
+                     onClick={() => handleSalaryConfirm(false)}
+                     className="flex-1 bg-[var(--bg-body)] text-[var(--text-muted)] border border-[var(--border)] py-4 rounded-2xl font-black text-xs uppercase transition-all active:scale-95"
+                   >
+                     Ainda não
+                   </button>
+                 </div>
                </div>
-            </div>
+             ))}
+             
+             <p className="text-[10px] text-[var(--text-muted)] font-black uppercase tracking-[0.2em] opacity-50">
+               Modo de Captação Onboarding Ativo
+             </p>
           </div>
+        ) : (
+          <>
+            {messages.length === 0 && !isLoading && (
+              <div className="flex justify-center my-10">
+                <div className="bg-[var(--surface)] px-4 py-2 rounded-xl text-[10px] text-[var(--text-muted)] shadow-sm uppercase font-black border border-[var(--border)] text-center">
+                  🔒 Auditoria IA Ativa • Mensagens Protegidas
+                </div>
+              </div>
+            )}
+            
+            {messages.map(msg => (
+              <div key={msg.id} className={`flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'} animate-fade`}>
+                <div className={`max-w-[85%] px-3 py-2 text-[15px] relative shadow-lg ${msg.sender === 'user' ? 'bubble-user' : 'bubble-ai'}`}>
+                  <div className="leading-tight pr-10 whitespace-pre-wrap">{msg.text}</div>
+                  <div className="text-[9px] text-[var(--text-muted)] text-right absolute bottom-1 right-2 font-medium opacity-70">
+                    {(() => {
+                      if (!msg.timestamp) return '';
+                      const d = msg.timestamp.toDate ? msg.timestamp.toDate() : new Date(msg.timestamp);
+                      return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                    })()}
+                  </div>
+                </div>
+              </div>
+            ))}
+
+            {pendingSalaryReminder && (
+              <div className="flex flex-col items-start gap-2 animate-fade-in-up">
+                <div className="bg-[var(--surface)] border border-[var(--border)] rounded-3xl p-5 shadow-xl w-full max-w-[90%]">
+                   <div className="flex gap-2">
+                     <button 
+                       onClick={() => handleSalaryConfirm(true)}
+                       className="flex-1 bg-[var(--green-whatsapp)] text-white py-3 rounded-2xl font-black text-[10px] uppercase transition-all active:scale-95"
+                     >
+                       Sim, recebi
+                     </button>
+                     <button 
+                       onClick={() => handleSalaryConfirm(false)}
+                       className="flex-1 bg-[var(--bg-body)] text-[var(--text-muted)] border border-[var(--border)] py-3 rounded-2xl font-black text-[10px] uppercase transition-all active:scale-95"
+                     >
+                       Ainda não
+                     </button>
+                   </div>
+                </div>
+              </div>
+            )}
+          </>
         )}
 
         {pendingEvents.length > 0 && (
@@ -912,13 +1007,15 @@ const ChatInterface: React.FC<ChatProps> = ({
       </div>
 
       {/* Composer */}
-      <div className={highlightInput ? 'onboarding-highlight' : ''}>
-        <ChatComposer 
-          onSendText={(text) => handleSend(text)} 
-          onSendFile={(file) => handleSendFile(file)}
-          isLoading={isLoading || !!pendingAction || pendingEvents.length > 0}
-        />
-      </div>
+      {!isOnboardingStep3 && (
+        <div className={highlightInput ? 'onboarding-highlight' : ''}>
+          <ChatComposer 
+            onSendText={(text) => handleSend(text)} 
+            onSendFile={(file) => handleSendFile(file)}
+            isLoading={isLoading || !!pendingAction || pendingEvents.length > 0}
+          />
+        </div>
+      )}
     </div>
   );
 };

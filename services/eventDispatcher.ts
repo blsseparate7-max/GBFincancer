@@ -3,7 +3,7 @@ import { db, auth } from "./firebaseConfig";
 import { 
   collection, addDoc, doc, setDoc, deleteDoc, updateDoc, 
   serverTimestamp, increment, getDoc, arrayUnion, getDocs, query, where,
-  writeBatch, limit
+  writeBatch, limit, runTransaction
 } from "firebase/firestore";
 import { FinanceEvent, TransactionType } from "../types";
 import { normalizeCategoryName } from "./normalizationService";
@@ -59,6 +59,22 @@ async function resolveWallet(uid: string, walletId?: string, walletName?: string
     if (!snap.empty) {
       const d = snap.docs[0];
       return { id: d.id, name: d.data().name };
+    }
+    
+    // Auto-create wallet if it doesn't exist (Surgical fix for Onboarding Step 1 & 3)
+    try {
+      const walletRef = await addDoc(collection(db, "users", uid, "wallets"), {
+        name: walletName,
+        balance: 0,
+        type: 'CHECKING',
+        isActive: true,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      });
+      console.log(`GB: Carteira "${walletName}" criada automaticamente.`);
+      return { id: walletRef.id, name: walletName };
+    } catch (e) {
+      console.error("GB: Erro ao criar carteira automática:", e);
     }
   }
   
@@ -201,127 +217,141 @@ export const dispatchEvent = async (uid: string, event: FinanceEvent) => {
           });
         }
 
-        const catInfo = await getCategoryInfo(uid, category, description);
-        let walletInfo = await resolveWallet(uid, sourceWalletId || walletId, sourceWalletName || walletName);
-        
-        // Se não encontrou carteira, tenta pegar a primeira disponível
-        if (!walletInfo) {
-          const walletsSnap = await getDocs(collection(userRef, "wallets"));
-          if (!walletsSnap.empty) {
-            const d = walletsSnap.docs[0];
-            walletInfo = { id: d.id, name: d.data().name };
+        await runTransaction(db, async (transaction) => {
+          const catInfo = await getCategoryInfo(uid, category, description);
+          let walletInfo = await resolveWallet(uid, sourceWalletId || walletId, sourceWalletName || walletName);
+          
+          // Se não encontrou carteira, tenta pegar a primeira disponível
+          if (!walletInfo) {
+            const walletsSnap = await getDocs(collection(userRef, "wallets"));
+            if (!walletsSnap.empty) {
+              const d = walletsSnap.docs[0];
+              walletInfo = { id: d.id, name: d.data().name };
+            }
           }
-        }
 
-        const transRef = doc(collection(userRef, "transactions"));
-        
-        // Determinar paymentMethod se não fornecido
-        let finalPaymentMethod = paymentMethod;
-        if (!finalPaymentMethod && walletInfo) {
-          if (walletInfo.name.toLowerCase().includes('dinheiro')) {
-            finalPaymentMethod = 'CASH';
+          const transRef = doc(collection(userRef, "transactions"));
+          
+          // Determinar paymentMethod se não fornecido
+          let finalPaymentMethod = paymentMethod;
+          if (!finalPaymentMethod && walletInfo) {
+            if (walletInfo.name.toLowerCase().includes('dinheiro')) {
+              finalPaymentMethod = 'CASH';
+            }
           }
-        }
 
-        batch.set(transRef, {
-          amount, 
-          category: catInfo.name,
-          categoryId: catInfo.id,
-          categoryName: catInfo.name,
-          description, 
-          paymentMethod: finalPaymentMethod || null,
-          type: 'EXPENSE',
-          date: parseSafeDate(date).toISOString(),
-          walletId: walletInfo?.id || null,
-          walletName: walletInfo?.name || null,
-          sourceWalletId: sourceWalletId || null,
-          isQA,
-          source,
-          cycleKey,
-          confirmedBy,
-          status: 'CONFIRMED',
-          resolved: true,
-          createdAt: serverTimestamp()
-        });
-
-        if (walletInfo?.id) {
-          const walletRef = doc(userRef, "wallets", walletInfo.id);
-          batch.update(walletRef, { 
-            balance: increment(-amount),
-            updatedAt: serverTimestamp()
+          transaction.set(transRef, {
+            amount, 
+            category: catInfo.name,
+            categoryId: catInfo.id,
+            categoryName: catInfo.name,
+            description, 
+            paymentMethod: finalPaymentMethod || null,
+            type: 'EXPENSE',
+            date: parseSafeDate(date).toISOString(),
+            walletId: walletInfo?.id || null,
+            walletName: walletInfo?.name || null,
+            sourceWalletId: sourceWalletId || null,
+            isQA,
+            source,
+            cycleKey,
+            confirmedBy,
+            status: 'CONFIRMED',
+            resolved: true,
+            createdAt: serverTimestamp()
           });
-        }
 
-        const limitId = (catInfo.name || "").toLowerCase().trim().replace(/\s+/g, '_');
-        const limitRef = doc(userRef, "limits", limitId);
-        batch.set(limitRef, {
-          spent: increment(amount),
-          updatedAt: serverTimestamp()
-        }, { merge: true });
+          if (walletInfo?.id) {
+            const walletRef = doc(userRef, "wallets", walletInfo.id);
+            transaction.update(walletRef, { 
+              balance: increment(-amount),
+              updatedAt: serverTimestamp()
+            });
+          }
 
-        await batch.commit();
+          const limitId = (catInfo.name || "").toLowerCase().trim().replace(/\s+/g, '_');
+          const limitRef = doc(userRef, "limits", limitId);
+          transaction.set(limitRef, {
+            spent: increment(amount),
+            updatedAt: serverTimestamp()
+          }, { merge: true });
+        });
         break;
       }
 
       case 'ADD_INCOME': {
-        let { amount, targetWalletId, targetWalletName, walletId, walletName, description, category, date, paymentMethod } = payload;
+        let { amount, targetWalletId, targetWalletName, walletId, walletName, description, category, date, paymentMethod, reminderId } = payload;
         
-        // RECUPERAÇÃO DE DADOS DO PERFIL (Caso a IA envie payload incompleto no Onboarding)
-        if (!amount || (!targetWalletId && !targetWalletName && !walletId && !walletName)) {
-          const userSnap = await getDoc(userRef);
-          const userData = userSnap.data();
-          if (userData?.incomeProfile?.sources?.length > 0) {
-            const mainSource = userData.incomeProfile.sources[0];
-            amount = amount || mainSource.amountExpected;
-            targetWalletName = targetWalletName || mainSource.targetWalletName;
-            description = description || mainSource.description;
-            category = category || 'Salário';
-          }
-        }
+        // Resolve wallet BEFORE transaction to avoid illegal getDocs inside runTransaction
+        const walletInfo = await resolveWallet(uid, targetWalletId || walletId, targetWalletName || walletName);
 
-        const catInfo = await getCategoryInfo(uid, category || 'Recebimento', description);
-        let walletInfo = await resolveWallet(uid, targetWalletId || walletId, targetWalletName || walletName);
-        
-        // Se não encontrou carteira, tenta pegar a primeira disponível
-        if (!walletInfo) {
-          const walletsSnap = await getDocs(collection(userRef, "wallets"));
-          if (!walletsSnap.empty) {
-            const d = walletsSnap.docs[0];
-            walletInfo = { id: d.id, name: d.data().name };
+        await runTransaction(db, async (transaction) => {
+          // RECUPERAÇÃO DE DADOS DO PERFIL (Caso a IA envie payload incompleto no Onboarding)
+          if (!amount || !walletInfo) {
+            const userSnap = await transaction.get(userRef);
+            const userData = userSnap.data();
+            if (userData?.incomeProfile?.sources?.length > 0) {
+              const mainSource = userData.incomeProfile.sources[0];
+              amount = amount || mainSource.amountExpected;
+              description = description || mainSource.description;
+              category = category || 'Salário';
+            }
           }
-        }
-        
-        const transRef = doc(collection(userRef, "transactions"));
-        
-        batch.set(transRef, {
-          amount: Number(amount),
-          description: description || "Recebimento confirmado via Chat",
-          type: 'INCOME',
-          category: catInfo.name,
-          categoryId: catInfo.id,
-          categoryName: catInfo.name,
-          walletId: walletInfo?.id || null,
-          walletName: walletInfo?.name || null,
-          paymentMethod: paymentMethod || 'PIX',
-          date: parseSafeDate(date).toISOString(),
-          isQA,
-          source,
-          cycleKey,
-          confirmedBy,
-          status: 'CONFIRMED',
-          resolved: true,
-          createdAt: serverTimestamp()
-        });
 
-        if (walletInfo?.id) {
-          const walletRef = doc(userRef, "wallets", walletInfo.id);
-          batch.update(walletRef, { 
-            balance: increment(Number(amount)),
-            updatedAt: serverTimestamp()
+          const catInfo = await getCategoryInfo(uid, category || 'Recebimento', description);
+          
+          // Se ainda não tem walletInfo, tenta pegar a primeira disponível (fallback)
+          let finalWalletInfo = walletInfo;
+          if (!finalWalletInfo) {
+            const walletsSnap = await getDocs(collection(userRef, "wallets"));
+            if (!walletsSnap.empty) {
+              const d = walletsSnap.docs[0];
+              finalWalletInfo = { id: d.id, name: d.data().name };
+            }
+          }
+          
+          const transRef = doc(collection(userRef, "transactions"));
+          
+          transaction.set(transRef, {
+            amount: Number(amount),
+            description: description || "Recebimento confirmado via Chat",
+            type: 'INCOME',
+            category: catInfo.name,
+            categoryId: catInfo.id,
+            categoryName: catInfo.name,
+            walletId: finalWalletInfo?.id || null,
+            walletName: finalWalletInfo?.name || null,
+            paymentMethod: paymentMethod || 'PIX',
+            date: parseSafeDate(date).toISOString(),
+            isQA,
+            source,
+            cycleKey,
+            confirmedBy,
+            status: 'CONFIRMED',
+            resolved: true,
+            createdAt: serverTimestamp()
           });
-        }
 
-        await batch.commit();
+          if (finalWalletInfo?.id) {
+            const walletRef = doc(userRef, "wallets", finalWalletInfo.id);
+            transaction.update(walletRef, { 
+              balance: increment(Number(amount)),
+              updatedAt: serverTimestamp()
+            });
+          }
+
+          // Atualizar lembrete se fornecido (Surgical fix for Step 3)
+          if (reminderId) {
+            const reminderRef = doc(userRef, "reminders", reminderId);
+            transaction.update(reminderRef, {
+              isPaid: true,
+              status: 'received',
+              resolved: true,
+              paidAt: serverTimestamp(),
+              updatedAt: serverTimestamp()
+            });
+          }
+        });
         break;
       }
 
@@ -1144,13 +1174,21 @@ export const dispatchEvent = async (uid: string, event: FinanceEvent) => {
       }
 
       case 'CREATE_WALLET': {
-        await addDoc(collection(userRef, "wallets"), {
-          ...event.payload,
-          isActive: true,
-          isQA,
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp()
-        });
+        const { name } = payload;
+        const q = query(collection(userRef, "wallets"), where("name", "==", name), limit(1));
+        const snap = await getDocs(q);
+        if (snap.empty) {
+          await addDoc(collection(userRef, "wallets"), {
+            ...payload,
+            isActive: true,
+            isQA,
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp()
+          });
+          console.log(`GB: Carteira "${name}" criada com sucesso.`);
+        } else {
+          console.log(`GB: Carteira "${name}" já existe.`);
+        }
         break;
       }
 
