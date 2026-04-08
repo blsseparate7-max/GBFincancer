@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { UserSession } from '../types';
 import { auth, db } from '../services/firebaseConfig';
 import { fetchChatContext } from '../services/databaseService';
-import { resetUserData } from '../services/resetService';
+import { resetUserFinancialData } from '../services/resetService';
 import { QATestingService, QATestScenarioResult, QAModuleId } from '../services/QATestingService';
 import { 
   ChevronDown, ChevronUp, CheckCircle2, XCircle, AlertCircle, 
@@ -131,18 +131,18 @@ const QADiagnostic: React.FC<QADiagnosticProps> = ({ session }) => {
     if (!session.uid || isResetting) return;
     
     setIsResetting(true);
-    addLog(`Iniciando Hard Reset para o usuário ${session.uid}...`, 'info');
+    addLog(`Iniciando Reset Financeiro para o usuário ${session.uid}...`, 'info');
     
     try {
-      await resetUserData(db, session.uid);
-      addLog("Hard Reset concluído com sucesso! O sistema será reiniciado.", 'success');
+      await resetUserFinancialData(db, auth, session.uid);
+      addLog("Reset Financeiro concluído com sucesso! O sistema será reiniciado.", 'success');
       
       // Pequeno delay para o usuário ler o log antes do reload
       setTimeout(() => {
         window.location.reload();
       }, 2000);
     } catch (err) {
-      addLog(`Erro durante o Hard Reset: ${err}`, 'error');
+      addLog(`Erro durante o Reset Financeiro: ${err}`, 'error');
       setIsResetting(false);
       setShowResetConfirm(false);
     }

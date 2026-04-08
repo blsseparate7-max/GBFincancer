@@ -32,6 +32,17 @@ export const CATEGORY_KEYWORDS: Record<string, string[]> = {
 export const ensureDefaultCategories = async (uid: string) => {
   if (!uid) return;
   
+  // Proteção contra recriação automática durante ou logo após reset
+  const userRef = doc(db, "users", uid);
+  const userSnap = await getDoc(userRef);
+  if (userSnap.exists()) {
+    const userData = userSnap.data();
+    if (userData.resetInProgress || userData.status === 'fresh_start') {
+      console.log("GB: ensureDefaultCategories abortado devido a reset em andamento ou fresh_start");
+      return;
+    }
+  }
+
   const userCatsRef = collection(db, "users", uid, "categories");
   const snap = await getDocs(userCatsRef);
   
