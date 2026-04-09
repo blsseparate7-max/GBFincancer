@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import MoneyInput from './MoneyInput';
+import { Notification } from './UI';
 import { GoogleGenAI } from "@google/genai";
 import { 
   DailyInsight, 
@@ -41,9 +42,10 @@ interface DashProps {
   user: any; // UserSession
   loading?: boolean;
   onNavigateToExtrato?: (filters: any) => void;
+  isExpired?: boolean;
 }
 
-const Dashboard: React.FC<DashProps> = ({ transactions, goals, limits, wallets, reminders, categories, uid, user, loading, onNavigateToExtrato }) => {
+const Dashboard: React.FC<DashProps> = ({ transactions, goals, limits, wallets, reminders, categories, uid, user, loading, onNavigateToExtrato, isExpired = false }) => {
   const [showLimitModal, setShowLimitModal] = useState(false);
   const [showGlobalLimitModal, setShowGlobalLimitModal] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
@@ -65,6 +67,7 @@ const Dashboard: React.FC<DashProps> = ({ transactions, goals, limits, wallets, 
   const [selectedDay, setSelectedDay] = useState<number | null>(null);
   const [dailyInsight, setDailyInsight] = useState<string | null>(null);
   const [loadingInsight, setLoadingInsight] = useState(false);
+  const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
 
   const format = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v);
 
@@ -148,7 +151,7 @@ const Dashboard: React.FC<DashProps> = ({ transactions, goals, limits, wallets, 
       .reduce((s, t) => s + (Number(t.amount) || 0), 0);
     
     const expense = monthTransactions
-      .filter(t => t.type === 'EXPENSE' && t.paymentMethod !== 'CARD')
+      .filter(t => t.type === 'EXPENSE')
       .reduce((s, t) => s + (Number(t.amount) || 0), 0);
     
     const totalSaved = goals.reduce((s, g) => s + (Number(g.currentAmount) || 0), 0);
@@ -202,25 +205,31 @@ const Dashboard: React.FC<DashProps> = ({ transactions, goals, limits, wallets, 
       }
     });
 
-    // Expense Ranking
+    // Expense Ranking - Agregação robusta por categoria
     const expenseCategories = monthTransactions
       .filter(t => t.type === 'EXPENSE')
       .reduce((acc, t) => {
-        const cat = normalizeCategoryName(t.category || 'Outros');
-        acc[cat] = (acc[cat] || 0) + (Number(t.amount) || 0);
+        const rawCat = t.category || 'Outros';
+        const displayCat = normalizeCategoryName(rawCat);
+        const groupKey = displayCat.toLowerCase().trim();
+        
+        if (!acc[groupKey]) {
+          acc[groupKey] = { name: displayCat, value: 0 };
+        }
+        acc[groupKey].value += (Number(t.amount) || 0);
         return acc;
-      }, {} as Record<string, number>);
+      }, {} as Record<string, { name: string; value: number }>);
 
-    const totalExpenses: number = Object.values(expenseCategories).reduce((a, b) => Number(a) + Number(b), 0) as number;
+    const expenseCategoriesList = Object.values(expenseCategories) as { name: string; value: number }[];
+    const totalExpenses: number = expenseCategoriesList.reduce((a, b) => a + b.value, 0);
     
-    const expenseRanking: { name: string; value: number; percentage: number }[] = Object.entries(expenseCategories)
-      .map(([name, value]) => ({
-        name,
-        value: Number(value),
-        percentage: totalExpenses > 0 ? (Number(value) / totalExpenses) * 100 : 0
+    const expenseRanking = expenseCategoriesList
+      .map(item => ({
+        name: item.name,
+        value: item.value,
+        percentage: totalExpenses > 0 ? (item.value / totalExpenses) * 100 : 0
       }))
-      .sort((a, b) => b.value - a.value)
-      .slice(0, 5);
+      .sort((a, b) => b.value - a.value);
 
     // Spending Limits
     const spendingLimits = limits.map(lim => {
@@ -269,10 +278,16 @@ const Dashboard: React.FC<DashProps> = ({ transactions, goals, limits, wallets, 
       { name: 'Saídas', value: expense, fill: '#f43f5e' }
     ];
 
-    const pieData = expenseRanking.map(item => ({
-      name: item.name,
-      value: item.value
-    }));
+    // Pie Data - Agrupa em "Outros" se houver mais de 6 categorias para manter a legibilidade do gráfico
+    const pieData = expenseRanking.length <= 6 
+      ? expenseRanking.map(item => ({ name: item.name, value: item.value }))
+      : [
+          ...expenseRanking.slice(0, 5).map(item => ({ name: item.name, value: item.value })),
+          { 
+            name: 'Outros', 
+            value: expenseRanking.slice(5).reduce((sum, item) => sum + item.value, 0) 
+          }
+        ];
 
     const COLORS = ['#00a884', '#d4af37', '#005c4b', '#f43f5e', '#8b5cf6'];
 
@@ -297,23 +312,35 @@ const Dashboard: React.FC<DashProps> = ({ transactions, goals, limits, wallets, 
 
   const handleCreateLimit = async () => {
     if (!limitCat || !limitVal) return;
-    await dispatchEvent(uid, {
+    const result = await dispatchEvent(uid, {
       type: 'UPDATE_LIMIT',
       payload: { category: limitCat, amount: parseFloat(limitVal) },
       source: 'ui',
       createdAt: new Date()
     });
+    
+    if (result && !result.success) {
+      setNotification({ message: result.error || "Erro ao criar limite.", type: 'error' });
+      return;
+    }
+
     setLimitCat(''); setLimitVal(''); setShowLimitModal(false);
   };
 
   const handleSaveGlobalLimit = async () => {
     if (!globalLimitVal) return;
-    await dispatchEvent(uid, {
+    const result = await dispatchEvent(uid, {
       type: 'UPDATE_USER',
       payload: { spendingLimit: Number(globalLimitVal) },
       source: 'ui',
       createdAt: new Date()
     });
+
+    if (result && !result.success) {
+      setNotification({ message: result.error || "Erro ao salvar limite global.", type: 'error' });
+      return;
+    }
+
     setShowGlobalLimitModal(false);
   };
 
@@ -332,7 +359,7 @@ const Dashboard: React.FC<DashProps> = ({ transactions, goals, limits, wallets, 
     if (!txDesc || txAmount <= 0 || !txWalletId) return;
     setIsSaving(true);
     try {
-      await dispatchEvent(uid, {
+      const result = await dispatchEvent(uid, {
         type: txType === 'INCOME' ? 'ADD_INCOME' : 'ADD_EXPENSE',
         payload: {
           description: txDesc,
@@ -346,6 +373,13 @@ const Dashboard: React.FC<DashProps> = ({ transactions, goals, limits, wallets, 
         source: 'ui',
         createdAt: new Date()
       });
+
+      if (result && !result.success) {
+        setNotification({ message: result.error || "Erro ao salvar transação.", type: 'error' });
+        setIsSaving(false);
+        return;
+      }
+
       setShowAddModal(false);
       // Reset form
       setTxDesc('');
@@ -355,6 +389,7 @@ const Dashboard: React.FC<DashProps> = ({ transactions, goals, limits, wallets, 
       setTxPaymentMethod('');
     } catch (error) {
       console.error("Erro ao salvar transação:", error);
+      setNotification({ message: "Erro interno ao salvar transação.", type: 'error' });
     } finally {
       setIsSaving(false);
     }
@@ -372,7 +407,15 @@ const Dashboard: React.FC<DashProps> = ({ transactions, goals, limits, wallets, 
     );
   }
 
-  return (    <div className="p-4 md:p-8 space-y-8 animate-fade pb-32 relative z-10 max-w-7xl mx-auto min-h-full">
+  return (
+    <div className="p-4 md:p-8 space-y-8 animate-fade pb-32 relative z-10 max-w-7xl mx-auto min-h-full">
+      {notification && (
+        <Notification 
+          message={notification.message} 
+          type={notification.type} 
+          onClose={() => setNotification(null)} 
+        />
+      )}
       <header className="flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div className="flex flex-col md:flex-row md:items-end gap-6">
           <div>
@@ -380,10 +423,11 @@ const Dashboard: React.FC<DashProps> = ({ transactions, goals, limits, wallets, 
             <h1 className="text-4xl md:text-5xl font-black text-[var(--text-primary)] uppercase italic tracking-tighter leading-none">Dashboard</h1>
           </div>
           <button 
-            onClick={() => setShowAddModal(true)}
-            className="hidden md:flex items-center gap-2 px-6 py-3 bg-[var(--green-whatsapp)] text-white rounded-2xl font-black text-[11px] uppercase shadow-lg shadow-[var(--green-whatsapp)]/20 hover:scale-105 transition-all active:scale-95"
+            onClick={() => !isExpired && setShowAddModal(true)}
+            disabled={isExpired}
+            className={`hidden md:flex items-center gap-2 px-6 py-3 rounded-2xl font-black text-[11px] uppercase shadow-lg transition-all active:scale-95 ${isExpired ? 'bg-gray-500/20 text-gray-500 cursor-not-allowed opacity-50' : 'bg-[var(--green-whatsapp)] text-white shadow-[var(--green-whatsapp)]/20 hover:scale-105'}`}
           >
-            <Plus size={16} /> Adicionar Manualmente
+            <Plus size={16} /> {isExpired ? 'Acesso Expirado' : 'Adicionar Manualmente'}
           </button>
         </div>
         <div className="flex items-center gap-2 px-4 py-2 bg-[var(--surface)] rounded-2xl border border-[var(--border)] shadow-sm">

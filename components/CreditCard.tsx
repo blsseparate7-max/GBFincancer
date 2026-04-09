@@ -13,9 +13,10 @@ interface CreditCardProps {
   cards: CreditCardInfo[];
   wallets: Wallet[];
   loading?: boolean;
+  isExpired?: boolean;
 }
 
-const CreditCard: React.FC<CreditCardProps> = ({ transactions, uid, cards, wallets, loading }) => {
+const CreditCard: React.FC<CreditCardProps> = ({ transactions, uid, cards, wallets, loading, isExpired = false }) => {
   const [showAddForm, setShowAddForm] = useState(false);
   const [showExtrato, setShowExtrato] = useState<string | null>(null);
   const [isEditing, setIsEditing] = useState<string | null>(null);
@@ -38,6 +39,10 @@ const CreditCard: React.FC<CreditCardProps> = ({ transactions, uid, cards, walle
   const [editingData, setEditingData] = useState<{ name: string; limit: number; dueDay: number; closingDay: number } | null>(null);
 
   const handleUpdateCard = async (cardId: string) => {
+    if (isExpired) {
+      setNotification({ message: "Seu período de teste expirou. Assine para gerenciar cartões.", type: 'error' });
+      return;
+    }
     if (!editingData) return;
     setIsLoading(true);
     const res = await dispatchEvent(uid, {
@@ -143,6 +148,10 @@ const CreditCard: React.FC<CreditCardProps> = ({ transactions, uid, cards, walle
   }, [activeMenu]);
 
   const handleAddCard = async () => {
+    if (isExpired) {
+      setNotification({ message: "Seu período de teste expirou. Assine para adicionar cartões.", type: 'error' });
+      return;
+    }
     if (!cardName || !cardLimit || !cardDueDay) return;
     setIsLoading(true);
     const res = await dispatchEvent(uid, {
@@ -176,6 +185,11 @@ const CreditCard: React.FC<CreditCardProps> = ({ transactions, uid, cards, walle
   };
 
   const confirmDeleteCard = async () => {
+    if (isExpired) {
+      setNotification({ message: "Seu período de teste expirou. Assine para excluir cartões.", type: 'error' });
+      setConfirmDelete({ isOpen: false, message: '' });
+      return;
+    }
     const card = confirmDelete.card;
     if (!card) return;
 
@@ -199,6 +213,11 @@ const CreditCard: React.FC<CreditCardProps> = ({ transactions, uid, cards, walle
   };
 
   const confirmDeleteTransactionAction = async () => {
+    if (isExpired) {
+      setNotification({ message: "Seu período de teste expirou. Assine para excluir lançamentos.", type: 'error' });
+      setConfirmDeleteTransaction({ isOpen: false, id: null });
+      return;
+    }
     if (!confirmDeleteTransaction.id) return;
     
     try {
@@ -227,6 +246,10 @@ const CreditCard: React.FC<CreditCardProps> = ({ transactions, uid, cards, walle
   };
 
   const handleConfirmPayment = async () => {
+    if (isExpired) {
+      setNotification({ message: "Seu período de teste expirou. Assine para realizar pagamentos.", type: 'error' });
+      return;
+    }
     const amount = parseFloat(payAmount);
     const card = cardAnalysis.find(c => c.id === isPaying);
     

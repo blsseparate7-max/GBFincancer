@@ -91,7 +91,7 @@ export interface Message {
   id: string;
   text: string;
   sender: 'user' | 'ai' | 'system';
-  timestamp: any;
+  createdAt: any;
   dedupeKey?: string;
   resolved?: boolean;
   actionType?: string;
@@ -136,7 +136,8 @@ export type EventType =
   | 'UPDATE_DEBT'
   | 'DELETE_DEBT'
   | 'REGISTER_DEBT_PAYMENT'
-  | 'UPDATE_ONBOARDING';
+  | 'UPDATE_ONBOARDING'
+  | 'SYNC_DATA';
 
 export interface CategoryPattern {
   id: string;

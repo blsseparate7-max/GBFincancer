@@ -13,9 +13,10 @@ interface GoalsProps {
   uid: string;
   user: UserSession;
   loading?: boolean;
+  isExpired?: boolean;
 }
 
-const Goals: React.FC<GoalsProps> = ({ goals, transactions, wallets, uid, user, loading }) => {
+const Goals: React.FC<GoalsProps> = ({ goals, transactions, wallets, uid, user, loading, isExpired = false }) => {
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingGoalId, setEditingGoalId] = useState<string | null>(null);
   const [newGoalName, setNewGoalName] = useState('');
@@ -64,6 +65,11 @@ const Goals: React.FC<GoalsProps> = ({ goals, transactions, wallets, uid, user, 
   const format = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v);
 
   const handleCreateGoal = async () => {
+    if (isExpired) {
+      setNotification({ message: "Seu período de teste expirou. Assine para criar metas.", type: 'error' });
+      return;
+    }
+
     if (!newGoalName || !newGoalTarget || !newGoalLocation) {
       setNotification({ message: "Preencha todos os campos obrigatórios.", type: 'error' });
       return;
@@ -184,6 +190,10 @@ const Goals: React.FC<GoalsProps> = ({ goals, transactions, wallets, uid, user, 
   };
 
   const handleAddAporte = async () => {
+    if (isExpired) {
+      setNotification({ message: "Seu período de teste expirou. Assine para realizar aportes.", type: 'error' });
+      return;
+    }
     const val = parseFloat(aporteAmount);
     if (!showAporteModal || isNaN(val) || val <= 0) return;
 
@@ -235,6 +245,10 @@ const Goals: React.FC<GoalsProps> = ({ goals, transactions, wallets, uid, user, 
   };
 
   const handleSpendFromGoal = async () => {
+    if (isExpired) {
+      setNotification({ message: "Seu período de teste expirou. Assine para usar o saldo das metas.", type: 'error' });
+      return;
+    }
     const val = parseFloat(gastoAmount);
     if (!showGastoModal || isNaN(val) || val <= 0) return;
 

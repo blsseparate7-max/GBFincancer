@@ -1,6 +1,7 @@
 
 import { GoogleGenAI, Type, ThinkingLevel } from "@google/genai";
 import { getCategoryMappingPrompt, suggestCategory } from "./categoryService";
+import { parseFinancialMessage } from "./financialMessageParser";
 
 const getAI = () => {
   const v1 = (import.meta as any).env?.VITE_GEMINI_API_KEY;
@@ -161,6 +162,12 @@ export const parseMessage = async (text: string, userName: string, context?: { u
       `STATUS DO ONBOARDING: Passo ${context.user.onboardingStatus.step}, Completado: ${context.user.onboardingStatus.completed}. ${context.user.onboardingStatus.step === 3 ? 'O usuário deve confirmar se já recebeu o salário este mês. Se ele disser "Sim" ou confirmar explicitamente o recebimento, você DEVE gerar o evento ADD_INCOME usando os dados do PERFIL DE RENDA. Caso contrário, apenas converse e aguarde a confirmação.' : ''}` :
       '';
 
+    // Parser Determinístico (Dica para a IA)
+    const parserHint = parseFinancialMessage(text);
+    const parserHintContext = parserHint.confidence > 0.4 ? 
+      `DICA DO SISTEMA (CONFIÁVEL): Esta mensagem parece ser um(a) ${parserHint.type.toUpperCase()} de valor R$ ${parserHint.amount} com descrição "${parserHint.description}". ${parserHint.fromWallet ? 'Origem: ' + parserHint.fromWallet : ''} ${parserHint.toWallet ? 'Destino: ' + parserHint.toWallet : ''}. ${parserHint.missingFields.length > 0 ? 'CAMPOS FALTANTES: ' + parserHint.missingFields.join(', ') : ''}` : 
+      '';
+
     // Contexto de Médias por Categoria (para detecção de gastos suspeitos)
     const categoryAverages = context?.transactions ? 
       (() => {
@@ -197,6 +204,7 @@ export const parseMessage = async (text: string, userName: string, context?: { u
       ${spendingLimitContext}
       ${incomeProfileContext}
       ${onboardingContext}
+      ${parserHintContext}
 
       ${patternsContext}
 
@@ -208,15 +216,18 @@ export const parseMessage = async (text: string, userName: string, context?: { u
       
       REGRAS DE OURO (FONTE DA VERDADE):
       1. Você deve SEMPRE priorizar os dados acima sobre qualquer conversa anterior.
-      2. Se o usuário perguntar sobre pendências, verifique os LEMBRETES onde "pago" é false.
-      3. MAPEAMENTO DE CARTEIRAS: Sempre que o usuário mencionar uma carteira pelo nome (ex: 'Nubank', 'Carteira'), procure o 'id' correspondente na lista de CARTEIRAS e use-o em 'sourceWalletId' ou 'targetWalletId'.
-      4. CONFIRMAÇÕES (ONBOARDING): Se o usuário confirmar um recebimento (ex: 'Sim', 'Já recebi', 'Confirmado') e estiver no Passo 3 do Onboarding, você DEVE OBRIGATORIAMENTE gerar o evento ADD_INCOME correspondente. 
+      2. Se houver uma "DICA DO SISTEMA" acima, use-a como base prioritária para extrair o valor e a intenção, a menos que ela esteja claramente errada.
+      3. Se houver "CAMPOS FALTANTES" na dica, peça educadamente ao usuário para fornecer essas informações em vez de tentar adivinhar com baixa confiança.
+      4. Se o usuário perguntar sobre pendências, verifique os LEMBRETES onde "pago" é false.
+      5. MAPEAMENTO DE CARTEIRAS: Sempre que o usuário mencionar uma carteira pelo nome (ex: 'Nubank', 'Carteira'), procure o 'id' correspondente na lista de CARTEIRAS e use-o em 'sourceWalletId' ou 'targetWalletId'.
+      6. CONFIRMAÇÕES (ONBOARDING): Se o usuário confirmar um recebimento (ex: 'Sim', 'Já recebi', 'Confirmado') e estiver no Passo 3 do Onboarding, você DEVE OBRIGATORIAMENTE gerar o evento ADD_INCOME correspondente. 
          - Use o valor de 'amountExpected' das fontes do PERFIL DE RENDA como 'amount'.
          - Use o 'targetWalletName' das fontes do PERFIL DE RENDA como 'targetWalletName'.
-         - Se houver múltiplas fontes, use a primeira ou a que melhor se encaixar no valor mencionado.
-         - Não pergunte novamente, apenas registre.
-      5. CONFIRMAÇÕES GERAIS: Se o valor ou carteira não estiverem na mensagem atual, tente inferir dos LEMBRETES (tipo RECEIVE), PERFIL DE RENDA ou CARTEIRAS disponíveis no contexto. Se o usuário confirmar algo que você acabou de perguntar, gere o evento correspondente.
-      6. Se o usuário disser apenas "Sim", "Ok", "Confirmado" ou similar, e houver uma ação pendente óbvia no contexto (como um lembrete de salário no onboarding), gere o evento para essa ação. Use os campos 'targetWalletName' para entradas e 'sourceWalletName' para saídas.
+      7. FEEDBACK: Sua resposta ('reply') deve ser curta, amigável e confirmar o que você entendeu. 
+         - Se você gerou um evento de gasto, diga: "Entendi, quer que eu registre esse gasto de R$ [valor] com [descrição]?"
+         - Se você gerou um evento de entrada, diga: "Legal! Vou registrar essa entrada de R$ [valor] como [descrição]."
+         - Se você gerou um evento de transferência, diga: "Certo, vou transferir R$ [valor] de [origem] para [destino]."
+         - Se faltar informação, diga: "Pode me falar o [campo faltante] desse lançamento?"
       
       INTELIGÊNCIA FINANCEIRA (UPGRADES):
       1. DETECÇÃO DE GASTOS SUSPEITOS:
@@ -225,7 +236,11 @@ export const parseMessage = async (text: string, userName: string, context?: { u
       2. ALERTA DE RISCO:
       - Se os gastos do mês (RESUMO GASTOS MÊS ATUAL) estiverem próximos de 80% da renda (se houver lembretes de RECEIVE), alerte.
       - Se o saldo total (CARTEIRAS) estiver próximo de zero, alerte.
-      3. PREVISÃO:
+      3. TRANSFERÊNCIAS:
+      - Se o usuário disser "transfere 100 do Nubank para a Carteira", gere o evento TRANSFER_WALLET.
+      - Use 'sourceWalletName' para a origem e 'targetWalletName' para o destino.
+      - O valor deve ser positivo.
+      4. PREVISÃO:
       - Se o usuário perguntar "como vou terminar o mês?", use os dados para estimar se o saldo será positivo ou negativo.
       4. PARCELAMENTO (CARTÃO DE CRÉDITO):
       - Se o usuário disser algo como "gastei 1200 em 12x" ou "comprei 300 no cartão em 6x", você deve identificar que é uma compra parcelada.

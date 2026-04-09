@@ -10,9 +10,10 @@ interface RemindersProps {
   wallets: Wallet[];
   uid: string;
   loading?: boolean;
+  isExpired?: boolean;
 }
 
-const Reminders: React.FC<RemindersProps> = ({ bills, wallets, uid, loading }) => {
+const Reminders: React.FC<RemindersProps> = ({ bills, wallets, uid, loading, isExpired = false }) => {
   const [activeTab, setActiveTab] = useState<'pending' | 'paid' | 'next'>('pending');
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingBill, setEditingBill] = useState<Bill | null>(null);
@@ -77,6 +78,10 @@ const Reminders: React.FC<RemindersProps> = ({ bills, wallets, uid, loading }) =
   }, [bills, activeTab]);
 
   const handleAddBill = async () => {
+    if (isExpired) {
+      setNotification({ message: "Seu período de teste expirou. Assine para gerenciar lembretes.", type: 'error' });
+      return;
+    }
     if (!desc || !val || !day) return;
     setIsLoading(true);
 
@@ -107,6 +112,10 @@ const Reminders: React.FC<RemindersProps> = ({ bills, wallets, uid, loading }) =
   };
 
   const handlePayBill = async (method: PaymentMethod, walletId?: string) => {
+    if (isExpired) {
+      setNotification({ message: "Seu período de teste expirou. Assine para realizar pagamentos.", type: 'error' });
+      return;
+    }
     if (!payingBillId) return;
     setIsLoading(true);
     await dispatchEvent(uid, {

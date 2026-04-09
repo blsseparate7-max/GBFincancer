@@ -7,34 +7,42 @@ import { collection, addDoc, serverTimestamp, query, where, getDocs, limit } fro
  */
 export const sendMessageToFirestore = async (uid: string, text: string, sender: 'user' | 'ai', dedupeKey?: string) => {
   const finalUid = uid || auth.currentUser?.uid;
-  if (!finalUid) return;
+  if (!finalUid) {
+    console.error("GB Chat Service: UID não encontrado para envio de mensagem.");
+    return;
+  }
   
-  console.log(`GB Chat Service: Enviando mensagem (${sender}): "${text.substring(0, 30)}..."`);
+  console.log(`GB Chat Service: Iniciando envio de mensagem (${sender}) para users/${finalUid}/chat_messages...`);
   
   if (dedupeKey) {
-    const q = query(
-      collection(db, "users", finalUid, "messages"),
-      where("dedupeKey", "==", dedupeKey),
-      limit(1)
-    );
-    const snap = await getDocs(q);
-    if (!snap.empty) {
-      console.log(`GB Chat Service: Mensagem ignorada (dedupeKey duplicado: ${dedupeKey})`);
-      return; 
+    try {
+      const q = query(
+        collection(db, "users", finalUid, "chat_messages"),
+        where("dedupeKey", "==", dedupeKey),
+        limit(1)
+      );
+      const snap = await getDocs(q);
+      if (!snap.empty) {
+        console.log(`GB Chat Service: Mensagem ignorada (dedupeKey duplicado: ${dedupeKey})`);
+        return; 
+      }
+    } catch (err) {
+      console.error("GB Chat Service: Erro ao verificar dedupeKey:", err);
     }
   }
 
   try {
-    await addDoc(collection(db, "users", finalUid, "messages"), {
+    const docRef = await addDoc(collection(db, "users", finalUid, "chat_messages"), {
       text,
       sender,
-      timestamp: serverTimestamp(),
+      createdAt: serverTimestamp(),
       dedupeKey: dedupeKey || null,
       source: 'chat',
       resolved: false
     });
-    console.log(`GB Chat Service: Mensagem salva no Firestore com sucesso.`);
+    console.log(`GB Chat Service: Mensagem salva com sucesso! ID: ${docRef.id} em chat_messages`);
   } catch (err) {
-    console.error("GB Chat Service: Erro ao salvar mensagem no Firestore:", err);
+    console.error("GB Chat Service: ERRO CRÍTICO ao salvar mensagem no Firestore:", err);
+    throw err; // Repassa o erro para que o chamador saiba que falhou
   }
 };

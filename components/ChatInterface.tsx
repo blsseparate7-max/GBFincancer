@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { UserSession, Message, Transaction, CategoryLimit, Bill, CreditCardInfo, Wallet, UserCategory, SavingGoal, Debt, CategoryPattern } from '../types';
 import { parseMessage } from '../services/geminiService';
+import { parseFinancialMessage } from '../services/financialMessageParser';
 import { parseStatementFile } from '../services/statementService';
 import { dispatchEvent } from '../services/eventDispatcher';
 import { learnCategoryPattern } from '../services/categoryService';
@@ -29,11 +30,13 @@ interface ChatProps {
   setMessages?: (msgs: Message[]) => void;
   onNavigateToExtrato?: (filters: any) => void;
   highlightInput?: boolean;
+  isExpired?: boolean;
 }
 
 const ChatInterface: React.FC<ChatProps> = ({ 
   user, messages, transactions, limits, reminders, 
-  cards, wallets, categories, goals, debts, categoryPatterns, onToggleSidebar, onOpenProfile, setMessages, onNavigateToExtrato, highlightInput 
+  cards, wallets, categories, goals, debts, categoryPatterns, onToggleSidebar, onOpenProfile, setMessages, onNavigateToExtrato, highlightInput,
+  isExpired = false
 }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [pendingAction, setPendingAction] = useState<any>(null);
@@ -92,7 +95,7 @@ const ChatInterface: React.FC<ChatProps> = ({
         
         // Verificar se já perguntamos neste ciclo via Firestore
         const q = query(
-          collection(db, "users", user.uid, "messages"),
+          collection(db, "users", user.uid, "chat_messages"),
           where("dedupeKey", "==", dedupeKey),
           limit(1)
         );
@@ -122,7 +125,7 @@ const ChatInterface: React.FC<ChatProps> = ({
         const dedupeKey = `risk-alert-${cycleKey}`;
         
         const q = query(
-          collection(db, "users", user.uid, "messages"),
+          collection(db, "users", user.uid, "chat_messages"),
           where("dedupeKey", "==", dedupeKey),
           limit(1)
         );
@@ -175,7 +178,7 @@ const ChatInterface: React.FC<ChatProps> = ({
 
         // Verificar se já perguntamos no Firestore para não duplicar a mensagem visual
         const q = query(
-          collection(db, "users", user.uid, "messages"),
+          collection(db, "users", user.uid, "chat_messages"),
           where("dedupeKey", "==", dedupeKey),
           limit(1)
         );
@@ -223,7 +226,7 @@ const ChatInterface: React.FC<ChatProps> = ({
         
         // Verificar se já perguntamos hoje
         const q = query(
-          collection(db, "users", user.uid, "messages"),
+          collection(db, "users", user.uid, "chat_messages"),
           where("dedupeKey", "==", dedupeKey),
           limit(1)
         );
@@ -312,6 +315,16 @@ const ChatInterface: React.FC<ChatProps> = ({
   const handleSend = async (text: string) => {
     if (!text.trim() || isLoading || isProcessingRef.current) return;
 
+    if (isExpired) {
+      await sendMessage(text.trim(), 'user');
+      setIsLoading(true);
+      setTimeout(async () => {
+        await sendMessage("Seu período de teste expirou. 😔 Assine o GBFinancer Premium para continuar enviando mensagens e organizando suas finanças!", 'ai');
+        setIsLoading(false);
+      }, 1000);
+      return;
+    }
+
     // INTERCEPTAÇÃO CRÍTICA: Verificar se há confirmação pendente de onboarding antes da IA
     const lowerText = text.toLowerCase();
     if (pendingSalaryReminder) {
@@ -348,18 +361,39 @@ const ChatInterface: React.FC<ChatProps> = ({
         ? { ...freshContext, userPatterns: categoryPatterns } 
         : { user, reminders, cards, wallets, categories, transactions, goals, limits, debts, userPatterns: categoryPatterns };
 
+      // Parser Determinístico (Dica para a IA e Safety Net)
+      const parserHint = parseFinancialMessage(text.trim());
+
       // 2. Processar com Gemini
       console.log("GB Chat: Chamando Gemini API...");
       const result = await parseMessage(text.trim(), user.name || 'Usuário', finalContext);
       console.log("GB Chat: Gemini respondeu:", result);
       
-      if (result.events && result.events.length > 0) {
-        console.log(`GB Chat: Detectados ${result.events.length} eventos.`);
-        if (result.events.length === 1) {
-          setPendingAction(result.events[0]);
+      let finalEvents = result.events || [];
+
+      // Safety Net: Se a IA falhou mas o parser tem alta confiança, usamos o parser
+      if (finalEvents.length === 0 && parserHint.confidence > 0.8 && parserHint.type !== 'unknown') {
+        console.log("GB Chat: Usando Safety Net (Parser Hint)");
+        finalEvents = [{
+          type: parserHint.type === 'expense' ? 'ADD_EXPENSE' : (parserHint.type === 'income' ? 'ADD_INCOME' : 'TRANSFER_WALLET'),
+          payload: {
+            amount: parserHint.amount,
+            description: parserHint.description,
+            category: parserHint.categoryHint || 'Outros',
+            sourceWalletName: parserHint.fromWallet,
+            targetWalletName: parserHint.toWallet,
+            date: new Date().toISOString().split('T')[0]
+          }
+        }];
+      }
+
+      if (finalEvents.length > 0) {
+        console.log(`GB Chat: Detectados ${finalEvents.length} eventos.`);
+        if (finalEvents.length === 1) {
+          setPendingAction(finalEvents[0]);
           setPendingEvents([]);
         } else {
-          setPendingEvents(result.events);
+          setPendingEvents(finalEvents);
           setPendingAction(null);
         }
       }
@@ -436,22 +470,27 @@ const ChatInterface: React.FC<ChatProps> = ({
 
     setIsLoading(true);
     try {
-      const newCategoryNames = Array.from(new Set(
+      // 1. Deduplicar e criar novas categorias se necessário
+      const newCategoryNames: string[] = Array.from(new Set(
         selectedEvents
-          .filter(e => !categories.find(c => c.name.toLowerCase() === e.payload.category.toLowerCase()))
-          .map(e => e.payload.category.trim())
-          .filter(name => name.length > 0)
+          .map(e => e.payload.category?.trim())
+          .filter((name): name is string => !!name && name.length > 0 && name.toLowerCase() !== 'outros')
+          .filter(name => !categories.find(c => c.name.toLowerCase() === name.toLowerCase()))
       ));
 
+      const { getCategoryId } = await import('../services/categoryService');
+
       for (const catName of newCategoryNames) {
+        const slugId = getCategoryId(catName);
         await dispatchEvent(user.uid, {
           type: 'CREATE_CATEGORY',
-          payload: { name: catName, color: '#00A884', icon: '📁' },
+          payload: { id: slugId, name: catName, color: '#00A884', icon: '📁' },
           source: 'chat',
           createdAt: new Date()
         });
       }
 
+      // 2. Processar eventos
       for (const event of selectedEvents) {
         const eventToDispatch = { ...event };
         eventToDispatch.payload.confirmedBy = user.uid;
@@ -484,6 +523,7 @@ const ChatInterface: React.FC<ChatProps> = ({
       await sendMessage(`✅ Sucesso! Importei ${selectedEvents.length} lançamentos para sua conta (${name}).`, 'ai');
       setPendingEvents([]);
     } catch (e) {
+      console.error("GB Chat: Erro ao confirmar eventos em lote:", e);
       await sendMessage("Ocorreu um erro ao salvar alguns lançamentos.", 'ai');
     } finally {
       setIsLoading(false);
@@ -500,6 +540,13 @@ const ChatInterface: React.FC<ChatProps> = ({
 
   const confirmPendingAction = async (id: string, isCard: boolean = false) => {
     if (!pendingAction) return;
+
+    if (isExpired) {
+      await sendMessage("Ação bloqueada. Seu período de teste expirou. 😔", 'ai');
+      setPendingAction(null);
+      setPendingEvents([]);
+      return;
+    }
 
     setIsLoading(true);
     try {
@@ -524,6 +571,13 @@ const ChatInterface: React.FC<ChatProps> = ({
           source: 'chat',
           createdAt: new Date()
         });
+      } else if (pendingAction.type === 'TRANSFER_WALLET') {
+        // Transferência já tem origem e destino identificados pela IA ou parser
+        await dispatchEvent(user.uid, {
+          ...pendingAction,
+          source: 'chat',
+          createdAt: new Date()
+        });
       } else {
         if (isCard) {
           eventToDispatch.type = 'ADD_CARD_CHARGE';
@@ -535,7 +589,6 @@ const ChatInterface: React.FC<ChatProps> = ({
             eventToDispatch.payload.targetWalletId = id;
           } else {
             eventToDispatch.payload.sourceWalletId = id;
-            // O dispatcher agora cuida da inferência se necessário, ou deixa null
           }
           eventToDispatch.payload.confirmedBy = user.uid;
         }
@@ -547,10 +600,18 @@ const ChatInterface: React.FC<ChatProps> = ({
         });
       }
 
-      const name = isCard ? cards.find(c => c.id === id)?.name || 'Cartão' : wallets.find(w => w.id === id)?.name || 'Carteira';
-      const typeLabel = pendingAction.type === 'ADD_INCOME' ? 'Recebimento registrado' : 'Gasto anotado com sucesso';
-      const amountFormatted = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(pendingAction.payload.amount);
-      const feedback = `${typeLabel}  \n\n${amountFormatted} — ${pendingAction.payload.description}\nCarteira: ${name}\nCategoria: ${pendingAction.payload.category}`;
+      let feedback = '';
+      const amountFormatted = formatCurrency(pendingAction.payload.amount);
+
+      if (pendingAction.type === 'TRANSFER_WALLET') {
+        const from = pendingAction.payload.sourceWalletName || pendingAction.payload.fromWalletName || 'Origem';
+        const to = pendingAction.payload.targetWalletName || pendingAction.payload.toWalletName || 'Destino';
+        feedback = `✅ Transferência realizada!\n\n${amountFormatted} de ${from} para ${to}.`;
+      } else {
+        const name = isCard ? cards.find(c => c.id === id)?.name || 'Cartão' : wallets.find(w => w.id === id)?.name || 'Carteira';
+        const typeLabel = pendingAction.type === 'ADD_INCOME' ? 'Recebimento registrado' : 'Gasto anotado com sucesso';
+        feedback = `${typeLabel} ✅\n\n${amountFormatted} — ${pendingAction.payload.description}\nCarteira: ${name}\nCategoria: ${pendingAction.payload.category}`;
+      }
       
       await sendMessage(feedback, 'ai');
       setPendingAction(null);
@@ -660,8 +721,8 @@ const ChatInterface: React.FC<ChatProps> = ({
                   <div className="leading-tight pr-10 whitespace-pre-wrap">{msg.text}</div>
                   <div className="text-[9px] text-[var(--text-muted)] text-right absolute bottom-1 right-2 font-medium opacity-70">
                     {(() => {
-                      if (!msg.timestamp) return '';
-                      const d = msg.timestamp.toDate ? msg.timestamp.toDate() : new Date(msg.timestamp);
+                      if (!msg.createdAt) return '';
+                      const d = msg.createdAt.toDate ? msg.createdAt.toDate() : new Date(msg.createdAt);
                       return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
                     })()}
                   </div>
@@ -936,14 +997,37 @@ const ChatInterface: React.FC<ChatProps> = ({
                   <span className="text-[11px] text-[var(--text-muted)] font-bold uppercase">Descrição</span>
                   <span className="text-xs font-medium text-[var(--text-primary)]">{pendingAction.payload.description}</span>
                 </div>
+
+                {pendingAction.type === 'TRANSFER_WALLET' && (
+                  <div className="flex flex-col gap-1 pt-2 border-t border-[var(--border)]">
+                    <div className="flex justify-between items-center">
+                      <span className="text-[10px] text-[var(--text-muted)] font-bold uppercase">De</span>
+                      <span className="text-[11px] font-black text-rose-500 uppercase italic">{pendingAction.payload.sourceWalletName || pendingAction.payload.fromWalletName || 'Não identificada'}</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-[10px] text-[var(--text-muted)] font-bold uppercase">Para</span>
+                      <span className="text-[11px] font-black text-[var(--green-whatsapp)] uppercase italic">{pendingAction.payload.targetWalletName || pendingAction.payload.toWalletName || 'Não identificada'}</span>
+                    </div>
+                  </div>
+                )}
               </div>
 
               <p className="text-[10px] font-black text-[var(--text-muted)] uppercase mb-3 text-center">
-                {isSelectingCard ? 'Escolha o Cartão:' : (pendingAction.type === 'ADD_INCOME' ? 'Onde entrou esse dinheiro?' : 'De onde saiu esse dinheiro?')}
+                {pendingAction.type === 'TRANSFER_WALLET' 
+                  ? 'Confirmar transferência?' 
+                  : (isSelectingCard ? 'Escolha o Cartão:' : (pendingAction.type === 'ADD_INCOME' ? 'Onde entrou esse dinheiro?' : 'De onde saiu esse dinheiro?'))}
               </p>
 
               <div className="grid grid-cols-2 gap-2">
-                {isSelectingCard ? (
+                {pendingAction.type === 'TRANSFER_WALLET' ? (
+                  <button 
+                    onClick={() => confirmPendingAction('')}
+                    className="col-span-2 bg-[var(--green-whatsapp)] text-white border border-white rounded-2xl py-3 px-2 text-[11px] font-black uppercase transition-all active:scale-95 flex items-center justify-center gap-2 shadow-lg"
+                  >
+                    <span>🚀</span>
+                    <span>Confirmar Transferência</span>
+                  </button>
+                ) : isSelectingCard ? (
                   <>
                     {cards.map(card => (
                       <button 

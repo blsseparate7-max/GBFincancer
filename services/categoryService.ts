@@ -27,6 +27,13 @@ export const CATEGORY_KEYWORDS: Record<string, string[]> = {
 };
 
 /**
+ * Gera um ID determinístico para a categoria baseado no nome.
+ */
+export const getCategoryId = (name: string): string => {
+  return name.toLowerCase().trim().replace(/\s+/g, '_');
+};
+
+/**
  * Garante que o usuário possua as categorias básicas.
  */
 export const ensureDefaultCategories = async (uid: string) => {
@@ -46,21 +53,24 @@ export const ensureDefaultCategories = async (uid: string) => {
   const userCatsRef = collection(db, "users", uid, "categories");
   const snap = await getDocs(userCatsRef);
   
-  if (snap.empty) {
-    console.log("GB: Criando categorias padrão para o usuário...");
-    const defaults = [
-      { name: 'Alimentação', icon: 'Utensils', color: '#FF5722', type: 'EXPENSE' },
-      { name: 'Transporte', icon: 'Car', color: '#2196F3', type: 'EXPENSE' },
-      { name: 'Saúde', icon: 'HeartPulse', color: '#E91E63', type: 'EXPENSE' },
-      { name: 'Casa', icon: 'Home', color: '#795548', type: 'EXPENSE' },
-      { name: 'Lazer', icon: 'Gamepad2', color: '#9C27B0', type: 'EXPENSE' },
-      { name: 'Salário', icon: 'Banknote', color: '#4CAF50', type: 'INCOME' },
-      { name: 'Outros', icon: 'Tag', color: '#607D8B', type: 'EXPENSE' }
-    ];
+  // Mesmo que não esteja vazio, garantimos que as essenciais existam com IDs corretos
+  const defaults = [
+    { name: 'Alimentação', icon: 'Utensils', color: '#FF5722', type: 'EXPENSE' },
+    { name: 'Transporte', icon: 'Car', color: '#2196F3', type: 'EXPENSE' },
+    { name: 'Saúde', icon: 'HeartPulse', color: '#E91E63', type: 'EXPENSE' },
+    { name: 'Casa', icon: 'Home', color: '#795548', type: 'EXPENSE' },
+    { name: 'Lazer', icon: 'Gamepad2', color: '#9C27B0', type: 'EXPENSE' },
+    { name: 'Salário', icon: 'Banknote', color: '#4CAF50', type: 'INCOME' },
+    { name: 'Outros', icon: 'Tag', color: '#607D8B', type: 'EXPENSE' }
+  ];
+  
+  for (const cat of defaults) {
+    const id = getCategoryId(cat.name);
+    const catRef = doc(userCatsRef, id);
+    const catSnap = await getDoc(catRef);
     
-    for (const cat of defaults) {
-      const id = cat.name.toLowerCase().replace(/\s+/g, '_');
-      await setDoc(doc(userCatsRef, id), {
+    if (!catSnap.exists()) {
+      await setDoc(catRef, {
         ...cat,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp()

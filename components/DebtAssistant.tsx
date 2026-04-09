@@ -35,9 +35,10 @@ interface DebtAssistantProps {
   goals: SavingGoal[];
   cards: CreditCardInfo[];
   debts: Debt[];
+  isExpired?: boolean;
 }
 
-const DebtAssistant: React.FC<DebtAssistantProps> = ({ uid, transactions, wallets, user, goals, cards, debts }) => {
+const DebtAssistant: React.FC<DebtAssistantProps> = ({ uid, transactions, wallets, user, goals, cards, debts, isExpired = false }) => {
   const [loading, setLoading] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingDebt, setEditingDebt] = useState<Debt | null>(null);
@@ -153,6 +154,10 @@ const DebtAssistant: React.FC<DebtAssistantProps> = ({ uid, transactions, wallet
   }, [debts, user, transactions, goals, cards, extraSimulation]);
 
   const handleSaveDebt = async () => {
+    if (isExpired) {
+      setNotification({ message: "Seu período de teste expirou. Assine para gerenciar dívidas.", type: 'error' });
+      return;
+    }
     if (!debtForm.name || debtForm.totalAmount <= 0) {
       setNotification({ message: "Preencha o nome e o valor total.", type: 'error' });
       return;
@@ -204,6 +209,11 @@ const DebtAssistant: React.FC<DebtAssistantProps> = ({ uid, transactions, wallet
   };
 
   const confirmDeleteAction = async () => {
+    if (isExpired) {
+      setNotification({ message: "Seu período de teste expirou. Assine para excluir dívidas.", type: 'error' });
+      setConfirmDelete(null);
+      return;
+    }
     if (!confirmDelete) return;
     
     await dispatchEvent(uid, {

@@ -258,12 +258,16 @@ const App: React.FC = () => {
     }, (err) => handleError(err, "Onboarding"));
 
     const unsubMessages = onSnapshot(query(
-      collection(userRef, "messages"),
-      orderBy("timestamp", "asc"),
+      collection(userRef, "chat_messages"),
+      orderBy("createdAt", "asc"),
       limit(50)
     ), (snap) => {
+      console.log(`GB App: Recebidas ${snap.docs.length} mensagens em tempo real.`);
       setMessages(snap.docs.map(d => ({ id: d.id, ...d.data() } as Message)));
-    }, (err) => handleError(err, "Messages"));
+    }, (err) => {
+      console.error("GB App: Erro no listener de chat_messages:", err);
+      handleError(err, "Messages");
+    });
 
     return () => { 
       unsubTrans(); unsubGoals(); unsubReminders(); 
@@ -441,6 +445,7 @@ const App: React.FC = () => {
             setExtratoFilters(filters);
             setActiveTab('extrato');
           }}
+          isExpired={!hasAccess()}
         />
       ) : <LandingPage onLogin={(s) => setSession(s)} onOpenSupport={() => setActiveTab('support')} />;
       case 'extrato': return session ? (
@@ -471,18 +476,19 @@ const App: React.FC = () => {
             setExtratoFilters(filters);
             setActiveTab('extrato');
           }}
+          isExpired={!hasAccess()}
         />
       ) : null;
       case 'calendar': return session ? <CalendarTab transactions={transactions} reminders={reminders} loading={loadingReminders || loadingTransactions} /> : null;
-      case 'goals': return session ? <Goals goals={goals} transactions={transactions} wallets={wallets} uid={session.uid} user={session} loading={loadingGoals || loadingTransactions} /> : null;
-      case 'cc': return session ? <CreditCard transactions={transactions} uid={session.uid} cards={cards} wallets={wallets} loading={loadingCards} /> : null;
-      case 'reminders': return session ? <Reminders bills={reminders} wallets={wallets} uid={session.uid} loading={loadingReminders} /> : null;
+      case 'goals': return session ? <Goals goals={goals} transactions={transactions} wallets={wallets} uid={session.uid} user={session} loading={loadingGoals || loadingTransactions} isExpired={!hasAccess()} /> : null;
+      case 'cc': return session ? <CreditCard transactions={transactions} uid={session.uid} cards={cards} wallets={wallets} loading={loadingCards} isExpired={!hasAccess()} /> : null;
+      case 'reminders': return session ? <Reminders bills={reminders} wallets={wallets} uid={session.uid} loading={loadingReminders} isExpired={!hasAccess()} /> : null;
       case 'messages': return session ? <Messages notifications={notifications} /> : null;
       case 'resumo': return session ? <YearlySummary transactions={transactions} goals={goals} wallets={wallets} /> : null;
       case 'insights': return session ? <Insights transactions={transactions} limits={limits} /> : null;
       case 'score': return session ? <HealthScoreTab transactions={transactions} limits={limits} goals={goals} /> : null;
       case 'stress': return session ? <ImpactSimulator transactions={transactions} /> : null;
-      case 'debts': return session ? <DebtAssistant uid={session.uid} transactions={transactions} wallets={wallets} user={session} goals={goals} cards={cards} debts={debts} /> : null;
+      case 'debts': return session ? <DebtAssistant uid={session.uid} transactions={transactions} wallets={wallets} user={session} goals={goals} cards={cards} debts={debts} isExpired={!hasAccess()} /> : null;
       case 'profile': return session ? <ProfileEdit user={session} onUpdate={(d) => setSession(p => p ? {...p, ...d} : null)} onLogout={() => signOut(auth)} setActiveTab={setActiveTab} /> : null;
       case 'support': return <SupportTab user={session} onBackToAuth={() => setActiveTab('chat')} />;
       case 'admin_support': return session?.role === 'admin' ? <AdminSupport admin={session} /> : null;
@@ -516,6 +522,7 @@ const App: React.FC = () => {
               setExtratoFilters(filters);
               setActiveTab('extrato');
             }}
+            isExpired={!hasAccess()}
           />
         );
       }

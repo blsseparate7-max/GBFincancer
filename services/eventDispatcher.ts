@@ -7,7 +7,7 @@ import {
 } from "firebase/firestore";
 import { FinanceEvent, TransactionType } from "../types";
 import { normalizeCategoryName } from "./normalizationService";
-import { suggestCategory } from "./categoryService";
+import { getCategoryId, suggestCategory } from "./categoryService";
 
 async function getWalletInfo(uid: string, walletId: string) {
   if (!walletId) return null;
@@ -38,13 +38,26 @@ async function getCategoryInfo(uid: string, categoryName: string, description?: 
   }
 
   const normalized = normalizeCategoryName(nameToUse);
+  const id = getCategoryId(normalized);
+  
+  // Tenta buscar pelo ID determinístico primeiro (Fonte da Verdade)
+  const catRef = doc(db, "users", uid, "categories", id);
+  const catSnap = await getDoc(catRef);
+  
+  if (catSnap.exists()) {
+    return { id: catSnap.id, name: catSnap.data().name };
+  }
+
+  // Fallback: busca por nome (caso o ID seja diferente por algum motivo legado)
   const q = query(collection(db, "users", uid, "categories"), where("name", "==", normalized), limit(1));
   const snap = await getDocs(q);
   if (!snap.empty) {
     const d = snap.docs[0];
     return { id: d.id, name: d.data().name };
   }
-  return { id: 'outros', name: normalized };
+
+  // Se não existe, retorna o ID determinístico e o nome normalizado
+  return { id, name: normalized };
 }
 
 async function resolveWallet(uid: string, walletId?: string, walletName?: string) {
@@ -163,6 +176,34 @@ export const dispatchEvent = async (uid: string, event: FinanceEvent) => {
     return { success: false, error: "Invalid UID" };
   }
 
+  // Bloqueio de Segurança: Verificar Trial/Assinatura (Fonte da Verdade)
+  try {
+    const userDoc = await getDoc(doc(db, "users", finalUid));
+    if (userDoc.exists()) {
+      const userData = userDoc.data();
+      const now = new Date();
+      let hasAccess = false;
+
+      if (userData.role === 'admin') {
+        hasAccess = true;
+      } else if (userData.subscriptionStatus === 'active') {
+        hasAccess = !userData.subscriptionEndsAt || new Date(userData.subscriptionEndsAt) > now;
+      } else if (userData.subscriptionStatus === 'trial' && userData.trialEndsAt) {
+        hasAccess = new Date(userData.trialEndsAt) > now;
+      }
+
+      // Se não tem acesso, bloqueia ações de escrita (exceto UPDATE_USER que pode ser necessário para renovação/onboarding)
+      if (!hasAccess && event.type !== 'UPDATE_USER' && event.type !== 'SYNC_DATA') {
+        console.warn("GB Dispatch: Ação bloqueada por falta de assinatura ativa.", { uid: finalUid, type: event.type });
+        return { success: false, error: "Assinatura expirada. Por favor, renove seu acesso para realizar esta ação." };
+      }
+    }
+  } catch (e) {
+    console.error("GB Dispatch: Erro ao verificar acesso do usuário:", e);
+    // Em caso de erro na verificação, permitimos a ação para não travar o app por erro de rede, 
+    // mas logamos o erro. O Firestore Rules deve ser a última linha de defesa.
+  }
+
   // Verifica se o usuário autenticado coincide com o UID do evento
   if (auth.currentUser && auth.currentUser.uid !== finalUid) {
     console.warn("Event Dispatch Warning: UID mismatch - Usando UID solicitado", { authUid: auth.currentUser.uid, eventUid: finalUid });
@@ -217,19 +258,20 @@ export const dispatchEvent = async (uid: string, event: FinanceEvent) => {
           });
         }
 
-        await runTransaction(db, async (transaction) => {
-          const catInfo = await getCategoryInfo(uid, category, description);
-          let walletInfo = await resolveWallet(uid, sourceWalletId || walletId, sourceWalletName || walletName);
-          
-          // Se não encontrou carteira, tenta pegar a primeira disponível
-          if (!walletInfo) {
-            const walletsSnap = await getDocs(collection(userRef, "wallets"));
-            if (!walletsSnap.empty) {
-              const d = walletsSnap.docs[0];
-              walletInfo = { id: d.id, name: d.data().name };
-            }
+        // Resolve info OUTSIDE transaction
+        const catInfo = await getCategoryInfo(uid, category, description);
+        let walletInfo = await resolveWallet(uid, sourceWalletId || walletId, sourceWalletName || walletName);
+        
+        // Se não encontrou carteira, tenta pegar a primeira disponível
+        if (!walletInfo) {
+          const walletsSnap = await getDocs(collection(userRef, "wallets"));
+          if (!walletsSnap.empty) {
+            const d = walletsSnap.docs[0];
+            walletInfo = { id: d.id, name: d.data().name };
           }
+        }
 
+        await runTransaction(db, async (transaction) => {
           const transRef = doc(collection(userRef, "transactions"));
           
           // Determinar paymentMethod se não fornecido
@@ -246,7 +288,7 @@ export const dispatchEvent = async (uid: string, event: FinanceEvent) => {
             categoryId: catInfo.id,
             categoryName: catInfo.name,
             description, 
-            paymentMethod: finalPaymentMethod || null,
+            paymentMethod: finalPaymentMethod || 'PIX',
             type: 'EXPENSE',
             date: parseSafeDate(date).toISOString(),
             walletId: walletInfo?.id || null,
@@ -282,23 +324,26 @@ export const dispatchEvent = async (uid: string, event: FinanceEvent) => {
       case 'ADD_INCOME': {
         let { amount, targetWalletId, targetWalletName, walletId, walletName, description, category, date, paymentMethod, reminderId } = payload;
         
-        // Resolve wallet BEFORE transaction to avoid illegal getDocs inside runTransaction
+        // Resolve wallet and category OUTSIDE transaction
         const walletInfo = await resolveWallet(uid, targetWalletId || walletId, targetWalletName || walletName);
+        const catInfo = await getCategoryInfo(uid, category || 'Recebimento', description);
 
         await runTransaction(db, async (transaction) => {
+          let finalAmount = Number(amount);
+          let finalDescription = description;
+          let finalCategory = catInfo.name;
+
           // RECUPERAÇÃO DE DADOS DO PERFIL (Caso a IA envie payload incompleto no Onboarding)
-          if (!amount || !walletInfo) {
+          if (!finalAmount || !walletInfo) {
             const userSnap = await transaction.get(userRef);
             const userData = userSnap.data();
             if (userData?.incomeProfile?.sources?.length > 0) {
               const mainSource = userData.incomeProfile.sources[0];
-              amount = amount || mainSource.amountExpected;
-              description = description || mainSource.description;
-              category = category || 'Salário';
+              finalAmount = finalAmount || mainSource.amountExpected;
+              finalDescription = finalDescription || mainSource.description;
+              finalCategory = finalCategory || 'Salário';
             }
           }
-
-          const catInfo = await getCategoryInfo(uid, category || 'Recebimento', description);
           
           // Se ainda não tem walletInfo, tenta pegar a primeira disponível (fallback)
           let finalWalletInfo = walletInfo;
@@ -313,10 +358,10 @@ export const dispatchEvent = async (uid: string, event: FinanceEvent) => {
           const transRef = doc(collection(userRef, "transactions"));
           
           transaction.set(transRef, {
-            amount: Number(amount),
-            description: description || "Recebimento confirmado via Chat",
+            amount: Number(finalAmount),
+            description: finalDescription || "Recebimento confirmado via Chat",
             type: 'INCOME',
-            category: catInfo.name,
+            category: finalCategory,
             categoryId: catInfo.id,
             categoryName: catInfo.name,
             walletId: finalWalletInfo?.id || null,
@@ -335,7 +380,7 @@ export const dispatchEvent = async (uid: string, event: FinanceEvent) => {
           if (finalWalletInfo?.id) {
             const walletRef = doc(userRef, "wallets", finalWalletInfo.id);
             transaction.update(walletRef, { 
-              balance: increment(Number(amount)),
+              balance: increment(Number(finalAmount)),
               updatedAt: serverTimestamp()
             });
           }
@@ -1219,40 +1264,74 @@ export const dispatchEvent = async (uid: string, event: FinanceEvent) => {
       }
 
       case 'TRANSFER_WALLET': {
-        const { fromWalletId, toWalletId, sourceWalletId, targetWalletId, amount, note, description, date } = payload;
-        const finalFrom = fromWalletId || sourceWalletId;
-        const finalTo = toWalletId || targetWalletId;
+        const { fromWalletId, toWalletId, sourceWalletId, targetWalletId, fromWalletName, toWalletName, sourceWalletName, targetWalletName, amount, note, description, date } = payload;
+        
+        // Resolve wallet IDs from names if IDs are missing
+        const walletFromInfo = await resolveWallet(uid, fromWalletId || sourceWalletId, fromWalletName || sourceWalletName);
+        const walletToInfo = await resolveWallet(uid, toWalletId || targetWalletId, toWalletName || targetWalletName);
+
+        const finalFrom = walletFromInfo?.id;
+        const finalTo = walletToInfo?.id;
         const finalNote = note || description || "Transferência";
 
         if (!finalFrom || !finalTo) {
-          throw new Error("Origem ou destino da transferência não informados.");
+          throw new Error("Origem ou destino da transferência não encontrados ou não informados.");
         }
 
         if (finalFrom === finalTo) {
           throw new Error("A carteira de origem e destino não podem ser iguais.");
         }
         
-        // 1. Decrementa da origem
-        await updateDoc(doc(userRef, "wallets", finalFrom), {
-          balance: increment(-amount),
-          updatedAt: serverTimestamp()
-        });
+        await runTransaction(db, async (transaction) => {
+          const fromRef = doc(userRef, "wallets", finalFrom);
+          const toRef = doc(userRef, "wallets", finalTo);
+          
+          const fromSnap = await transaction.get(fromRef);
+          const toSnap = await transaction.get(toRef);
+          
+          if (!fromSnap.exists()) throw new Error("Carteira de origem não encontrada.");
+          if (!toSnap.exists()) throw new Error("Carteira de destino não encontrada.");
 
-        // 2. Incrementa no destino
-        await updateDoc(doc(userRef, "wallets", finalTo), {
-          balance: increment(amount),
-          updatedAt: serverTimestamp()
-        });
+          // 1. Decrementa da origem
+          transaction.update(fromRef, {
+            balance: increment(-amount),
+            updatedAt: serverTimestamp()
+          });
 
-        // 3. Registra a transferência
-        await addDoc(collection(userRef, "walletTransfers"), {
-          fromWalletId: finalFrom, 
-          toWalletId: finalTo, 
-          amount, 
-          note: finalNote, 
-          date: parseSafeDate(date || new Date()).toISOString(),
-          isQA,
-          createdAt: serverTimestamp()
+          // 2. Incrementa no destino
+          transaction.update(toRef, {
+            balance: increment(amount),
+            updatedAt: serverTimestamp()
+          });
+
+          // 3. Registra a transferência
+          const transferRef = doc(collection(userRef, "walletTransfers"));
+          transaction.set(transferRef, {
+            fromWalletId: finalFrom, 
+            fromWalletName: fromSnap.data().name,
+            toWalletId: finalTo, 
+            toWalletName: toSnap.data().name,
+            amount, 
+            note: finalNote, 
+            date: parseSafeDate(date || new Date()).toISOString(),
+            isQA,
+            createdAt: serverTimestamp()
+          });
+
+          // 4. Registra no extrato como uma transação especial
+          const transRef = doc(collection(userRef, "transactions"));
+          transaction.set(transRef, {
+            description: `Transferência: ${fromSnap.data().name} ➔ ${toSnap.data().name}`,
+            amount,
+            type: 'TRANSFER',
+            category: 'Transferência',
+            fromWalletId: finalFrom,
+            toWalletId: finalTo,
+            date: parseSafeDate(date || new Date()).toISOString(),
+            isQA,
+            source,
+            createdAt: serverTimestamp()
+          });
         });
         break;
       }

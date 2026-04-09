@@ -27,9 +27,10 @@ interface WalletTabProps {
   transactions: any[];
   loading?: boolean;
   onNavigateToExtrato?: (filters: any) => void;
+  isExpired?: boolean;
 }
 
-const WalletTab: React.FC<WalletTabProps> = ({ uid, freeBalance, goals, wallets: walletsFromProps, transactions, loading, onNavigateToExtrato }) => {
+const WalletTab: React.FC<WalletTabProps> = ({ uid, freeBalance, goals, wallets: walletsFromProps, transactions, loading, onNavigateToExtrato, isExpired = false }) => {
   const [wallets, setWallets] = useState<Wallet[]>(walletsFromProps);
   const [transfers, setTransfers] = useState<WalletTransfer[]>([]);
   const [isAdding, setIsAdding] = useState(false);
@@ -74,6 +75,10 @@ const WalletTab: React.FC<WalletTabProps> = ({ uid, freeBalance, goals, wallets:
   const difference = freeBalance - totalInWallets;
 
   const handleCreateWallet = async () => {
+    if (isExpired) {
+      setNotification({ message: "Seu período de teste expirou. Assine para criar carteiras.", type: 'error' });
+      return;
+    }
     if (!name || !balance) return;
     setIsLoading(true);
     await dispatchEvent(uid, {
@@ -87,6 +92,10 @@ const WalletTab: React.FC<WalletTabProps> = ({ uid, freeBalance, goals, wallets:
   };
 
   const handleUpdateWallet = async () => {
+    if (isExpired) {
+      setNotification({ message: "Seu período de teste expirou. Assine para atualizar carteiras.", type: 'error' });
+      return;
+    }
     if (!editingWallet || !name) return;
     setIsLoading(true);
     await dispatchEvent(uid, {
@@ -108,6 +117,10 @@ const WalletTab: React.FC<WalletTabProps> = ({ uid, freeBalance, goals, wallets:
   };
 
   const handleTransfer = async () => {
+    if (isExpired) {
+      setNotification({ message: "Seu período de teste expirou. Assine para realizar transferências.", type: 'error' });
+      return;
+    }
     if (!fromId || !toId || !transferAmount || fromId === toId) return;
     const amount = Number(transferAmount);
     const sourceWallet = wallets.find(w => w.id === fromId);
@@ -143,6 +156,11 @@ const WalletTab: React.FC<WalletTabProps> = ({ uid, freeBalance, goals, wallets:
   };
 
   const confirmDeleteWallet = async () => {
+    if (isExpired) {
+      setNotification({ message: "Seu período de teste expirou. Assine para excluir carteiras.", type: 'error' });
+      setConfirmDelete({ isOpen: false, message: '' });
+      return;
+    }
     const wallet = confirmDelete.wallet;
     if (!wallet) return;
 
