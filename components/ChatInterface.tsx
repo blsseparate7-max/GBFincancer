@@ -4,11 +4,12 @@ import { parseMessage } from '../services/geminiService';
 import { parseFinancialMessage } from '../services/financialMessageParser';
 import { parseStatementFile } from '../services/statementService';
 import { dispatchEvent } from '../services/eventDispatcher';
-import { learnCategoryPattern } from '../services/categoryService';
+import { learnCategoryPattern, getCategoryId } from '../services/categoryService';
 import { sendMessageToFirestore } from '../services/chatService';
 import { fetchChatContext } from '../services/databaseService';
 import { formatCurrency, calculateMonthlySummary } from '../services/summaryService';
 import ChatComposer from './ChatComposer';
+import { X, Check, Trash2, CreditCard, Tag, Plus } from 'lucide-react';
 
 import { db, auth } from '../services/firebaseConfig';
 import { collection, addDoc, serverTimestamp, query, where, getDocs, limit, doc, updateDoc, getDoc } from 'firebase/firestore';
@@ -50,9 +51,81 @@ const ChatInterface: React.FC<ChatProps> = ({
   const summarySentRef = useRef(false);
   const onboardingPromptSentRef = useRef(false);
 
+  const [isCreatingNewCategory, setIsCreatingNewCategory] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState('');
+
+  // Deduplicar e ordenar categorias para o seletor
+  const sortedCategories = useMemo(() => {
+    const seen = new Set<string>();
+    const unique = categories.filter(cat => {
+      const normalized = cat.name.toLowerCase().trim();
+      if (seen.has(normalized)) return false;
+      seen.add(normalized);
+      return true;
+    });
+
+    // Categorias padrão (para ordenação)
+    const standardNames = [
+      'Alimentação', 'Mercado', 'Transporte', 'Combustível', 'Moradia', 
+      'Contas', 'Saúde', 'Farmácia', 'Lazer', 'Assinaturas', 
+      'Educação', 'Compras', 'Investimentos', 'Outros'
+    ];
+
+    return unique.sort((a, b) => {
+      const aIndex = standardNames.indexOf(a.name);
+      const bIndex = standardNames.indexOf(b.name);
+      
+      if (aIndex !== -1 && bIndex !== -1) return aIndex - bIndex;
+      if (aIndex !== -1) return -1;
+      if (bIndex !== -1) return 1;
+      return a.name.localeCompare(b.name);
+    });
+  }, [categories]);
+
   // Helper para enviar mensagem para o Firestore (Sincronização Total)
   const sendMessage = async (text: string, sender: 'user' | 'ai', dedupeKey?: string) => {
     await sendMessageToFirestore(user.uid, text, sender, dedupeKey);
+  };
+
+  const handleCreateCategoryInline = async () => {
+    const name = newCategoryName.trim();
+    if (!name) return;
+
+    // Normalização básica para exibição (Primeira letra maiúscula)
+    const normalizedName = name.charAt(0).toUpperCase() + name.slice(1).toLowerCase();
+    const id = getCategoryId(normalizedName);
+    
+    // Verificar se já existe (evitar duplicados)
+    const exists = categories.find(c => c.id === id || c.name.toLowerCase() === name.toLowerCase());
+    
+    if (!exists) {
+      try {
+        await dispatchEvent(user.uid, {
+          type: 'CREATE_CATEGORY',
+          payload: { 
+            name: normalizedName, 
+            icon: 'Tag', 
+            color: '#128C7E', 
+            type: pendingAction?.type === 'ADD_INCOME' ? 'INCOME' : 'EXPENSE' 
+          },
+          source: 'chat',
+          createdAt: new Date()
+        });
+      } catch (e) {
+        console.error("Erro ao criar categoria via chat:", e);
+      }
+    }
+
+    // Atualizar rascunho para selecionar esta categoria imediatamente
+    if (pendingAction) {
+      setPendingAction({
+        ...pendingAction,
+        payload: { ...pendingAction.payload, category: normalizedName, isNewCategory: false }
+      });
+    }
+    
+    setIsCreatingNewCategory(false);
+    setNewCategoryName('');
   };
 
   useEffect(() => {
@@ -754,76 +827,91 @@ const ChatInterface: React.FC<ChatProps> = ({
         )}
 
         {pendingEvents.length > 0 && (
-          <div className="flex flex-col items-start gap-2 animate-fade-in-up">
-            <div className="bg-[var(--surface)] border border-[var(--border)] rounded-3xl p-4 shadow-2xl w-full max-w-[98%]">
-              <div className="flex items-center justify-between mb-4 px-1">
+          <div className="flex flex-col items-start gap-2 animate-fade-in-up w-full">
+            <div className="bg-[var(--surface)] border border-[var(--border)] rounded-[2rem] p-6 shadow-2xl w-full max-w-[98%] mx-auto overflow-hidden relative">
+              <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-[var(--green-whatsapp)] to-emerald-400 opacity-20"></div>
+              
+              <div className="flex items-center justify-between mb-6 px-1">
                 <div className="flex flex-col">
-                  <span className="text-[10px] font-black text-[var(--green-whatsapp)] uppercase tracking-widest">Prévia de Importação</span>
-                  <div className="flex items-center gap-2">
-                    <span className="text-[9px] text-[var(--text-muted)] font-bold uppercase">{pendingEvents.filter(e => e.payload.selected).length} de {pendingEvents.length} selecionados</span>
-                    <div className="flex gap-1">
+                  <h4 className="text-sm font-black text-[var(--text-primary)] uppercase italic tracking-tight">Prévia de Importação</h4>
+                  <div className="flex items-center gap-2 mt-1">
+                    <span className="text-[8px] font-black text-[var(--text-muted)] uppercase tracking-widest bg-[var(--bg-body)] px-2 py-0.5 rounded-full border border-[var(--border)]">
+                      {pendingEvents.filter(e => e.payload.selected).length} de {pendingEvents.length} itens
+                    </span>
+                    <div className="flex gap-2">
                       <button 
                         onClick={() => setPendingEvents(prev => prev.map(e => ({ ...e, payload: { ...e.payload, selected: true } })))}
-                        className="text-[8px] font-black text-[var(--green-whatsapp)] hover:underline uppercase"
+                        className="text-[8px] font-black text-[var(--green-whatsapp)] hover:opacity-70 uppercase tracking-tighter"
                       >
-                        Todos
+                        Selecionar Tudo
                       </button>
-                      <span className="text-[8px] text-[var(--text-muted)]">•</span>
                       <button 
                         onClick={() => setPendingEvents(prev => prev.map(e => ({ ...e, payload: { ...e.payload, selected: false } })))}
-                        className="text-[8px] font-black text-rose-500 hover:underline uppercase"
+                        className="text-[8px] font-black text-rose-500 hover:opacity-70 uppercase tracking-tighter"
                       >
-                        Nenhum
+                        Limpar
                       </button>
                     </div>
                   </div>
                 </div>
-                <button onClick={() => setPendingEvents([])} className="w-8 h-8 flex items-center justify-center bg-[var(--bg-body)] rounded-full text-[var(--text-muted)] hover:text-rose-500 transition-colors shadow-sm">✕</button>
+                <button 
+                  onClick={() => setPendingEvents([])} 
+                  className="w-8 h-8 flex items-center justify-center bg-[var(--bg-body)] rounded-xl text-[var(--text-muted)] hover:text-rose-500 transition-all border border-[var(--border)] shadow-sm active:scale-90"
+                >
+                  <X size={14} />
+                </button>
               </div>
 
-              <div className="max-h-[350px] overflow-y-auto space-y-2 mb-4 pr-1 no-scrollbar">
+              <div className="max-h-[380px] overflow-y-auto space-y-3 mb-6 pr-1 no-scrollbar">
                 {pendingEvents.map((ev, idx) => (
                   <div 
                     key={idx} 
-                    className={`bg-[var(--bg-body)] p-3 rounded-2xl border transition-all ${ev.payload.selected ? (ev.payload.isDuplicate ? 'border-amber-500/40 bg-amber-500/5' : 'border-[var(--border)]') : 'opacity-50 border-transparent grayscale'} relative group`}
+                    className={`bg-[var(--bg-body)] p-4 rounded-2xl border transition-all relative group ${ev.payload.selected ? (ev.payload.isDuplicate ? 'border-amber-500/40 bg-amber-500/5' : 'border-[var(--border)] shadow-sm') : 'opacity-40 border-transparent grayscale scale-[0.98]'}`}
                   >
-                    <div className="flex gap-3 items-start">
+                    <div className="flex gap-4 items-start">
                       <button 
                         onClick={() => updatePendingEvent(idx, { selected: !ev.payload.selected })}
-                        className={`mt-1 w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all ${ev.payload.selected ? 'bg-[var(--green-whatsapp)] border-[var(--green-whatsapp)] text-white' : 'border-[var(--border)] bg-transparent'}`}
+                        className={`mt-1 w-6 h-6 rounded-xl border-2 flex items-center justify-center transition-all shrink-0 ${ev.payload.selected ? 'bg-[var(--green-whatsapp)] border-[var(--green-whatsapp)] text-white shadow-lg shadow-[var(--green-whatsapp)]/20' : 'border-[var(--border)] bg-transparent'}`}
                       >
-                        {ev.payload.selected && <span className="text-[10px] font-black">✓</span>}
+                        {ev.payload.selected && <Check size={12} strokeWidth={4} />}
                       </button>
 
-                      <div className="flex-1 min-w-0">
-                        <div className="flex justify-between items-start mb-1">
+                      <div className="flex-1 min-w-0 space-y-3">
+                        <div className="flex justify-between items-start">
                           <input 
                             type="text"
                             value={ev.payload.date}
                             onChange={(e) => updatePendingEvent(idx, { date: e.target.value })}
-                            className="bg-transparent text-[9px] font-bold text-[var(--text-muted)] uppercase w-20 outline-none focus:text-[var(--green-whatsapp)]"
+                            className="bg-transparent text-[10px] font-black text-[var(--text-muted)] uppercase tracking-tighter w-24 outline-none focus:text-[var(--green-whatsapp)]"
                           />
-                          <div className="flex flex-col items-end">
-                            <input 
-                              type="text"
-                              value={ev.payload.amount}
-                              onChange={(e) => updatePendingEvent(idx, { amount: parseFloat(e.target.value) || 0 })}
-                              className={`bg-transparent text-sm font-black text-right w-24 outline-none focus:ring-1 ring-[var(--green-whatsapp)] rounded px-1 ${ev.type === 'ADD_INCOME' ? 'text-[var(--green-whatsapp)]' : 'text-rose-500'}`}
-                            />
-                          </div>
+                          <input 
+                            type="text"
+                            value={ev.payload.amount}
+                            onChange={(e) => updatePendingEvent(idx, { amount: parseFloat(e.target.value) || 0 })}
+                            className={`bg-transparent text-base font-black text-right w-28 outline-none focus:ring-2 ring-[var(--green-whatsapp)]/20 rounded-lg px-2 transition-all ${ev.type === 'ADD_INCOME' ? 'text-[var(--green-whatsapp)]' : 'text-rose-500'}`}
+                          />
                         </div>
 
                         <input 
                           type="text"
                           value={ev.payload.description}
                           onChange={(e) => updatePendingEvent(idx, { description: e.target.value })}
-                          className="w-full bg-transparent text-xs font-bold text-[var(--text-primary)] mb-1 outline-none focus:text-[var(--green-whatsapp)]"
+                          className="w-full bg-transparent text-xs font-bold text-[var(--text-primary)] outline-none focus:text-[var(--green-whatsapp)] border-b border-transparent focus:border-[var(--green-whatsapp)]/20 pb-0.5"
                         />
 
-                        <div className="flex flex-col gap-1">
-                          <div className="flex items-center gap-2">
+                        <div className="flex flex-col gap-2 pt-1">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            {sortedCategories.slice(0, 4).map(c => (
+                              <button 
+                                key={c.id}
+                                onClick={() => updatePendingEvent(idx, { category: c.name, isNewCategory: false })}
+                                className={`px-2.5 py-1 rounded-lg text-[8px] font-black uppercase transition-all border ${ev.payload.category === c.name ? 'bg-[var(--green-whatsapp)] text-white border-[var(--green-whatsapp)] shadow-md' : 'bg-[var(--surface)] text-[var(--text-muted)] border-[var(--border)] hover:border-[var(--green-whatsapp)]'}`}
+                              >
+                                {c.name}
+                              </button>
+                            ))}
                             <select 
-                              value={categories.find(c => c.name === ev.payload.category) ? ev.payload.category : 'NEW'}
+                              value={sortedCategories.find(c => c.name === ev.payload.category) ? ev.payload.category : 'NEW'}
                               onChange={(e) => {
                                 if (e.target.value === 'NEW') {
                                   updatePendingEvent(idx, { category: '', isNewCategory: true });
@@ -831,47 +919,56 @@ const ChatInterface: React.FC<ChatProps> = ({
                                   updatePendingEvent(idx, { category: e.target.value, isNewCategory: false });
                                 }
                               }}
-                              className="bg-[var(--surface)] px-2 py-0.5 rounded-lg text-[9px] font-black uppercase italic text-[var(--green-whatsapp)] outline-none border border-[var(--border)]"
+                              className="bg-[var(--surface)] px-2 py-1 rounded-lg text-[8px] font-black uppercase italic text-[var(--green-whatsapp)] outline-none border border-[var(--border)] focus:border-[var(--green-whatsapp)]"
                             >
-                              {categories.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
-                              <option value="NEW">+ Nova Categoria</option>
+                              <option value="" disabled>Mais...</option>
+                              {sortedCategories.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+                              <option value="NEW">+ Nova</option>
                             </select>
                             
                             {ev.payload.isCardCharge && (
-                              <span className="text-[8px] font-black bg-rose-100 text-rose-600 px-1.5 py-0.5 rounded-full uppercase">Cartão</span>
+                              <span className="text-[7px] font-black bg-rose-50 text-rose-500 px-2 py-0.5 rounded-full border border-rose-100 uppercase">Cartão</span>
                             )}
                             
                             {ev.payload.isDuplicate && (
-                              <span className="text-[8px] font-black bg-amber-100 text-amber-600 px-1.5 py-0.5 rounded-full uppercase">Duplicado?</span>
+                              <span className="text-[7px] font-black bg-amber-50 text-amber-600 px-2 py-0.5 rounded-full border border-amber-100 uppercase">Duplicado?</span>
                             )}
                           </div>
 
-                          {(ev.payload.isNewCategory || !categories.find(c => c.name === ev.payload.category)) && (
-                            <input 
-                              type="text"
-                              placeholder="Nome da nova categoria..."
-                              value={ev.payload.category}
-                              onChange={(e) => updatePendingEvent(idx, { category: e.target.value })}
-                              className="bg-[var(--bg-body)] border border-[var(--green-whatsapp)]/30 rounded-lg px-2 py-1 text-[10px] font-bold text-[var(--green-whatsapp)] outline-none placeholder:text-[var(--text-muted)]/50"
-                              autoFocus
-                            />
+                          {(ev.payload.isNewCategory || !sortedCategories.find(c => c.name === ev.payload.category)) && (
+                            <div className="flex gap-1 animate-fade-in">
+                              <input 
+                                type="text"
+                                placeholder="Nova categoria..."
+                                value={ev.payload.category}
+                                onChange={(e) => updatePendingEvent(idx, { category: e.target.value })}
+                                className="flex-1 bg-[var(--surface)] border border-[var(--green-whatsapp)]/30 rounded-xl px-3 py-2 text-[10px] font-bold text-[var(--green-whatsapp)] outline-none placeholder:text-[var(--text-muted)]/40"
+                                autoFocus
+                              />
+                              <button 
+                                onClick={() => updatePendingEvent(idx, { isNewCategory: false, category: 'Outros' })}
+                                className="text-[var(--text-muted)] p-2 hover:text-rose-500 transition-colors"
+                              >
+                                <X size={14} />
+                              </button>
+                            </div>
                           )}
                         </div>
                       </div>
 
                       <button 
                         onClick={() => removePendingEvent(idx)}
-                        className="text-[var(--text-muted)] hover:text-rose-500 opacity-0 group-hover:opacity-100 transition-all p-1"
+                        className="text-[var(--text-muted)] hover:text-rose-500 opacity-0 group-hover:opacity-100 transition-all p-2 bg-[var(--surface)] rounded-lg border border-[var(--border)] shadow-sm"
                       >
-                        ✕
+                        <Trash2 size={12} />
                       </button>
                     </div>
                   </div>
                 ))}
               </div>
 
-              <div className="bg-[var(--bg-body)] rounded-2xl p-4 border border-[var(--border)]">
-                <p className="text-[10px] font-black text-[var(--text-muted)] uppercase mb-3 text-center">
+              <div className="bg-[var(--bg-body)] rounded-[1.5rem] p-5 border border-[var(--border)] shadow-inner">
+                <p className="text-[9px] font-black text-[var(--text-muted)] uppercase tracking-[0.2em] mb-4 text-center">
                   {isSelectingCard ? 'Escolha o Cartão:' : `Confirmar ${pendingEvents.filter(e => e.payload.selected).length} itens em:`}
                 </p>
 
@@ -882,15 +979,17 @@ const ChatInterface: React.FC<ChatProps> = ({
                         <button 
                           key={card.id}
                           onClick={() => confirmAllEvents(card.id, true)}
-                          className="bg-[var(--surface)] hover:bg-rose-500/5 hover:border-rose-500 border border-[var(--border)] rounded-xl py-2.5 px-2 text-[10px] font-black uppercase transition-all active:scale-95 flex items-center gap-2"
+                          className="bg-[var(--surface)] hover:bg-rose-500/5 hover:border-rose-500 border border-[var(--border)] rounded-2xl py-3 px-3 text-[10px] font-black uppercase transition-all active:scale-95 flex items-center gap-3 group"
                         >
-                          <span className="text-base">💳</span>
-                          <span className="truncate flex-1 text-left">{card.name}</span>
+                          <div className="w-8 h-8 rounded-xl bg-rose-500/10 text-rose-500 flex items-center justify-center group-hover:bg-rose-500 group-hover:text-white transition-colors">
+                            <CreditCard size={14} />
+                          </div>
+                          <span className="truncate flex-1 text-left tracking-tighter">{card.name}</span>
                         </button>
                       ))}
                       <button 
                         onClick={() => setIsSelectingCard(false)}
-                        className="col-span-2 bg-[var(--bg-body)] text-[var(--text-muted)] border border-[var(--border)] rounded-xl py-2 text-[9px] font-black uppercase transition-all active:scale-95"
+                        className="col-span-2 bg-[var(--bg-body)] text-[var(--text-muted)] border border-[var(--border)] rounded-xl py-2.5 text-[9px] font-black uppercase transition-all active:scale-95"
                       >
                         Voltar para Carteiras
                       </button>
@@ -901,10 +1000,12 @@ const ChatInterface: React.FC<ChatProps> = ({
                         <button 
                           key={w.id}
                           onClick={() => confirmAllEvents(w.id, false)}
-                          className="bg-[var(--surface)] text-[var(--text-primary)] border border-[var(--border)] hover:border-[var(--green-whatsapp)] hover:bg-[var(--green-whatsapp)]/5 rounded-xl py-2.5 px-2 text-[10px] font-black uppercase transition-all active:scale-95 flex items-center gap-2"
+                          className="bg-[var(--surface)] text-[var(--text-primary)] border border-[var(--border)] hover:border-[var(--green-whatsapp)] hover:bg-[var(--green-whatsapp)]/5 rounded-2xl py-3 px-3 text-[10px] font-black uppercase transition-all active:scale-95 flex items-center gap-3 group"
                         >
-                          <span className="text-base">{w.icon || '💰'}</span>
-                          <span className="truncate flex-1 text-left">{w.name}</span>
+                          <div className="w-8 h-8 rounded-xl bg-[var(--bg-body)] text-[var(--text-muted)] flex items-center justify-center group-hover:bg-[var(--green-whatsapp)] group-hover:text-white transition-colors text-base">
+                            {w.icon || '💰'}
+                          </div>
+                          <span className="truncate flex-1 text-left tracking-tighter">{w.name}</span>
                         </button>
                       ))}
                       {cards.length > 0 && (
@@ -913,10 +1014,12 @@ const ChatInterface: React.FC<ChatProps> = ({
                             if (cards.length === 1) confirmAllEvents(cards[0].id, true);
                             else setIsSelectingCard(true);
                           }}
-                          className="bg-[var(--surface)] hover:bg-rose-500/5 hover:border-rose-500 border border-[var(--border)] rounded-xl py-2.5 px-2 text-[10px] font-black uppercase transition-all active:scale-95 flex items-center gap-2"
+                          className="bg-[var(--surface)] hover:bg-rose-500/5 hover:border-rose-500 border border-[var(--border)] rounded-2xl py-3 px-3 text-[10px] font-black uppercase transition-all active:scale-95 flex items-center gap-3 group"
                         >
-                          <span className="text-base">💳</span>
-                          <span className="flex-1 text-left">Cartão de Crédito</span>
+                          <div className="w-8 h-8 rounded-xl bg-rose-500/10 text-rose-500 flex items-center justify-center group-hover:bg-rose-500 group-hover:text-white transition-colors">
+                            <CreditCard size={14} />
+                          </div>
+                          <span className="flex-1 text-left tracking-tighter">Cartão de Crédito</span>
                         </button>
                       )}
                     </>
@@ -928,154 +1031,127 @@ const ChatInterface: React.FC<ChatProps> = ({
         )}
 
         {pendingAction && (
-          <div className="flex flex-col items-start gap-2 animate-fade-in-up">
-            <div className="bg-[var(--surface)] border border-[var(--border)] rounded-3xl p-5 shadow-xl w-full max-w-[90%]">
-              <div className="flex items-center justify-between mb-4">
-                <span className="text-[10px] font-black text-[var(--green-whatsapp)] uppercase tracking-widest">Rascunho de Lançamento</span>
-                <button onClick={() => setPendingAction(null)} className="text-[var(--text-muted)] hover:text-rose-500 transition-colors">✕</button>
+          <div className="flex flex-col items-start gap-2 animate-fade-in-up w-full">
+            <div className="bg-[var(--surface)] border border-[var(--border)] rounded-[2.5rem] p-8 shadow-2xl w-full max-w-[95%] mx-auto overflow-hidden relative">
+              <div className="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-[var(--green-whatsapp)] to-emerald-400 opacity-30"></div>
+              
+              {/* Cabeçalho */}
+              <div className="mb-8 text-center">
+                <h3 className="text-xl font-black text-[var(--text-primary)] uppercase italic tracking-tighter">Confirmar categoria</h3>
+                <p className="text-[10px] font-black text-[var(--text-muted)] uppercase tracking-[0.2em] mt-1">Escolha a categoria desse gasto</p>
               </div>
               
-              <div className="space-y-3 mb-6">
-                <div className="flex justify-between items-center">
-                  <span className="text-[11px] text-[var(--text-muted)] font-bold uppercase">Valor</span>
-                  <span className={`text-lg font-black ${pendingAction.type === 'ADD_INCOME' ? 'text-[var(--green-whatsapp)]' : 'text-rose-500'}`}>
-                    {pendingAction.type === 'ADD_INCOME' ? '+' : '-'}{formatCurrency(pendingAction.payload.amount)}
-                  </span>
+              {/* Card Resumo Premium */}
+              <div className="bg-[var(--bg-body)] rounded-3xl p-6 border border-[var(--border)] mb-8 shadow-inner relative overflow-hidden group">
+                <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+                  <Tag size={40} />
                 </div>
-                
-                <div className="flex flex-col gap-1">
-                  <div className="flex justify-between items-center">
-                    <span className="text-[11px] text-[var(--text-muted)] font-bold uppercase">Categoria</span>
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-black text-[var(--text-primary)] uppercase italic">{pendingAction.payload.category}</span>
-                      <button 
-                        onClick={() => setIsChangingCategory(!isChangingCategory)}
-                        className="text-[9px] text-[var(--green-whatsapp)] font-bold uppercase hover:underline"
-                      >
-                        {isChangingCategory ? 'Fechar' : 'Trocar'}
-                      </button>
+                <div className="space-y-4 relative z-10">
+                  <div className="flex justify-between items-end">
+                    <div className="flex flex-col">
+                      <span className="text-[9px] font-black text-[var(--text-muted)] uppercase tracking-widest mb-1">Valor</span>
+                      <span className={`text-3xl font-black tracking-tighter ${pendingAction.type === 'ADD_INCOME' ? 'text-[var(--green-whatsapp)]' : 'text-rose-500'}`}>
+                        {pendingAction.type === 'ADD_INCOME' ? '+' : '-'}{formatCurrency(pendingAction.payload.amount)}
+                      </span>
+                    </div>
+                    <div className="flex flex-col items-end">
+                      <span className="text-[9px] font-black text-[var(--text-muted)] uppercase tracking-widest mb-1">Carteira</span>
+                      <div className="flex items-center gap-2 bg-[var(--surface)] px-3 py-1.5 rounded-xl border border-[var(--border)]">
+                        <span className="text-xs">💳</span>
+                        <span className="text-[10px] font-black uppercase text-[var(--text-primary)]">
+                          {isSelectingCard ? 'Selecionando...' : (wallets.find(w => w.id === (pendingAction.payload.sourceWalletId || pendingAction.payload.targetWalletId))?.name || 'Principal')}
+                        </span>
+                      </div>
                     </div>
                   </div>
                   
-                  {isChangingCategory && (
-                    <div className="grid grid-cols-2 gap-1 mt-2 max-h-[120px] overflow-y-auto no-scrollbar p-1 bg-[var(--bg-body)] rounded-xl border border-[var(--border)]">
-                      {categories.map(cat => (
-                        <button 
-                          key={cat.id}
-                          onClick={() => {
-                            setPendingAction({
-                              ...pendingAction,
-                              payload: { ...pendingAction.payload, category: cat.name }
-                            });
-                            setIsChangingCategory(false);
-                          }}
-                          className="text-[9px] font-bold py-1.5 px-2 rounded-lg bg-[var(--surface)] border border-[var(--border)] hover:border-[var(--green-whatsapp)] text-left truncate"
-                        >
-                          {cat.name}
+                  <div className="pt-4 border-t border-[var(--border)]/50">
+                    <span className="text-[9px] font-black text-[var(--text-muted)] uppercase tracking-widest mb-1 block">Descrição</span>
+                    <p className="text-sm font-bold text-[var(--text-primary)] leading-tight">{pendingAction.payload.description || 'Sem descrição'}</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Seção de Categorias */}
+              <div className="space-y-4">
+                <div className="flex items-center justify-between px-2">
+                  <span className="text-[10px] font-black text-[var(--text-muted)] uppercase tracking-widest">Categorias</span>
+                  <span className="text-[9px] font-bold text-[var(--green-whatsapp)] uppercase">{sortedCategories.length} disponíveis</span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 max-h-[280px] overflow-y-auto no-scrollbar p-1">
+                  {sortedCategories.map(cat => (
+                    <button 
+                      key={cat.id}
+                      onClick={() => {
+                        setPendingAction({
+                          ...pendingAction,
+                          payload: { ...pendingAction.payload, category: cat.name, isNewCategory: false }
+                        });
+                        setIsCreatingNewCategory(false);
+                      }}
+                      className={`flex items-center gap-3 p-3 rounded-2xl border transition-all text-left group ${pendingAction.payload.category === cat.name ? 'bg-[var(--green-whatsapp)] border-[var(--green-whatsapp)] text-white shadow-lg shadow-[var(--green-whatsapp)]/20' : 'bg-[var(--bg-body)] border-[var(--border)] text-[var(--text-primary)] hover:border-[var(--green-whatsapp)]/50'}`}
+                    >
+                      <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 transition-colors ${pendingAction.payload.category === cat.name ? 'bg-white/20' : 'bg-[var(--surface)] text-[var(--text-muted)] group-hover:text-[var(--green-whatsapp)]'}`}>
+                        {/* Aqui poderíamos ter um helper para ícones, mas vamos usar o nome por enquanto ou um ícone padrão */}
+                        <Tag size={14} />
+                      </div>
+                      <span className="text-[11px] font-black uppercase tracking-tight truncate">{cat.name}</span>
+                    </button>
+                  ))}
+                </div>
+
+                {/* Ação para Nova Categoria */}
+                <div className="pt-2">
+                  {!isCreatingNewCategory ? (
+                    <button 
+                      onClick={() => setIsCreatingNewCategory(true)}
+                      className="w-full py-4 rounded-2xl border-2 border-dashed border-[var(--border)] text-[var(--text-muted)] hover:border-[var(--green-whatsapp)] hover:text-[var(--green-whatsapp)] transition-all flex items-center justify-center gap-2 group"
+                    >
+                      <Plus size={16} className="group-hover:rotate-90 transition-transform" />
+                      <span className="text-[10px] font-black uppercase tracking-widest">Criar nova categoria</span>
+                    </button>
+                  ) : (
+                    <div className="bg-[var(--bg-body)] p-4 rounded-3xl border border-[var(--green-whatsapp)]/30 animate-fade-in space-y-3">
+                      <div className="flex items-center justify-between px-1">
+                        <span className="text-[9px] font-black text-[var(--green-whatsapp)] uppercase tracking-widest">Nova Categoria</span>
+                        <button onClick={() => setIsCreatingNewCategory(false)} className="text-[var(--text-muted)] hover:text-rose-500 transition-colors">
+                          <X size={14} />
                         </button>
-                      ))}
-                      <button 
-                        onClick={() => {
-                          const newCat = prompt("Nome da nova categoria:");
-                          if (newCat) {
-                            setPendingAction({
-                              ...pendingAction,
-                              payload: { ...pendingAction.payload, category: newCat }
-                            });
-                            setIsChangingCategory(false);
-                          }
-                        }}
-                        className="text-[9px] font-bold py-1.5 px-2 rounded-lg bg-[var(--green-whatsapp)]/10 border border-[var(--green-whatsapp)]/30 text-[var(--green-whatsapp)] text-left truncate"
-                      >
-                        + Criar Nova
-                      </button>
+                      </div>
+                      <div className="flex gap-2">
+                        <input 
+                          type="text"
+                          placeholder="Ex: Presentes, Obra..."
+                          value={newCategoryName}
+                          onChange={(e) => setNewCategoryName(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') handleCreateCategoryInline();
+                          }}
+                          className="flex-1 bg-[var(--surface)] border border-[var(--border)] rounded-xl px-4 py-3 text-xs font-bold outline-none focus:border-[var(--green-whatsapp)] text-[var(--text-primary)]"
+                          autoFocus
+                        />
+                        <button 
+                          onClick={handleCreateCategoryInline}
+                          className="bg-[var(--green-whatsapp)] text-white px-4 rounded-xl font-black text-[10px] uppercase active:scale-95 transition-all"
+                        >
+                          Salvar
+                        </button>
+                      </div>
                     </div>
                   )}
                 </div>
-
-                <div className="flex justify-between items-center">
-                  <span className="text-[11px] text-[var(--text-muted)] font-bold uppercase">Descrição</span>
-                  <span className="text-xs font-medium text-[var(--text-primary)]">{pendingAction.payload.description}</span>
-                </div>
-
-                {pendingAction.type === 'TRANSFER_WALLET' && (
-                  <div className="flex flex-col gap-1 pt-2 border-t border-[var(--border)]">
-                    <div className="flex justify-between items-center">
-                      <span className="text-[10px] text-[var(--text-muted)] font-bold uppercase">De</span>
-                      <span className="text-[11px] font-black text-rose-500 uppercase italic">{pendingAction.payload.sourceWalletName || pendingAction.payload.fromWalletName || 'Não identificada'}</span>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-[10px] text-[var(--text-muted)] font-bold uppercase">Para</span>
-                      <span className="text-[11px] font-black text-[var(--green-whatsapp)] uppercase italic">{pendingAction.payload.targetWalletName || pendingAction.payload.toWalletName || 'Não identificada'}</span>
-                    </div>
-                  </div>
-                )}
               </div>
 
-              <p className="text-[10px] font-black text-[var(--text-muted)] uppercase mb-3 text-center">
-                {pendingAction.type === 'TRANSFER_WALLET' 
-                  ? 'Confirmar transferência?' 
-                  : (isSelectingCard ? 'Escolha o Cartão:' : (pendingAction.type === 'ADD_INCOME' ? 'Onde entrou esse dinheiro?' : 'De onde saiu esse dinheiro?'))}
-              </p>
-
-              <div className="grid grid-cols-2 gap-2">
-                {pendingAction.type === 'TRANSFER_WALLET' ? (
-                  <button 
-                    onClick={() => confirmPendingAction('')}
-                    className="col-span-2 bg-[var(--green-whatsapp)] text-white border border-white rounded-2xl py-3 px-2 text-[11px] font-black uppercase transition-all active:scale-95 flex items-center justify-center gap-2 shadow-lg"
-                  >
-                    <span>🚀</span>
-                    <span>Confirmar Transferência</span>
-                  </button>
-                ) : isSelectingCard ? (
-                  <>
-                    {cards.map(card => (
-                      <button 
-                        key={card.id}
-                        onClick={() => confirmPendingAction(card.id, true)}
-                        className="bg-[var(--bg-body)] hover:bg-rose-500 hover:text-white border border-[var(--border)] rounded-2xl py-3 px-2 text-[10px] font-black uppercase transition-all active:scale-95 flex flex-col items-center gap-1"
-                      >
-                        <span className="text-lg">💳</span>
-                        <span className="truncate w-full text-center">{card.name}</span>
-                      </button>
-                    ))}
-                    <button 
-                      onClick={() => setIsSelectingCard(false)}
-                      className="col-span-2 bg-[var(--bg-body)] text-[var(--text-muted)] border border-[var(--border)] rounded-xl py-2 text-[9px] font-black uppercase transition-all active:scale-95"
-                    >
-                      Voltar para Carteiras
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    {wallets.map(w => {
-                      const isSuggested = pendingAction.payload.targetWalletName && w.name.toLowerCase() === pendingAction.payload.targetWalletName.toLowerCase();
-                      return (
-                        <button 
-                          key={w.id}
-                          onClick={() => confirmPendingAction(w.id, false)}
-                          className={`${isSuggested ? 'bg-[var(--green-whatsapp)] text-white border-white' : 'bg-[var(--bg-body)] text-[var(--text-primary)] border-[var(--border)]'} hover:bg-[var(--green-whatsapp)] hover:text-white border rounded-2xl py-3 px-2 text-[10px] font-black uppercase transition-all active:scale-95 flex flex-col items-center gap-1 relative overflow-hidden`}
-                        >
-                          {isSuggested && <div className="absolute top-0 right-0 bg-[var(--text-primary)] text-[var(--green-whatsapp)] text-[7px] px-1 font-black">Sugerido</div>}
-                          <span className="text-lg">{w.icon || '💰'}</span>
-                          <span className="truncate w-full text-center">{w.name}</span>
-                        </button>
-                      );
-                    })}
-                    {cards.length > 0 && pendingAction.type !== 'ADD_INCOME' && (
-                      <button 
-                        onClick={() => {
-                          if (cards.length === 1) confirmPendingAction(cards[0].id, true);
-                          else setIsSelectingCard(true);
-                        }}
-                        className="bg-[var(--bg-body)] hover:bg-rose-500 hover:text-white border border-[var(--border)] rounded-2xl py-3 px-2 text-[10px] font-black uppercase transition-all active:scale-95 flex flex-col items-center gap-1"
-                      >
-                        <span className="text-lg">💳</span>
-                        <span>Cartão</span>
-                      </button>
-                    )}
-                  </>
-                )}
+              {/* Botão Final de Confirmação */}
+              <div className="mt-10">
+                <button 
+                  onClick={() => confirmPendingAction(pendingAction.payload.sourceWalletId || pendingAction.payload.targetWalletId || wallets[0]?.id || '')}
+                  className="w-full bg-[var(--green-whatsapp)] text-white py-5 rounded-[2rem] font-black text-xs uppercase tracking-[0.2em] shadow-xl shadow-[var(--green-whatsapp)]/30 active:scale-[0.98] transition-all flex items-center justify-center gap-3 group"
+                >
+                  <span>Confirmar categoria</span>
+                  <Check size={18} className="group-hover:scale-125 transition-transform" />
+                </button>
               </div>
             </div>
           </div>

@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect, useRef } from 'react';
 import { Transaction, SavingGoal, CategoryLimit, Wallet, Bill, UserCategory } from '../types';
 import { dispatchEvent, migrateTransactions } from '../services/eventDispatcher';
 import { normalizeCategoryName } from '../services/normalizationService';
@@ -71,11 +71,15 @@ const Dashboard: React.FC<DashProps> = ({ transactions, goals, limits, wallets, 
 
   const format = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v);
 
+  const isMigratingRef = useRef(false);
   useEffect(() => {
-    if (uid && transactions.length > 0) {
+    if (uid && transactions.length > 0 && !isMigratingRef.current) {
       const hasOldData = transactions.some(t => !t.walletName || !t.categoryName);
       if (hasOldData) {
-        migrateTransactions(uid);
+        isMigratingRef.current = true;
+        migrateTransactions(uid).finally(() => {
+          isMigratingRef.current = false;
+        });
       }
     }
   }, [uid, transactions.length]);
@@ -140,19 +144,19 @@ const Dashboard: React.FC<DashProps> = ({ transactions, goals, limits, wallets, 
     const currentDay = now.getDate();
     const firstDayOfMonth = new Date(currentYear, currentMonth, 1).getDay();
 
-    // Filter transactions for current month
+    // Filter transactions for current month (YYYY-MM-DD)
+    const monthKey = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}`;
     const monthTransactions = transactions.filter(t => {
-      const d = new Date(t.date);
-      return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
+      return t.date && t.date.startsWith(monthKey);
     });
 
     const income = monthTransactions
       .filter(t => t.type === 'INCOME')
-      .reduce((s, t) => s + (Number(t.amount) || 0), 0);
+      .reduce((s, t) => s + Math.abs(Number(t.amount) || 0), 0);
     
     const expense = monthTransactions
       .filter(t => t.type === 'EXPENSE')
-      .reduce((s, t) => s + (Number(t.amount) || 0), 0);
+      .reduce((s, t) => s + Math.abs(Number(t.amount) || 0), 0);
     
     const totalSaved = goals.reduce((s, g) => s + (Number(g.currentAmount) || 0), 0);
     const activeWallets = wallets.filter(w => w.isActive !== false);
@@ -165,7 +169,9 @@ const Dashboard: React.FC<DashProps> = ({ transactions, goals, limits, wallets, 
     }
 
     monthTransactions.forEach(t => {
-      const d = new Date(t.date).getDate();
+      // t.date is YYYY-MM-DD, we want the DD part
+      const dayPart = t.date.split('-')[2];
+      const d = parseInt(dayPart);
       if (dailyStats[d]) {
         if (t.type === 'INCOME') dailyStats[d].income += Number(t.amount);
         if (t.type === 'EXPENSE') dailyStats[d].expense += Number(t.amount);
@@ -216,7 +222,7 @@ const Dashboard: React.FC<DashProps> = ({ transactions, goals, limits, wallets, 
         if (!acc[groupKey]) {
           acc[groupKey] = { name: displayCat, value: 0 };
         }
-        acc[groupKey].value += (Number(t.amount) || 0);
+        acc[groupKey].value += Math.abs(Number(t.amount) || 0);
         return acc;
       }, {} as Record<string, { name: string; value: number }>);
 

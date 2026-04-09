@@ -80,11 +80,11 @@ const Extrato: React.FC<ExtratoProps> = ({
   useEffect(() => {
     if (!uid) return;
     
-    // Se temos transações via props e não há filtros de data, usamos as props para sincronização real-time
-    if (propsTransactions && !startDate && !endDate) {
+    // Se temos transações via props e não há filtros de data, podemos usar como estado inicial
+    // mas ainda queremos nosso próprio listener para suportar paginação e filtros avançados
+    if (propsTransactions && !startDate && !endDate && localTransactions.length === 0) {
       setLocalTransactions(propsTransactions);
       setLocalLoading(false);
-      return;
     }
 
     setLocalLoading(true);

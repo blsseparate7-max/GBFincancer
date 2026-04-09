@@ -311,9 +311,10 @@ export const dispatchEvent = async (uid: string, event: FinanceEvent) => {
             });
           }
 
-          const limitId = (catInfo.name || "").toLowerCase().trim().replace(/\s+/g, '_');
+          const limitId = catInfo.id;
           const limitRef = doc(userRef, "limits", limitId);
           transaction.set(limitRef, {
+            category: catInfo.name,
             spent: increment(amount),
             updatedAt: serverTimestamp()
           }, { merge: true });
@@ -491,9 +492,10 @@ export const dispatchEvent = async (uid: string, event: FinanceEvent) => {
             updatedAt: serverTimestamp()
           });
 
-          const limitId = (catInfo.name || "").toLowerCase().trim().replace(/\s+/g, '_');
+          const limitId = catInfo.id;
           const limitRef = doc(userRef, "limits", limitId);
           batch.set(limitRef, {
+            category: catInfo.name,
             spent: increment(amount),
             updatedAt: serverTimestamp()
           }, { merge: true });
@@ -568,7 +570,7 @@ export const dispatchEvent = async (uid: string, event: FinanceEvent) => {
       case 'UPDATE_LIMIT': {
         const { category, amount } = event.payload;
         const normalizedCat = normalizeCategoryName(category);
-        const limitId = (normalizedCat || "").toLowerCase().trim().replace(/\s+/g, '_');
+        const limitId = getCategoryId(normalizedCat);
         await setDoc(doc(userRef, "limits", limitId), {
           category: normalizedCat,
           limit: amount,
@@ -680,15 +682,16 @@ export const dispatchEvent = async (uid: string, event: FinanceEvent) => {
               });
             }
 
-            if (!isReceive) {
-              const normalizedCat = normalizeCategoryName(billData.category || 'Contas');
-              const limitId = (normalizedCat || "").toLowerCase().trim().replace(/\s+/g, '_');
-              const limitRef = doc(userRef, "limits", limitId);
-              batch.set(limitRef, {
-                spent: increment(billData.amount),
-                updatedAt: serverTimestamp()
-              }, { merge: true });
-            }
+          if (!isReceive) {
+            const normalizedCat = normalizeCategoryName(billData.category || 'Contas');
+            const limitId = getCategoryId(normalizedCat);
+            const limitRef = doc(userRef, "limits", limitId);
+            batch.set(limitRef, {
+              category: normalizedCat,
+              spent: increment(billData.amount),
+              updatedAt: serverTimestamp()
+            }, { merge: true });
+          }
 
             // Se for recorrente, cria o do próximo mês
             if (billData.recurring) {
@@ -1113,21 +1116,27 @@ export const dispatchEvent = async (uid: string, event: FinanceEvent) => {
 
           // 4. Deleção em Cascata para Parcelamentos
           // Se for uma transação parcelada, deleta as outras parcelas vinculadas
-          if (oldData.originalAmount && oldData.totalInstallments > 1) {
-            const descriptionPrefix = oldData.description.split(" (")[0];
-            const q = query(
-              collection(userRef, "transactions"), 
-              where("description", ">=", descriptionPrefix),
-              where("description", "<=", descriptionPrefix + "\uf8ff"),
-              where("originalAmount", "==", oldData.originalAmount),
-              where("totalInstallments", "==", oldData.totalInstallments)
-            );
-            const snap = await getDocs(q);
-            const batch = writeBatch(db);
-            snap.docs.forEach(d => {
-              if (d.id !== id) batch.delete(d.ref);
-            });
-            await batch.commit();
+          try {
+            if (oldData.originalAmount && oldData.totalInstallments > 1) {
+              const descriptionPrefix = (oldData.description || "").split(" (")[0];
+              const q = query(
+                collection(userRef, "transactions"), 
+                where("description", ">=", descriptionPrefix),
+                where("description", "<=", descriptionPrefix + "\uf8ff"),
+                where("originalAmount", "==", oldData.originalAmount),
+                where("totalInstallments", "==", oldData.totalInstallments)
+              );
+              const snap = await getDocs(q);
+              if (!snap.empty) {
+                const batch = writeBatch(db);
+                snap.docs.forEach(d => {
+                  if (d.id !== id) batch.delete(d.ref);
+                });
+                await batch.commit();
+              }
+            }
+          } catch (cascadeErr) {
+            console.error("GB: Erro na deleção em cascata:", cascadeErr);
           }
         }
         break;
@@ -1337,12 +1346,17 @@ export const dispatchEvent = async (uid: string, event: FinanceEvent) => {
       }
 
       case 'CREATE_CATEGORY': {
-        await addDoc(collection(userRef, "categories"), {
-          ...event.payload,
+        const { name } = payload;
+        const normalizedName = normalizeCategoryName(name);
+        const id = getCategoryId(normalizedName);
+        
+        await setDoc(doc(userRef, "categories", id), {
+          ...payload,
+          name: normalizedName,
           isQA,
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp()
-        });
+        }, { merge: true });
         break;
       }
 
@@ -1355,6 +1369,11 @@ export const dispatchEvent = async (uid: string, event: FinanceEvent) => {
 
         // Se mudou o nome, atualiza as transações vinculadas e o limite
         if (oldName && oldName !== newName) {
+          const oldNormalized = normalizeCategoryName(oldName);
+          const newNormalized = normalizeCategoryName(newName);
+          const oldLimitId = getCategoryId(oldNormalized);
+          const newLimitId = getCategoryId(newNormalized);
+          
           // 1. Atualiza transações em lote
           const q = query(collection(userRef, "transactions"), where("category", "==", oldName));
           const snap = await getDocs(q);
@@ -1363,8 +1382,9 @@ export const dispatchEvent = async (uid: string, event: FinanceEvent) => {
           
           for (const d of snap.docs) {
             batch.update(doc(userRef, "transactions", d.id), { 
-              category: newName,
-              categoryName: newName 
+              category: newNormalized,
+              categoryName: newNormalized,
+              categoryId: newLimitId
             });
             count++;
             if (count >= 450) {
@@ -1375,8 +1395,6 @@ export const dispatchEvent = async (uid: string, event: FinanceEvent) => {
           if (count > 0) await batch.commit();
 
           // 2. Migra limite se existir
-          const oldLimitId = (oldName || "").toLowerCase().trim().replace(/\s+/g, '_');
-          const newLimitId = (newName || "").toLowerCase().trim().replace(/\s+/g, '_');
           const oldLimitRef = doc(userRef, "limits", oldLimitId);
           const oldLimitSnap = await getDoc(oldLimitRef);
           
@@ -1384,7 +1402,7 @@ export const dispatchEvent = async (uid: string, event: FinanceEvent) => {
             const limitData = oldLimitSnap.data();
             await setDoc(doc(userRef, "limits", newLimitId), {
               ...limitData,
-              category: newName,
+              category: newNormalized,
               updatedAt: serverTimestamp()
             });
             await deleteDoc(oldLimitRef);
@@ -1425,11 +1443,15 @@ export const dispatchEvent = async (uid: string, event: FinanceEvent) => {
         const q = query(collection(userRef, "transactions"), where("category", "==", name));
         const snap = await getDocs(q);
         for (const d of snap.docs) {
-          await updateDoc(doc(userRef, "transactions", d.id), { category: "Outros" });
+          await updateDoc(doc(userRef, "transactions", d.id), { 
+            category: "Outros",
+            categoryName: "Outros",
+            categoryId: "outros"
+          });
         }
 
         // 2. Deleta limite se existir
-        const limitId = (name || "").toLowerCase().trim().replace(/\s+/g, '_');
+        const limitId = getCategoryId(name);
         await deleteDoc(doc(userRef, "limits", limitId));
         break;
       }

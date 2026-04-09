@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { UserCategory, Transaction } from '../types';
 import { dispatchEvent } from '../services/eventDispatcher';
-import { Tag, Plus, Edit2, Trash2, Check, X, Palette, ShoppingCart, Coffee, Car, Home, HeartPulse, Zap, DollarSign, Briefcase, Plane, GraduationCap, Gift, Music, Smartphone, Utensils, Dumbbell, Bike, Fuel, School, BookOpen, Tv, Droplets, Wifi, Phone, Key, CreditCard, Repeat, Dog, Shirt, Sparkles, TrendingUp, Percent } from 'lucide-react';
+import { deduplicateCategories, getCategoryId } from '../services/categoryService';
+import { Tag, Plus, Edit2, Trash2, Check, X, Palette, ShoppingCart, Coffee, Car, Home, HeartPulse, Zap, DollarSign, Briefcase, Plane, GraduationCap, Gift, Music, Smartphone, Utensils, Dumbbell, Bike, Fuel, School, BookOpen, Tv, Droplets, Wifi, Phone, Key, CreditCard, Repeat, Dog, Shirt, Sparkles, TrendingUp, Percent, Wand2, ArrowDownCircle, ShoppingBag, Heart } from 'lucide-react';
 import { Notification, ConfirmModal } from './UI';
 
 interface CategoriesTabProps {
@@ -20,6 +21,7 @@ const CategoriesTab: React.FC<CategoriesTabProps> = ({ uid, categories, transact
   const [color, setColor] = useState('#128C7E');
   const [type, setType] = useState<'INCOME' | 'EXPENSE'>('EXPENSE');
   const [isSaving, setIsSaving] = useState(false);
+  const [isDeduplicating, setIsDeduplicating] = useState(false);
   const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<UserCategory | null>(null);
 
@@ -28,9 +30,9 @@ const CategoriesTab: React.FC<CategoriesTabProps> = ({ uid, categories, transact
     'HeartPulse', 'Pill', 'Dumbbell', 'GraduationCap', 'School', 'BookOpen', 'Palmtree', 
     'Tv', 'Plane', 'Home', 'Droplets', 'Zap', 'Wifi', 'Phone', 'Key', 'CreditCard', 
     'Repeat', 'Dog', 'Shirt', 'Sparkles', 'TrendingUp', 'DollarSign', 'Percent', 
-    'Briefcase', 'Gift', 'Tag'
+    'Briefcase', 'Gift', 'Tag', 'ShoppingBag', 'ArrowDownCircle', 'Heart'
   ];
-  const colors = ['#128C7E', '#075E54', '#34B7F1', '#25D366', '#DC2626', '#EA580C', '#D97706', '#65A30D', '#059669', '#0891B2', '#2563EB', '#4F46E5', '#7C3AED', '#9333EA', '#C026D3', '#DB2777'];
+  const colors = ['#128C7E', '#075E54', '#34B7F1', '#25D366', '#DC2626', '#EA580C', '#D97706', '#65A30D', '#059669', '#0891B2', '#2563EB', '#4F46E5', '#7C3AED', '#9333EA', '#C026D3', '#DB2777', '#FF9800', '#4CAF50', '#F44336', '#795548', '#607D8B', '#E91E63', '#9C27B0', '#3F51B5', '#00BCD4', '#FF5722', '#8BC34A', '#9E9E9E'];
 
   const handleOpenModal = (cat?: UserCategory) => {
     if (cat) {
@@ -51,13 +53,24 @@ const CategoriesTab: React.FC<CategoriesTabProps> = ({ uid, categories, transact
 
   const handleSave = async () => {
     if (!name.trim() || isSaving) return;
+
+    // Verificar duplicação antes de salvar (apenas para novas categorias)
+    if (!editingCategory) {
+      const newId = getCategoryId(name);
+      const exists = categories.some(c => c.id === newId);
+      if (exists) {
+        setNotification({ message: "Uma categoria similar já existe!", type: 'error' });
+        return;
+      }
+    }
+
     setIsSaving(true);
 
     try {
       if (editingCategory) {
         await dispatchEvent(uid, {
           type: 'UPDATE_CATEGORY',
-          payload: { id: editingCategory.id, name, icon, color, type },
+          payload: { id: editingCategory.id, name, icon, color, type, oldName: editingCategory.name },
           source: 'ui',
           createdAt: new Date()
         });
@@ -76,6 +89,27 @@ const CategoriesTab: React.FC<CategoriesTabProps> = ({ uid, categories, transact
       setNotification({ message: "Erro ao salvar categoria.", type: 'error' });
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleDeduplicate = async () => {
+    if (isDeduplicating) return;
+    setIsDeduplicating(true);
+    try {
+      const result = await deduplicateCategories(uid);
+      if (result.success) {
+        setNotification({ 
+          message: `Limpeza concluída! ${result.mergedCount} duplicatas removidas e ${result.transUpdated} transações atualizadas.`, 
+          type: 'success' 
+        });
+      } else {
+        setNotification({ message: "Erro ao realizar limpeza.", type: 'error' });
+      }
+    } catch (e) {
+      console.error(e);
+      setNotification({ message: "Erro ao realizar limpeza.", type: 'error' });
+    } finally {
+      setIsDeduplicating(false);
     }
   };
 
@@ -107,18 +141,18 @@ const CategoriesTab: React.FC<CategoriesTabProps> = ({ uid, categories, transact
       case 'Utensils': return <Utensils size={24} />;
       case 'ShoppingCart': return <ShoppingCart size={24} />;
       case 'Coffee': return <Coffee size={24} />;
-      case 'Pizza': return <Utensils size={24} />; // Fallback
+      case 'Pizza': return <Utensils size={24} />;
       case 'Bike': return <Bike size={24} />;
       case 'Car': return <Car size={24} />;
       case 'Fuel': return <Fuel size={24} />;
       case 'Smartphone': return <Smartphone size={24} />;
       case 'HeartPulse': return <HeartPulse size={24} />;
-      case 'Pill': return <HeartPulse size={24} />; // Fallback
+      case 'Pill': return <HeartPulse size={24} />;
       case 'Dumbbell': return <Dumbbell size={24} />;
       case 'GraduationCap': return <GraduationCap size={24} />;
       case 'School': return <School size={24} />;
       case 'BookOpen': return <BookOpen size={24} />;
-      case 'Palmtree': return <Plane size={24} />; // Fallback
+      case 'Palmtree': return <Plane size={24} />;
       case 'Tv': return <Tv size={24} />;
       case 'Plane': return <Plane size={24} />;
       case 'Home': return <Home size={24} />;
@@ -137,6 +171,9 @@ const CategoriesTab: React.FC<CategoriesTabProps> = ({ uid, categories, transact
       case 'Percent': return <Percent size={24} />;
       case 'Briefcase': return <Briefcase size={24} />;
       case 'Gift': return <Gift size={24} />;
+      case 'ShoppingBag': return <ShoppingBag size={24} />;
+      case 'ArrowDownCircle': return <ArrowDownCircle size={24} />;
+      case 'Heart': return <Heart size={24} />;
       default: return <Tag size={24} />;
     }
   };
@@ -163,22 +200,33 @@ const CategoriesTab: React.FC<CategoriesTabProps> = ({ uid, categories, transact
 
   return (
     <div className="flex-1 flex flex-col min-h-full bg-[var(--bg-body)]">
-      <div className="p-6 flex justify-between items-end bg-[var(--surface)] border-b border-[var(--border)]">
+      <div className="p-6 flex flex-col sm:flex-row justify-between items-start sm:items-end bg-[var(--surface)] border-b border-[var(--border)] gap-4">
         <div>
           <h2 className="text-[10px] font-black text-[var(--green-whatsapp)] uppercase tracking-[0.4em] mb-1">Personalização</h2>
           <h1 className="text-3xl font-black text-[var(--text-primary)] uppercase italic tracking-tighter">Categorias</h1>
         </div>
-        <button 
-          onClick={() => handleOpenModal()}
-          className="bg-[var(--green-whatsapp)] text-white px-6 py-3 rounded-2xl font-black text-[11px] uppercase flex items-center gap-2 shadow-lg shadow-[var(--green-whatsapp)]/20 active:scale-95 transition-all"
-        >
-          <Plus size={16} /> Nova Categoria
-        </button>
+        <div className="flex gap-2 w-full sm:w-auto">
+          <button 
+            onClick={handleDeduplicate}
+            disabled={isDeduplicating}
+            className="flex-1 sm:flex-none bg-[var(--bg-body)] text-[var(--text-muted)] border border-[var(--border)] px-4 py-3 rounded-2xl font-black text-[10px] uppercase flex items-center justify-center gap-2 hover:border-[var(--green-whatsapp)] hover:text-[var(--green-whatsapp)] transition-all active:scale-95"
+            title="Unificar categorias duplicadas e organizar transações"
+          >
+            <Wand2 size={16} className={isDeduplicating ? 'animate-spin' : ''} />
+            {isDeduplicating ? 'Limpando...' : 'Limpar Duplicados'}
+          </button>
+          <button 
+            onClick={() => handleOpenModal()}
+            className="flex-1 sm:flex-none bg-[var(--green-whatsapp)] text-white px-6 py-3 rounded-2xl font-black text-[11px] uppercase flex items-center justify-center gap-2 shadow-lg shadow-[var(--green-whatsapp)]/20 active:scale-95 transition-all"
+          >
+            <Plus size={16} /> Nova Categoria
+          </button>
+        </div>
       </div>
 
       <div className="flex-1 overflow-y-auto p-6 space-y-4">
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {categories.map(cat => {
+          {categories.sort((a, b) => a.name.localeCompare(b.name)).map(cat => {
             const amount = cat.type === 'INCOME' ? calculateReceived(cat.name) : calculateSpent(cat.name);
             return (
               <div 
@@ -281,7 +329,7 @@ const CategoriesTab: React.FC<CategoriesTabProps> = ({ uid, categories, transact
 
               <div className="space-y-3">
                 <label className="text-[9px] font-black text-[var(--text-muted)] uppercase ml-2 tracking-widest">Escolha um Ícone</label>
-                <div className="grid grid-cols-6 gap-2 max-h-32 overflow-y-auto p-2 bg-[var(--bg-body)] rounded-2xl border border-[var(--border)]">
+                <div className="grid grid-cols-6 gap-2 max-h-32 overflow-y-auto p-2 bg-[var(--bg-body)] rounded-2xl border border-[var(--border)] no-scrollbar">
                   {icons.map(i => (
                     <button 
                       key={i}

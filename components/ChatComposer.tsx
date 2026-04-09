@@ -44,6 +44,9 @@ const ChatComposer: React.FC<ChatComposerProps> = ({ onSendText, onSendFile, isL
     }
 
     try {
+      // Solicita permissão explicitamente para "acordar" o microfone em iframes
+      await navigator.mediaDevices.getUserMedia({ audio: true });
+      
       const recognition = new SpeechRecognition();
       recognition.lang = 'pt-BR';
       recognition.continuous = true;
@@ -89,6 +92,13 @@ const ChatComposer: React.FC<ChatComposerProps> = ({ onSendText, onSendFile, isL
           setNotification({ message: "Permissão de microfone negada.", type: 'error' });
         }
         stopRecording(true);
+      };
+
+      recognition.onerror = (event: any) => {
+        console.error('Speech recognition error', event.error);
+        setNotification({ message: `Erro no microfone: ${event.error}`, type: 'error' });
+        setIsRecording(false);
+        clearInterval(timerRef.current);
       };
 
       recognition.onend = () => {

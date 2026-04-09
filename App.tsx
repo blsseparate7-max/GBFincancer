@@ -183,7 +183,7 @@ const App: React.FC = () => {
       collection(userRef, "transactions"), 
       where("date", ">=", startOfMonth),
       orderBy("date", "desc"), 
-      limit(100)
+      limit(500)
     ), (snap) => {
       const normalized = snap.docs.map(d => normalizeTransaction(d));
       setTransactions(normalized);
