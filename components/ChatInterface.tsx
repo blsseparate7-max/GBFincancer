@@ -1057,9 +1057,15 @@ const ChatInterface: React.FC<ChatProps> = ({
                     <div className="flex flex-col items-end">
                       <span className="text-[9px] font-black text-[var(--text-muted)] uppercase tracking-widest mb-1">Carteira</span>
                       <div className="flex items-center gap-2 bg-[var(--surface)] px-3 py-1.5 rounded-xl border border-[var(--border)]">
-                        <span className="text-xs">💳</span>
+                        <span className="text-xs">{pendingAction.payload.cardId ? '💳' : '💰'}</span>
                         <span className="text-[10px] font-black uppercase text-[var(--text-primary)]">
-                          {isSelectingCard ? 'Selecionando...' : (wallets.find(w => w.id === (pendingAction.payload.sourceWalletId || pendingAction.payload.targetWalletId))?.name || 'Principal')}
+                          {isSelectingCard ? 'Selecionando...' : (
+                            pendingAction.payload.cardId 
+                              ? (cards.find(c => c.id === pendingAction.payload.cardId)?.name || 'Cartão')
+                              : (wallets.find(w => w.id === (pendingAction.payload.sourceWalletId || pendingAction.payload.targetWalletId))?.name || 
+                                 wallets.find(w => w.name.toLowerCase() === (pendingAction.payload.sourceWalletName || pendingAction.payload.targetWalletName || '').toLowerCase())?.name ||
+                                 'Principal')
+                          )}
                         </span>
                       </div>
                     </div>
@@ -1141,12 +1147,82 @@ const ChatInterface: React.FC<ChatProps> = ({
                     </div>
                   )}
                 </div>
+
+                {/* Seleção de Carteira */}
+                <div className="space-y-4 pt-4 border-t border-[var(--border)]/50">
+                  <div className="flex items-center justify-between px-2">
+                    <span className="text-[10px] font-black text-[var(--text-muted)] uppercase tracking-widest">Onde salvar?</span>
+                    <span className="text-[9px] font-bold text-[var(--green-whatsapp)] uppercase">Escolha a carteira</span>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    {wallets.map(w => {
+                      const isSelected = pendingAction.payload.sourceWalletId === w.id || 
+                                       pendingAction.payload.targetWalletId === w.id ||
+                                       (!pendingAction.payload.sourceWalletId && !pendingAction.payload.targetWalletId && !pendingAction.payload.cardId && 
+                                        (pendingAction.payload.sourceWalletName || pendingAction.payload.targetWalletName || '').toLowerCase() === w.name.toLowerCase());
+                      
+                      return (
+                        <button 
+                          key={w.id}
+                          onClick={() => {
+                            const update = pendingAction.type === 'ADD_INCOME' 
+                              ? { targetWalletId: w.id, sourceWalletId: null, cardId: null, paymentMethod: 'PIX' }
+                              : { sourceWalletId: w.id, targetWalletId: null, cardId: null, paymentMethod: 'PIX' };
+                            setPendingAction({
+                              ...pendingAction,
+                              payload: { ...pendingAction.payload, ...update }
+                            });
+                          }}
+                          className={`flex items-center gap-3 p-3 rounded-2xl border transition-all text-left group ${isSelected ? 'bg-[var(--green-whatsapp)] border-[var(--green-whatsapp)] text-white shadow-lg shadow-[var(--green-whatsapp)]/20' : 'bg-[var(--bg-body)] border-[var(--border)] text-[var(--text-primary)] hover:border-[var(--green-whatsapp)]/50'}`}
+                        >
+                          <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 transition-colors ${isSelected ? 'bg-white/20' : 'bg-[var(--surface)] text-[var(--text-muted)] group-hover:text-[var(--green-whatsapp)]'}`}>
+                            <span className="text-base">{w.icon || '💰'}</span>
+                          </div>
+                          <span className="text-[11px] font-black uppercase tracking-tight truncate">{w.name}</span>
+                        </button>
+                      );
+                    })}
+                    
+                    {cards.length > 0 && (
+                      <button 
+                        onClick={() => {
+                          const cardId = cards[0].id;
+                          setPendingAction({
+                            ...pendingAction,
+                            payload: { 
+                              ...pendingAction.payload, 
+                              cardId, 
+                              sourceWalletId: null, 
+                              targetWalletId: null, 
+                              paymentMethod: 'CARD' 
+                            }
+                          });
+                        }}
+                        className={`flex items-center gap-3 p-3 rounded-2xl border transition-all text-left group ${pendingAction.payload.cardId ? 'bg-rose-500 border-rose-500 text-white shadow-lg shadow-rose-500/20' : 'bg-[var(--bg-body)] border-[var(--border)] text-[var(--text-primary)] hover:border-rose-500/50'}`}
+                      >
+                        <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 transition-colors ${pendingAction.payload.cardId ? 'bg-white/20' : 'bg-rose-500/10 text-rose-500 group-hover:text-rose-500'}`}>
+                          <CreditCard size={14} />
+                        </div>
+                        <span className="text-[11px] font-black uppercase tracking-tight truncate">Cartão</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
               </div>
 
               {/* Botão Final de Confirmação */}
               <div className="mt-10">
                 <button 
-                  onClick={() => confirmPendingAction(pendingAction.payload.sourceWalletId || pendingAction.payload.targetWalletId || wallets[0]?.id || '')}
+                  onClick={() => {
+                    const id = pendingAction.payload.cardId || 
+                             pendingAction.payload.sourceWalletId || 
+                             pendingAction.payload.targetWalletId || 
+                             wallets.find(w => w.name.toLowerCase() === (pendingAction.payload.sourceWalletName || pendingAction.payload.targetWalletName || '').toLowerCase())?.id ||
+                             wallets[0]?.id || '';
+                    const isCard = !!pendingAction.payload.cardId;
+                    confirmPendingAction(id, isCard);
+                  }}
                   className="w-full bg-[var(--green-whatsapp)] text-white py-5 rounded-[2rem] font-black text-xs uppercase tracking-[0.2em] shadow-xl shadow-[var(--green-whatsapp)]/30 active:scale-[0.98] transition-all flex items-center justify-center gap-3 group"
                 >
                   <span>Confirmar categoria</span>

@@ -146,46 +146,74 @@ export const ProjectionCard: React.FC<{ projectedBalance: number }> = React.memo
   </div>
 ));
 
-export const ExpenseRanking: React.FC<{ ranking: any[]; onCategoryClick?: (cat: string) => void }> = React.memo(({ ranking, onCategoryClick }) => (
-  <div className="bg-[var(--surface)] p-10 rounded-[3rem] border border-[var(--border)] shadow-sm space-y-8">
-    <div>
-      <h3 className="text-xs font-black text-[var(--text-primary)] uppercase tracking-[0.2em] mb-1">Top Categorias</h3>
-      <p className="text-[9px] font-bold text-[var(--text-muted)] uppercase italic">Onde seu dinheiro está indo</p>
-    </div>
-    <div className="space-y-6">
-      {ranking.map((item, i) => (
-        <div 
-          key={item.name} 
-          className="space-y-3 cursor-pointer group"
-          onClick={() => onCategoryClick?.(item.name)}
+export const ExpenseRanking: React.FC<{ 
+  ranking: any[]; 
+  onCategoryClick?: (cat: string) => void;
+  onSeeAll?: () => void;
+  limit?: number;
+}> = React.memo(({ ranking, onCategoryClick, onSeeAll, limit = 5 }) => {
+  const displayRanking = limit > 0 ? ranking.slice(0, limit) : ranking;
+  const hasMore = ranking.length > limit && limit > 0;
+
+  return (
+    <div className="bg-[var(--surface)] p-10 rounded-[3rem] border border-[var(--border)] shadow-sm space-y-8 flex flex-col">
+      <div className="flex justify-between items-start">
+        <div>
+          <h3 className="text-xs font-black text-[var(--text-primary)] uppercase tracking-[0.2em] mb-1">Top Categorias</h3>
+          <p className="text-[9px] font-bold text-[var(--text-muted)] uppercase italic">Onde seu dinheiro está indo</p>
+        </div>
+        {hasMore && onSeeAll && (
+          <button 
+            onClick={onSeeAll}
+            className="text-[9px] font-black text-[var(--green-whatsapp)] uppercase tracking-widest hover:underline transition-all"
+          >
+            Ver todos
+          </button>
+        )}
+      </div>
+      <div className="space-y-6 flex-1">
+        {displayRanking.map((item, i) => (
+          <div 
+            key={item.name} 
+            className="space-y-3 cursor-pointer group"
+            onClick={() => onCategoryClick?.(item.name)}
+          >
+            <div className="flex justify-between items-end">
+              <span className="text-[11px] font-black text-[var(--text-primary)] uppercase italic tracking-tight group-hover:text-[var(--green-whatsapp)] transition-colors">{i + 1}. {item.name}</span>
+              <span className="text-[10px] font-black text-[var(--text-muted)] italic">{item.percentage.toFixed(0)}%</span>
+            </div>
+            <div className="h-2 w-full bg-[var(--bg-body)] rounded-full overflow-hidden shadow-inner group-hover:border-[var(--green-whatsapp)]/30 transition-all">
+              <motion.div 
+                initial={{ width: 0 }}
+                animate={{ width: `${item.percentage}%` }}
+                transition={{ duration: 1.5, ease: "easeOut" }}
+                className="h-full bg-gradient-to-r from-[var(--green-whatsapp)] to-emerald-400" 
+              />
+            </div>
+            <div className="flex justify-between items-center">
+              <p className="text-[8px] font-black text-[var(--green-whatsapp)] uppercase tracking-widest opacity-0 group-hover:opacity-100 transition-opacity italic">Ver detalhes →</p>
+              <p className="text-[10px] font-black text-[var(--text-primary)] text-right italic">{format(item.value)}</p>
+            </div>
+          </div>
+        ))}
+        {ranking.length === 0 && (
+          <div className="py-10 text-center opacity-20">
+            <Info size={32} className="mx-auto mb-2" />
+            <p className="text-[10px] font-black uppercase italic">Sem dados de gastos</p>
+          </div>
+        )}
+      </div>
+      {hasMore && onSeeAll && (
+        <button 
+          onClick={onSeeAll}
+          className="w-full py-4 bg-[var(--bg-body)] rounded-2xl border border-[var(--border)] text-[10px] font-black text-[var(--text-muted)] uppercase tracking-widest hover:text-[var(--green-whatsapp)] hover:border-[var(--green-whatsapp)]/30 transition-all flex items-center justify-center gap-2"
         >
-          <div className="flex justify-between items-end">
-            <span className="text-[11px] font-black text-[var(--text-primary)] uppercase italic tracking-tight group-hover:text-[var(--green-whatsapp)] transition-colors">{i + 1}. {item.name}</span>
-            <span className="text-[10px] font-black text-[var(--text-muted)] italic">{item.percentage.toFixed(0)}%</span>
-          </div>
-          <div className="h-2 w-full bg-[var(--bg-body)] rounded-full overflow-hidden shadow-inner group-hover:border-[var(--green-whatsapp)]/30 transition-all">
-            <motion.div 
-              initial={{ width: 0 }}
-              animate={{ width: `${item.percentage}%` }}
-              transition={{ duration: 1.5, ease: "easeOut" }}
-              className="h-full bg-gradient-to-r from-[var(--green-whatsapp)] to-emerald-400" 
-            />
-          </div>
-          <div className="flex justify-between items-center">
-            <p className="text-[8px] font-black text-[var(--green-whatsapp)] uppercase tracking-widest opacity-0 group-hover:opacity-100 transition-opacity italic">Ver detalhes →</p>
-            <p className="text-[10px] font-black text-[var(--text-primary)] text-right italic">{format(item.value)}</p>
-          </div>
-        </div>
-      ))}
-      {ranking.length === 0 && (
-        <div className="py-10 text-center opacity-20">
-          <Info size={32} className="mx-auto mb-2" />
-          <p className="text-[10px] font-black uppercase italic">Sem dados de gastos</p>
-        </div>
+          Ver lista completa <ArrowRight size={14} />
+        </button>
       )}
     </div>
-  </div>
-));
+  );
+});
 
 export const GlobalSpendingLimitCard: React.FC<{ 
   limit: number | null | undefined; 

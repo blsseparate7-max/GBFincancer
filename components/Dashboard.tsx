@@ -49,6 +49,7 @@ const Dashboard: React.FC<DashProps> = ({ transactions, goals, limits, wallets, 
   const [showLimitModal, setShowLimitModal] = useState(false);
   const [showGlobalLimitModal, setShowGlobalLimitModal] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showFullRanking, setShowFullRanking] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   
   // Transaction Form State
@@ -464,6 +465,8 @@ const Dashboard: React.FC<DashProps> = ({ transactions, goals, limits, wallets, 
         <ExpenseRanking 
           ranking={stats.expenseRanking} 
           onCategoryClick={(cat) => setSelectedCategory(cat)}
+          onSeeAll={() => setShowFullRanking(true)}
+          limit={5}
         />
 
         {/* 4️⃣ Teto de Gastos Global */}
@@ -616,6 +619,50 @@ const Dashboard: React.FC<DashProps> = ({ transactions, goals, limits, wallets, 
       >
         <Plus size={32} />
       </motion.button>
+
+      {/* Modal Ranking Completo */}
+      <AnimatePresence>
+        {showFullRanking && (
+          <div className="fixed inset-0 z-[200] flex items-center justify-center p-6">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowFullRanking(false)}
+              className="absolute inset-0 bg-black/80 backdrop-blur-xl"
+            />
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="bg-[var(--surface)] w-full max-w-lg rounded-[3rem] p-10 shadow-2xl relative border border-[var(--border)] animate-fade max-h-[85vh] flex flex-col"
+            >
+              <button 
+                onClick={() => setShowFullRanking(false)} 
+                className="absolute top-8 right-8 w-10 h-10 bg-[var(--bg-body)] rounded-full flex items-center justify-center text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-all active:scale-90 border border-[var(--border)]"
+              >
+                ✕
+              </button>
+              
+              <div className="text-center mb-8">
+                <p className="text-[10px] font-black text-[var(--green-whatsapp)] uppercase tracking-[0.4em] mb-2">Análise Completa</p>
+                <h3 className="text-2xl font-black text-[var(--text-primary)] uppercase italic tracking-tighter leading-none">Ranking de Gastos</h3>
+              </div>
+
+              <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar">
+                <ExpenseRanking 
+                  ranking={stats.expenseRanking} 
+                  onCategoryClick={(cat) => {
+                    setSelectedCategory(cat);
+                    setShowFullRanking(false);
+                  }}
+                  limit={0} // 0 means show all
+                />
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       {/* Modal Detalhe de Categoria */}
       <AnimatePresence>
