@@ -5,7 +5,7 @@ import { collection, addDoc, serverTimestamp, query, where, getDocs, limit } fro
 /**
  * Envia uma mensagem para o Firestore (Sincronização Total)
  */
-export const sendMessageToFirestore = async (uid: string, text: string, sender: 'user' | 'ai', dedupeKey?: string) => {
+export const sendMessageToFirestore = async (uid: string, text: string, sender: 'user' | 'ai', dedupeKey?: string, actionType?: string, actionPayload?: any) => {
   const finalUid = uid || auth.currentUser?.uid;
   if (!finalUid) {
     console.error("GB Chat Service: UID não encontrado para envio de mensagem.");
@@ -38,7 +38,9 @@ export const sendMessageToFirestore = async (uid: string, text: string, sender: 
       createdAt: serverTimestamp(),
       dedupeKey: dedupeKey || null,
       source: 'chat',
-      resolved: false
+      resolved: false,
+      actionType: actionType || null,
+      actionPayload: actionPayload || null
     });
     console.log(`GB Chat Service: Mensagem salva com sucesso! ID: ${docRef.id} em chat_messages`);
   } catch (err) {

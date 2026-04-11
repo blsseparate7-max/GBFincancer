@@ -3,7 +3,7 @@ import { db, auth } from "./firebaseConfig";
 import { 
   collection, addDoc, doc, setDoc, deleteDoc, updateDoc, 
   serverTimestamp, increment, getDoc, arrayUnion, getDocs, query, where,
-  writeBatch, limit, runTransaction
+  writeBatch, limit, runTransaction, DocumentReference
 } from "firebase/firestore";
 import { FinanceEvent, TransactionType } from "../types";
 import { normalizeCategoryName } from "./normalizationService";
@@ -168,17 +168,41 @@ const getCycleKey = (dateStr?: string) => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 };
 
-export const dispatchEvent = async (uid: string, event: FinanceEvent) => {
+// Cache de operações em processamento para evitar duplicidade (Idempotência)
+const activeOperations = new Set<string>();
+
+export const dispatchEvent = async (uid: string, event: FinanceEvent & { operationKey?: string }) => {
   const finalUid = uid || auth.currentUser?.uid;
-  
-  if (!finalUid || finalUid === 'undefined' || finalUid === 'null') {
-    console.error("Event Dispatch Error: Invalid UID", { uid: finalUid });
+  const opKey = event.operationKey || (event.payload?.id ? `${event.type}_${event.payload.id}` : null);
+
+  if (opKey) {
+    if (activeOperations.has(opKey)) {
+      console.warn("GB Dispatch: Operação duplicada bloqueada (Idempotência).", { opKey });
+      return { success: false, error: "Operação já em processamento." };
+    }
+    activeOperations.add(opKey);
+  }
+
+  try {
+    const result = await executeDispatch(finalUid!, event);
+    return result;
+  } finally {
+    if (opKey) {
+      // Pequeno delay para evitar cliques ultra-rápidos que o Set pode não pegar se for async puro
+      setTimeout(() => activeOperations.delete(opKey), 1000);
+    }
+  }
+};
+
+const executeDispatch = async (uid: string, event: FinanceEvent) => {
+  if (!uid || uid === 'undefined' || uid === 'null') {
+    console.error("Event Dispatch Error: Invalid UID", { uid });
     return { success: false, error: "Invalid UID" };
   }
 
   // Bloqueio de Segurança: Verificar Trial/Assinatura (Fonte da Verdade)
   try {
-    const userDoc = await getDoc(doc(db, "users", finalUid));
+    const userDoc = await getDoc(doc(db, "users", uid));
     if (userDoc.exists()) {
       const userData = userDoc.data();
       const now = new Date();
@@ -194,7 +218,7 @@ export const dispatchEvent = async (uid: string, event: FinanceEvent) => {
 
       // Se não tem acesso, bloqueia ações de escrita (exceto UPDATE_USER que pode ser necessário para renovação/onboarding)
       if (!hasAccess && event.type !== 'UPDATE_USER' && event.type !== 'SYNC_DATA') {
-        console.warn("GB Dispatch: Ação bloqueada por falta de assinatura ativa.", { uid: finalUid, type: event.type });
+        console.warn("GB Dispatch: Ação bloqueada por falta de assinatura ativa.", { uid, type: event.type });
         return { success: false, error: "Assinatura expirada. Por favor, renove seu acesso para realizar esta ação." };
       }
     }
@@ -205,12 +229,12 @@ export const dispatchEvent = async (uid: string, event: FinanceEvent) => {
   }
 
   // Verifica se o usuário autenticado coincide com o UID do evento
-  if (auth.currentUser && auth.currentUser.uid !== finalUid) {
-    console.warn("Event Dispatch Warning: UID mismatch - Usando UID solicitado", { authUid: auth.currentUser.uid, eventUid: finalUid });
+  if (auth.currentUser && auth.currentUser.uid !== uid) {
+    console.warn("Event Dispatch Warning: UID mismatch - Usando UID solicitado", { authUid: auth.currentUser.uid, eventUid: uid });
   }
 
   try {
-    const userRef = doc(db, "users", finalUid);
+    const userRef = doc(db, "users", uid);
     const now = new Date();
     const batch = writeBatch(db);
     
@@ -394,8 +418,24 @@ export const dispatchEvent = async (uid: string, event: FinanceEvent) => {
               status: 'received',
               resolved: true,
               paidAt: serverTimestamp(),
-              updatedAt: serverTimestamp()
+              updatedAt: serverTimestamp(),
+              confirmationProcessed: true,
+              confirmationProcessedAt: serverTimestamp()
             });
+          }
+
+          // Idempotência Onboarding: Marcar como processado no perfil do usuário
+          if (source === 'onboarding') {
+            const userSnap = await transaction.get(userRef);
+            const userData = userSnap.data();
+            if (userData?.onboardingStatus) {
+              transaction.update(userRef, {
+                "onboardingStatus.chatContextResponded": true,
+                "onboardingStatus.onboardingIncomeProcessed": true,
+                "onboardingStatus.salaryConfirmed": true,
+                updatedAt: serverTimestamp()
+              });
+            }
           }
         });
         break;
@@ -635,6 +675,8 @@ export const dispatchEvent = async (uid: string, event: FinanceEvent) => {
             status: isReceive ? 'received' : 'paid',
             resolved: true,
             lastPromptedAt: serverTimestamp(),
+            confirmationProcessed: true,
+            confirmationProcessedAt: serverTimestamp(),
             cycleKey
           });
           
@@ -904,122 +946,208 @@ export const dispatchEvent = async (uid: string, event: FinanceEvent) => {
         const { id, updates, oldData } = payload;
         const transRef = doc(userRef, "transactions", id);
         
-        const finalUpdates = { ...(updates || {}) };
-        
-        // 1. Category Info Sync
-        if (finalUpdates.category) {
-          const catInfo = await getCategoryInfo(uid, finalUpdates.category);
-          finalUpdates.category = catInfo.name;
-          finalUpdates.categoryId = catInfo.id;
-          finalUpdates.categoryName = catInfo.name;
-        }
+        await runTransaction(db, async (transaction) => {
+          // 1. READS FIRST
+          let currentData = oldData;
+          const transSnap = !currentData ? await transaction.get(transRef) : null;
+          if (transSnap?.exists()) currentData = transSnap.data();
 
-        // 2. Wallet Info Sync
-        const newWalletId = finalUpdates.sourceWalletId || finalUpdates.targetWalletId;
-        if (newWalletId) {
-          const walletInfo = await getWalletInfo(uid, newWalletId);
-          finalUpdates.walletId = walletInfo?.id || null;
-          finalUpdates.walletName = walletInfo?.name || null;
-        }
+          if (!currentData) throw new Error("Transação não encontrada para atualização");
 
-        if (finalUpdates.date) {
-          finalUpdates.date = parseSafeDate(finalUpdates.date).toISOString();
-        }
+          const finalUpdates = { ...(updates || {}) };
+          
+          // Resolve info OUTSIDE transaction if possible, but here we are inside.
+          // These helpers (getCategoryInfo, getWalletInfo) use getDoc/getDocs, NOT transaction.get.
+          // This is technically a "read" but not a "transaction read". 
+          // However, to be safe and consistent, we should avoid them inside if they perform writes later.
+          // Actually, they are async functions.
+          
+          if (finalUpdates.category) {
+            const catInfo = await getCategoryInfo(uid, finalUpdates.category);
+            finalUpdates.category = catInfo.name;
+            finalUpdates.categoryId = catInfo.id;
+            finalUpdates.categoryName = catInfo.name;
+          }
 
-        await updateDoc(transRef, {
-          ...finalUpdates,
-          updatedAt: serverTimestamp()
-        });
+          const newWalletId = finalUpdates.sourceWalletId || finalUpdates.targetWalletId;
+          if (newWalletId) {
+            const walletInfo = await getWalletInfo(uid, newWalletId);
+            finalUpdates.walletId = walletInfo?.id || null;
+            finalUpdates.walletName = walletInfo?.name || null;
+          }
 
-        // 3. Sincronização de Carteiras (Wallet Balance Sync)
-        if (oldData) {
-          const oldAmount = Number(oldData.amount || 0);
+          if (finalUpdates.date) {
+            finalUpdates.date = parseSafeDate(finalUpdates.date).toISOString();
+          }
+
+          const oldAmount = Number(currentData.amount || 0);
           const newAmount = finalUpdates.amount !== undefined ? Number(finalUpdates.amount) : oldAmount;
-          const oldType = oldData.type;
+          const oldType = currentData.type;
           const newType = finalUpdates.type || oldType;
-          const oldMethod = oldData.paymentMethod;
+          const oldMethod = currentData.paymentMethod;
           const newMethod = finalUpdates.paymentMethod || oldMethod;
-          const oldSourceWalletId = oldData.sourceWalletId;
-          const newSourceWalletId = finalUpdates.sourceWalletId !== undefined ? finalUpdates.sourceWalletId : oldSourceWalletId;
-          const oldTargetWalletId = oldData.targetWalletId;
-          const newTargetWalletId = finalUpdates.targetWalletId !== undefined ? finalUpdates.targetWalletId : oldTargetWalletId;
+          const oldSourceWalletId = currentData.sourceWalletId || currentData.walletId || currentData.fromWalletId;
+          const newSourceWalletId = finalUpdates.sourceWalletId !== undefined ? finalUpdates.sourceWalletId : (finalUpdates.walletId || finalUpdates.fromWalletId || oldSourceWalletId);
+          const oldTargetWalletId = currentData.targetWalletId || currentData.toWalletId;
+          const newTargetWalletId = finalUpdates.targetWalletId !== undefined ? finalUpdates.targetWalletId : (finalUpdates.toWalletId || oldTargetWalletId);
+
+          const oldCat = normalizeCategoryName(currentData.category);
+          const newCat = finalUpdates.category || oldCat;
+          const oldCardId = currentData?.cardId;
+          const newCardId = finalUpdates.cardId || oldCardId;
+
+          // Collect all refs to read
+          const refsToRead: DocumentReference[] = [];
+          
+          if (oldTargetWalletId) refsToRead.push(doc(userRef, "wallets", oldTargetWalletId));
+          if (oldSourceWalletId && oldSourceWalletId !== oldTargetWalletId) refsToRead.push(doc(userRef, "wallets", oldSourceWalletId));
+          if (newTargetWalletId && newTargetWalletId !== oldTargetWalletId && newTargetWalletId !== oldSourceWalletId) refsToRead.push(doc(userRef, "wallets", newTargetWalletId));
+          if (newSourceWalletId && newSourceWalletId !== oldTargetWalletId && newSourceWalletId !== oldSourceWalletId && newSourceWalletId !== newTargetWalletId) refsToRead.push(doc(userRef, "wallets", newSourceWalletId));
+          
+          const oldLimitId = (oldCat || "").toLowerCase().trim().replace(/\s+/g, '_');
+          const newLimitId = (newCat || "").toLowerCase().trim().replace(/\s+/g, '_');
+          if (oldLimitId) refsToRead.push(doc(userRef, "limits", oldLimitId));
+          if (newLimitId && newLimitId !== oldLimitId) refsToRead.push(doc(userRef, "limits", newLimitId));
+
+          if (oldCardId) refsToRead.push(doc(userRef, "cards", oldCardId));
+          if (newCardId && newCardId !== oldCardId) refsToRead.push(doc(userRef, "cards", newCardId));
+
+          // Perform all reads at once
+          const snaps = await Promise.all(refsToRead.map(ref => transaction.get(ref)));
+          const snapMap = new Map(snaps.map((s, i) => [refsToRead[i].path, s]));
+
+          // 2. NOW PERFORM WRITES
 
           // Reverter impacto antigo
           if (oldType === 'INCOME' && oldTargetWalletId) {
-            await updateWalletBalance(uid, oldTargetWalletId, -oldAmount);
+            const walletRef = doc(userRef, "wallets", oldTargetWalletId);
+            const walletSnap = snapMap.get(walletRef.path);
+            if (walletSnap?.exists()) {
+              transaction.update(walletRef, { balance: increment(-oldAmount), updatedAt: serverTimestamp() });
+            }
           } else if (oldType === 'EXPENSE' && oldSourceWalletId && oldMethod !== 'CARD') {
-            await updateWalletBalance(uid, oldSourceWalletId, oldAmount);
+            const walletRef = doc(userRef, "wallets", oldSourceWalletId);
+            const walletSnap = snapMap.get(walletRef.path);
+            if (walletSnap?.exists()) {
+              transaction.update(walletRef, { balance: increment(oldAmount), updatedAt: serverTimestamp() });
+            }
+          } else if (oldType === 'TRANSFER' && oldSourceWalletId && oldTargetWalletId) {
+            const fromRef = doc(userRef, "wallets", oldSourceWalletId);
+            const toRef = doc(userRef, "wallets", oldTargetWalletId);
+            const fromSnap = snapMap.get(fromRef.path);
+            const toSnap = snapMap.get(toRef.path);
+            if (fromSnap?.exists()) transaction.update(fromRef, { balance: increment(oldAmount), updatedAt: serverTimestamp() });
+            if (toSnap?.exists()) transaction.update(toRef, { balance: increment(-oldAmount), updatedAt: serverTimestamp() });
           }
 
           // Aplicar novo impacto
           if (newType === 'INCOME' && newTargetWalletId) {
-            await updateWalletBalance(uid, newTargetWalletId, newAmount);
+            const walletRef = doc(userRef, "wallets", newTargetWalletId);
+            const walletSnap = snapMap.get(walletRef.path);
+            if (walletSnap?.exists()) {
+              transaction.update(walletRef, { balance: increment(newAmount), updatedAt: serverTimestamp() });
+            }
           } else if (newType === 'EXPENSE' && newSourceWalletId && newMethod !== 'CARD') {
-            await updateWalletBalance(uid, newSourceWalletId, -newAmount);
+            const walletRef = doc(userRef, "wallets", newSourceWalletId);
+            const walletSnap = snapMap.get(walletRef.path);
+            if (walletSnap?.exists()) {
+              transaction.update(walletRef, { balance: increment(-newAmount), updatedAt: serverTimestamp() });
+            }
+          } else if (newType === 'TRANSFER' && newSourceWalletId && newTargetWalletId) {
+            const fromRef = doc(userRef, "wallets", newSourceWalletId);
+            const toRef = doc(userRef, "wallets", newTargetWalletId);
+            const fromSnap = snapMap.get(fromRef.path);
+            const toSnap = snapMap.get(toRef.path);
+            if (fromSnap?.exists()) transaction.update(fromRef, { balance: increment(-newAmount), updatedAt: serverTimestamp() });
+            if (toSnap?.exists()) transaction.update(toRef, { balance: increment(newAmount), updatedAt: serverTimestamp() });
           }
-        }
 
-        // 2. Sincronização de Limites e Cartões
-        if (oldData && (oldData.type === 'EXPENSE' || finalUpdates.type === 'EXPENSE')) {
-          const oldAmount = Number(oldData.amount || 0);
-          const newAmount = finalUpdates.amount !== undefined ? Number(finalUpdates.amount) : oldAmount;
-          const oldCat = normalizeCategoryName(oldData.category);
-          const newCat = finalUpdates.category || oldCat;
-
+          // 4. Sincronização de Limites
           if (oldCat === newCat) {
-            if (oldAmount !== newAmount) {
-              await updateLimitConsumption(uid, oldCat, newAmount - oldAmount);
+            if (oldAmount !== newAmount && (oldType === 'EXPENSE' || newType === 'EXPENSE')) {
+              const limitRef = doc(userRef, "limits", oldLimitId);
+              const limitSnap = snapMap.get(limitRef.path);
+              if (limitSnap?.exists()) {
+                transaction.update(limitRef, { spent: increment(newAmount - oldAmount), updatedAt: serverTimestamp() });
+              }
             }
           } else {
-            // Categorias diferentes: remove do antigo, adiciona no novo
-            await updateLimitConsumption(uid, oldCat, -oldAmount);
-            await updateLimitConsumption(uid, newCat, newAmount);
+            if (oldType === 'EXPENSE') {
+              const oldLimitRef = doc(userRef, "limits", oldLimitId);
+              const oldLimitSnap = snapMap.get(oldLimitRef.path);
+              if (oldLimitSnap?.exists()) {
+                transaction.update(oldLimitRef, { spent: increment(-oldAmount), updatedAt: serverTimestamp() });
+              }
+            }
+            if (newType === 'EXPENSE') {
+              const newLimitRef = doc(userRef, "limits", newLimitId);
+              const newLimitSnap = snapMap.get(newLimitRef.path);
+              if (newLimitSnap?.exists()) {
+                transaction.update(newLimitRef, { spent: increment(newAmount), updatedAt: serverTimestamp() });
+              }
+            }
           }
 
-          // Ajuste de Cartão de Crédito
-          const oldCardId = oldData?.cardId;
-          const newCardId = finalUpdates.cardId || oldCardId;
-          const oldMethod = oldData?.paymentMethod;
-          const newMethod = finalUpdates.paymentMethod || oldMethod;
-
+          // 5. Ajuste de Cartão de Crédito
           if (oldMethod === 'CARD' && newMethod === 'CARD') {
             if (oldCardId === newCardId) {
               if (oldAmount !== newAmount) {
                 const cardRef = doc(userRef, "cards", oldCardId);
                 const diff = newAmount - oldAmount;
-                await updateDoc(cardRef, {
-                  usedLimit: increment(diff),
-                  availableLimit: increment(-diff),
-                  currentInvoiceAmount: increment(diff),
-                  // Compatibilidade
-                  usedAmount: increment(diff),
-                  availableAmount: increment(-diff),
-                  invoiceAmount: increment(diff),
-                  updatedAt: serverTimestamp()
-                });
+                const cardSnap = snapMap.get(cardRef.path);
+                if (cardSnap?.exists()) {
+                  transaction.update(cardRef, {
+                    usedLimit: increment(diff),
+                    availableLimit: increment(-diff),
+                    currentInvoiceAmount: increment(diff),
+                    usedAmount: increment(diff),
+                    availableAmount: increment(-diff),
+                    invoiceAmount: increment(diff),
+                    updatedAt: serverTimestamp()
+                  });
+                }
               }
             } else {
-              // Mudou de cartão: estorna do antigo, cobra no novo
               if (oldCardId) {
                 const oldCardRef = doc(userRef, "cards", oldCardId);
-                await updateDoc(oldCardRef, {
-                  usedLimit: increment(-oldAmount),
-                  availableLimit: increment(oldAmount),
-                  currentInvoiceAmount: increment(-oldAmount),
-                  // Compatibilidade
-                  usedAmount: increment(-oldAmount),
-                  availableAmount: increment(oldAmount),
-                  invoiceAmount: increment(-oldAmount),
-                  updatedAt: serverTimestamp()
-                });
+                const oldCardSnap = snapMap.get(oldCardRef.path);
+                if (oldCardSnap?.exists()) {
+                  transaction.update(oldCardRef, {
+                    usedLimit: increment(-oldAmount),
+                    availableLimit: increment(oldAmount),
+                    currentInvoiceAmount: increment(-oldAmount),
+                    usedAmount: increment(-oldAmount),
+                    availableAmount: increment(oldAmount),
+                    invoiceAmount: increment(-oldAmount),
+                    updatedAt: serverTimestamp()
+                  });
+                }
               }
               if (newCardId) {
                 const newCardRef = doc(userRef, "cards", newCardId);
-                await updateDoc(newCardRef, {
+                const newCardSnap = snapMap.get(newCardRef.path);
+                if (newCardSnap?.exists()) {
+                  transaction.update(newCardRef, {
+                    usedLimit: increment(newAmount),
+                    availableLimit: increment(-newAmount),
+                    currentInvoiceAmount: increment(newAmount),
+                    usedAmount: increment(newAmount),
+                    availableAmount: increment(-newAmount),
+                    invoiceAmount: increment(newAmount),
+                    updatedAt: serverTimestamp()
+                  });
+                }
+              }
+            }
+          } else if (oldMethod !== 'CARD' && newMethod === 'CARD') {
+            if (newCardId) {
+              const newCardRef = doc(userRef, "cards", newCardId);
+              const newCardSnap = snapMap.get(newCardRef.path);
+              if (newCardSnap?.exists()) {
+                transaction.update(newCardRef, {
                   usedLimit: increment(newAmount),
                   availableLimit: increment(-newAmount),
                   currentInvoiceAmount: increment(newAmount),
-                  // Compatibilidade
                   usedAmount: increment(newAmount),
                   availableAmount: increment(-newAmount),
                   invoiceAmount: increment(newAmount),
@@ -1027,38 +1155,30 @@ export const dispatchEvent = async (uid: string, event: FinanceEvent) => {
                 });
               }
             }
-          } else if (oldMethod !== 'CARD' && newMethod === 'CARD') {
-            // Mudou para cartão: cobra no novo
-            if (newCardId) {
-              const newCardRef = doc(userRef, "cards", newCardId);
-              await updateDoc(newCardRef, {
-                usedLimit: increment(newAmount),
-                availableLimit: increment(-newAmount),
-                currentInvoiceAmount: increment(newAmount),
-                // Compatibilidade
-                usedAmount: increment(newAmount),
-                availableAmount: increment(-newAmount),
-                invoiceAmount: increment(newAmount),
-                updatedAt: serverTimestamp()
-              });
-            }
           } else if (oldMethod === 'CARD' && newMethod !== 'CARD') {
-            // Mudou de cartão para outro método: estorna do antigo
             if (oldCardId) {
               const oldCardRef = doc(userRef, "cards", oldCardId);
-              await updateDoc(oldCardRef, {
-                usedLimit: increment(-oldAmount),
-                availableLimit: increment(oldAmount),
-                currentInvoiceAmount: increment(-oldAmount),
-                // Compatibilidade
-                usedAmount: increment(-oldAmount),
-                availableAmount: increment(oldAmount),
-                invoiceAmount: increment(-oldAmount),
-                updatedAt: serverTimestamp()
-              });
+              const oldCardSnap = snapMap.get(oldCardRef.path);
+              if (oldCardSnap?.exists()) {
+                transaction.update(oldCardRef, {
+                  usedLimit: increment(-oldAmount),
+                  availableLimit: increment(oldAmount),
+                  currentInvoiceAmount: increment(-oldAmount),
+                  usedAmount: increment(-oldAmount),
+                  availableAmount: increment(oldAmount),
+                  invoiceAmount: increment(-oldAmount),
+                  updatedAt: serverTimestamp()
+                });
+              }
             }
           }
-        }
+
+          // 6. Atualização final do documento
+          transaction.update(transRef, {
+            ...finalUpdates,
+            updatedAt: serverTimestamp()
+          });
+        });
         break;
       }
 
@@ -1069,55 +1189,98 @@ export const dispatchEvent = async (uid: string, event: FinanceEvent) => {
         
         const itemRef = doc(userRef, colName, id);
         
-        // Se não temos oldData, buscamos antes de deletar para poder estornar limites/cartões
-        if (!oldData) {
-          const snap = await getDoc(itemRef);
-          if (snap.exists()) {
-            oldData = snap.data();
-          }
-        }
+        if (colName === 'transactions') {
+          await runTransaction(db, async (transaction) => {
+            // 1. READS FIRST
+            let data = oldData;
+            const itemSnap = !data ? await transaction.get(itemRef) : null;
+            if (itemSnap?.exists()) data = itemSnap.data();
 
-        await deleteDoc(itemRef);
-
-        // Se deletou uma transação, estorna o impacto (Limite, Cartão e Carteira)
-        if (colName === 'transactions' && oldData) {
-          const amount = Number(oldData.amount || 0);
-          
-          // 1. Estorno de Limite de Categoria
-          if (oldData.type === 'EXPENSE') {
-            const normalizedCat = normalizeCategoryName(oldData.category);
-            await updateLimitConsumption(uid, normalizedCat, -amount);
-          }
-
-          // 2. Estorno de Cartão de Crédito
-          if (oldData.type === 'EXPENSE' && oldData.paymentMethod === 'CARD' && oldData.cardId) {
-            const cardRef = doc(userRef, "cards", oldData.cardId);
-            await updateDoc(cardRef, {
-              usedLimit: increment(-amount),
-              availableLimit: increment(amount),
-              currentInvoiceAmount: increment(-amount),
-              // Compatibilidade
-              usedAmount: increment(-amount),
-              availableAmount: increment(amount),
-              invoiceAmount: increment(-amount),
-              updatedAt: serverTimestamp()
-            });
-          }
-
-          // 3. Estorno de Carteira (Wallet)
-          const walletId = oldData.walletId || oldData.sourceWalletId || oldData.targetWalletId;
-          if (walletId) {
-            if (oldData.type === 'INCOME') {
-              await updateWalletBalance(uid, walletId, -amount);
-            } else if (oldData.type === 'EXPENSE' && oldData.paymentMethod !== 'CARD') {
-              await updateWalletBalance(uid, walletId, amount);
+            if (!data) {
+              transaction.delete(itemRef);
+              return;
             }
-          }
 
-          // 4. Deleção em Cascata para Parcelamentos
-          // Se for uma transação parcelada, deleta as outras parcelas vinculadas
+            const amount = Number(data.amount || 0);
+            const normalizedCat = normalizeCategoryName(data.category);
+            const limitId = (normalizedCat || "").toLowerCase().trim().replace(/\s+/g, '_');
+            const cardId = data.cardId;
+            const walletId = data.walletId || data.sourceWalletId || data.targetWalletId || data.fromWalletId;
+            const targetWalletId = data.targetWalletId || data.toWalletId;
+
+            const refsToRead: DocumentReference[] = [];
+            if (limitId) refsToRead.push(doc(userRef, "limits", limitId));
+            if (cardId) refsToRead.push(doc(userRef, "cards", cardId));
+            if (walletId) refsToRead.push(doc(userRef, "wallets", walletId));
+            if (targetWalletId && targetWalletId !== walletId) refsToRead.push(doc(userRef, "wallets", targetWalletId));
+
+            const snaps = await Promise.all(refsToRead.map(ref => transaction.get(ref)));
+            const snapMap = new Map(snaps.map((s, i) => [refsToRead[i].path, s]));
+
+            // 2. NOW PERFORM WRITES
+
+            // 1. Estorno de Limite de Categoria
+            if (data.type === 'EXPENSE' && limitId) {
+              const limitRef = doc(userRef, "limits", limitId);
+              const limitSnap = snapMap.get(limitRef.path);
+              if (limitSnap?.exists()) {
+                transaction.update(limitRef, {
+                  spent: increment(-amount),
+                  updatedAt: serverTimestamp()
+                });
+              }
+            }
+
+            // 2. Estorno de Cartão de Crédito
+            if (data.type === 'EXPENSE' && data.paymentMethod === 'CARD' && cardId) {
+              const cardRef = doc(userRef, "cards", cardId);
+              const cardSnap = snapMap.get(cardRef.path);
+              if (cardSnap?.exists()) {
+                transaction.update(cardRef, {
+                  usedLimit: increment(-amount),
+                  availableLimit: increment(amount),
+                  currentInvoiceAmount: increment(-amount),
+                  usedAmount: increment(-amount),
+                  availableAmount: increment(amount),
+                  invoiceAmount: increment(-amount),
+                  updatedAt: serverTimestamp()
+                });
+              }
+            }
+
+            // 3. Estorno de Carteira (Wallet)
+            if (data.type === 'TRANSFER' && walletId && targetWalletId) {
+              const fromRef = doc(userRef, "wallets", walletId);
+              const toRef = doc(userRef, "wallets", targetWalletId);
+              const fromSnap = snapMap.get(fromRef.path);
+              const toSnap = snapMap.get(toRef.path);
+              if (fromSnap?.exists()) transaction.update(fromRef, { balance: increment(amount), updatedAt: serverTimestamp() });
+              if (toSnap?.exists()) transaction.update(toRef, { balance: increment(-amount), updatedAt: serverTimestamp() });
+            } else if (walletId) {
+              const walletRef = doc(userRef, "wallets", walletId);
+              const walletSnap = snapMap.get(walletRef.path);
+              if (walletSnap?.exists()) {
+                if (data.type === 'INCOME') {
+                  transaction.update(walletRef, { 
+                    balance: increment(-amount),
+                    updatedAt: serverTimestamp()
+                  });
+                } else if (data.type === 'EXPENSE' && data.paymentMethod !== 'CARD') {
+                  transaction.update(walletRef, { 
+                    balance: increment(amount),
+                    updatedAt: serverTimestamp()
+                  });
+                }
+              }
+            }
+
+            // 4. Deleção principal
+            transaction.delete(itemRef);
+          });
+
+          // 5. Deleção em Cascata para Parcelamentos (fora da transação principal)
           try {
-            if (oldData.originalAmount && oldData.totalInstallments > 1) {
+            if (oldData?.originalAmount && oldData?.totalInstallments > 1) {
               const descriptionPrefix = (oldData.description || "").split(" (")[0];
               const q = query(
                 collection(userRef, "transactions"), 
@@ -1138,6 +1301,8 @@ export const dispatchEvent = async (uid: string, event: FinanceEvent) => {
           } catch (cascadeErr) {
             console.error("GB: Erro na deleção em cascata:", cascadeErr);
           }
+        } else {
+          await deleteDoc(itemRef);
         }
         break;
       }
@@ -1546,7 +1711,7 @@ export const dispatchEvent = async (uid: string, event: FinanceEvent) => {
     return { success: true };
   } catch (error) {
     console.error("Event Dispatch Error:", error);
-    return { success: false, error };
+    return { success: false, error: error instanceof Error ? error.message : String(error) };
   }
 };
 

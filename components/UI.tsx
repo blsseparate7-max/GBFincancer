@@ -5,9 +5,10 @@ import React from 'react';
 interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: 'primary' | 'secondary' | 'ghost' | 'danger';
   fullWidth?: boolean;
+  isLoading?: boolean;
 }
 
-export const Button: React.FC<ButtonProps> = ({ variant = 'primary', fullWidth, children, className, ...props }) => {
+export const Button: React.FC<ButtonProps> = ({ variant = 'primary', fullWidth, isLoading, children, className, ...props }) => {
   const base = "px-6 py-4 rounded-2xl font-bold text-sm uppercase tracking-widest transition-all active:scale-[0.97] flex items-center justify-center gap-2 disabled:opacity-50";
   const variants = {
     primary: "bg-[#10B981] hover:bg-[#059669] text-white shadow-lg shadow-[#10B981]/10",
@@ -16,8 +17,14 @@ export const Button: React.FC<ButtonProps> = ({ variant = 'primary', fullWidth, 
     danger: "bg-[#EF4444]/10 hover:bg-[#EF4444]/20 text-[#EF4444] border border-[#EF4444]/20"
   };
   return (
-    <button className={`${base} ${variants[variant]} ${fullWidth ? 'w-full' : ''} ${className}`} {...props}>
-      {children}
+    <button 
+      className={`${base} ${variants[variant]} ${fullWidth ? 'w-full' : ''} ${className}`} 
+      disabled={isLoading || props.disabled}
+      {...props}
+    >
+      {isLoading ? (
+        <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+      ) : children}
     </button>
   );
 };
@@ -83,8 +90,8 @@ export const Notification: React.FC<{ message: string; type?: 'success' | 'error
   };
 
   return (
-    <div className={`fixed top-4 right-4 z-[1000] px-6 py-4 rounded-2xl shadow-2xl flex items-center gap-3 animate-in slide-in-from-right-10 duration-300 ${styles[type]}`}>
-      <span className="text-sm font-bold">{message}</span>
+    <div className={`fixed top-4 right-4 z-[3000] px-6 py-4 rounded-2xl shadow-2xl flex items-center gap-3 animate-in slide-in-from-right-10 duration-300 ${styles[type]}`}>
+      <span className="text-sm font-bold">{typeof message === 'string' ? message : String(message)}</span>
       <button onClick={onClose} className="hover:opacity-70 transition-opacity">✕</button>
     </div>
   );
@@ -100,11 +107,12 @@ export const ConfirmModal: React.FC<{
   confirmText?: string;
   cancelText?: string;
   variant?: 'danger' | 'primary';
-}> = ({ isOpen, title, message, onConfirm, onCancel, confirmText = "Confirmar", cancelText = "Cancelar", variant = 'primary' }) => {
+  isLoading?: boolean;
+}> = ({ isOpen, title, message, onConfirm, onCancel, confirmText = "Confirmar", cancelText = "Cancelar", variant = 'primary', isLoading }) => {
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[999] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade">
+    <div className="fixed inset-0 z-[2000] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade">
       <div className="bg-[#111827] border border-[#1F2937] w-full max-w-sm rounded-[2.5rem] p-8 space-y-6 shadow-2xl">
         <div className="text-center space-y-2">
           <h3 className="text-xl font-black text-white uppercase italic tracking-tighter">{title}</h3>
@@ -115,12 +123,14 @@ export const ConfirmModal: React.FC<{
             variant={variant === 'danger' ? 'danger' : 'primary'} 
             fullWidth 
             onClick={onConfirm}
+            isLoading={isLoading}
           >
             {confirmText}
           </Button>
           <button 
             onClick={onCancel}
-            className="w-full py-3 text-[10px] font-black uppercase text-[#9CA3AF] hover:text-white transition-colors"
+            disabled={isLoading}
+            className="w-full py-3 text-[10px] font-black uppercase text-[#9CA3AF] hover:text-white transition-colors disabled:opacity-30"
           >
             {cancelText}
           </button>

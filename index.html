@@ -17,11 +17,27 @@
     <div id="root"></div>
     <script type="module" src="/index.tsx"></script>
     <script>
+      // Kill Switch para Service Worker problemático
       if ('serviceWorker' in navigator) {
-        window.addEventListener('load', () => {
-          navigator.serviceWorker.register('/sw.js');
+        navigator.serviceWorker.getRegistrations().then(function(registrations) {
+          for(let registration of registrations) {
+            registration.unregister();
+          }
         });
       }
+      
+      // Limpeza de cache forçada se houver erro crítico
+      window.addEventListener('error', function(e) {
+        if (e.message.indexOf('Loading chunk') > -1 || e.message.indexOf('unexpected token') > -1) {
+          console.warn('Erro de carregamento de asset detectado. Limpando cache e recarregando...');
+          if (window.caches) {
+            caches.keys().then(function(names) {
+              for (let name of names) caches.delete(name);
+            });
+          }
+          window.location.reload();
+        }
+      }, true);
     </script>
 </body>
 </html>

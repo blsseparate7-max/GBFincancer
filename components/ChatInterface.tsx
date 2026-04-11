@@ -216,11 +216,11 @@ const ChatInterface: React.FC<ChatProps> = ({
 
   // Onboarding Welcome Message
   useEffect(() => {
-    // Só dispara se estiver EXATAMENTE no passo 3 e ainda não respondeu
-    if (!user || !user.uid || !user.onboardingStatus || user.onboardingStatus.completed || user.onboardingStatus.step !== 3 || onboardingPromptSentRef.current) return;
+    // Só dispara se estiver EXATAMENTE no passo 3 e ainda não respondeu OU processou
+    if (!user || !user.uid || !user.onboardingStatus || user.onboardingStatus.completed || user.onboardingStatus.step !== 3 || user.onboardingStatus.onboardingIncomeProcessed || onboardingPromptSentRef.current) return;
     
     const checkOnboardingChat = async () => {
-      if (user.onboardingStatus?.step === 3 && !user.onboardingStatus?.chatContextResponded) {
+      if (user.onboardingStatus?.step === 3 && !user.onboardingStatus?.chatContextResponded && !user.onboardingStatus?.onboardingIncomeProcessed) {
         const dedupeKey = `onboarding-welcome-${user.uid}`;
         
         // Tenta encontrar o lembrete REAL criado no passo 1
@@ -324,6 +324,19 @@ const ChatInterface: React.FC<ChatProps> = ({
     return () => clearTimeout(timer);
   }, [user?.uid, reminders.length]);
 
+  // 3. Sistema de Lembretes Inteligente (Proativo)
+  useEffect(() => {
+    if (!user || !user.uid || !reminders.length || !user.onboardingStatus?.completed) return;
+
+    const runScheduler = async () => {
+      const { checkAndSendReminderNotifications } = await import('../services/reminderScheduler');
+      await checkAndSendReminderNotifications(user, reminders);
+    };
+
+    const timer = setTimeout(runScheduler, 8000); // Roda 8s após carregar para não travar o boot
+    return () => clearTimeout(timer);
+  }, [user, reminders]);
+
   const handleSalaryConfirm = async (confirmed: boolean) => {
     if (!pendingSalaryReminder) return;
 
@@ -367,22 +380,21 @@ const ChatInterface: React.FC<ChatProps> = ({
     }
     
     // Update onboarding status if this was the onboarding step
-    if (user.onboardingStatus?.step === 3) {
-       console.log("GB Chat: Confirmação de salário detectada no passo 3 do onboarding. Atualizando chatContextResponded para true.");
+    if (user.onboardingStatus?.step === 3 && !confirmed) {
+       // Se não confirmou, apenas marcamos que respondeu para não perguntar de novo nesta sessão
+       // Mas o processamento real (onboardingIncomeProcessed) só acontece no ADD_INCOME
        const { syncUserData } = await import('../services/databaseService');
        await syncUserData(user.uid, { 
          onboardingStatus: { 
            ...user.onboardingStatus, 
            chatContextResponded: true,
-           salaryConfirmed: confirmed
+           salaryConfirmed: false
          } as any 
        });
     }
     
-    // Se não confirmou, limpa o estado para não ficar travado
-    if (!confirmed) {
-      setPendingSalaryReminder(null);
-    }
+    // Limpa o estado para não ficar travado
+    setPendingSalaryReminder(null);
   };
 
   const handleSend = async (text: string) => {
@@ -398,10 +410,10 @@ const ChatInterface: React.FC<ChatProps> = ({
       return;
     }
 
-    // INTERCEPTAÇÃO CRÍTICA: Verificar se há confirmação pendente de onboarding antes da IA
+    // INTERCEPTAÇÃO CRÍTICA: Verificar se há confirmação pendente de onboarding ou lembrete proativo
     const lowerText = text.toLowerCase();
     if (pendingSalaryReminder) {
-      if (lowerText.includes('sim') || lowerText === 's' || lowerText.includes('claro') || lowerText.includes('já')) {
+      if (lowerText.includes('sim') || lowerText === 's' || lowerText.includes('claro') || lowerText.includes('já') || lowerText.includes('paguei') || lowerText.includes('recebi')) {
         await handleSalaryConfirm(true);
         return;
       }
@@ -409,6 +421,39 @@ const ChatInterface: React.FC<ChatProps> = ({
         await handleSalaryConfirm(false);
         return;
       }
+    }
+
+    // Verificar se o usuário está respondendo a um lembrete proativo de conta a pagar
+    const lastAiMessage = [...messages].reverse().find(m => m.sender === 'ai');
+    const billIdFromPayload = lastAiMessage?.actionType === 'BILL_REMINDER' ? lastAiMessage.actionPayload?.billId : null;
+
+    const proactiveReminder = reminders.find(r => 
+      !r.isPaid && 
+      (r.id === billIdFromPayload || lowerText.includes(r.description.toLowerCase()) || (lastAiMessage?.text.includes(r.description)))
+    );
+
+    if (proactiveReminder && (lowerText.includes('sim') || lowerText.includes('paguei') || lowerText.includes('já') || lowerText === 's')) {
+      setIsLoading(true);
+      await sendMessage(text.trim(), 'user');
+      
+      const result = await dispatchEvent(user.uid, {
+        type: 'PAY_REMINDER',
+        payload: {
+          billId: proactiveReminder.id,
+          paymentMethod: 'PIX', // Default
+          confirmedBy: user.uid
+        },
+        source: 'chat',
+        createdAt: new Date()
+      });
+
+      if (result.success) {
+        await sendMessage(`Perfeito! Marquei **${proactiveReminder.description}** como pago e atualizei seu dashboard. ✅`, 'ai');
+      } else {
+        await sendMessage("Tive um problema ao marcar como pago. Tente novamente em instantes.", 'ai');
+      }
+      setIsLoading(false);
+      return;
     }
     
     const uid = user.uid || auth.currentUser?.uid;
@@ -612,7 +657,7 @@ const ChatInterface: React.FC<ChatProps> = ({
   };
 
   const confirmPendingAction = async (id: string, isCard: boolean = false) => {
-    if (!pendingAction) return;
+    if (!pendingAction || isLoading) return;
 
     if (isExpired) {
       await sendMessage("Ação bloqueada. Seu período de teste expirou. 😔", 'ai');
@@ -621,9 +666,12 @@ const ChatInterface: React.FC<ChatProps> = ({
       return;
     }
 
+    // Gerar uma chave única para esta operação específica para evitar duplicidade
+    const operationKey = `CONFIRM_${pendingAction.type}_${pendingAction.payload.amount}_${pendingAction.payload.description?.substring(0, 20)}_${Date.now()}`;
+
     setIsLoading(true);
     try {
-      const eventToDispatch = { ...pendingAction };
+      const eventToDispatch = { ...pendingAction, operationKey };
       
       // Aprender padrão de categoria
       if (eventToDispatch.payload.description && eventToDispatch.payload.category) {
@@ -633,6 +681,7 @@ const ChatInterface: React.FC<ChatProps> = ({
       if (pendingAction.payload.reminderId) {
         await dispatchEvent(user.uid, {
           type: 'PAY_REMINDER',
+          operationKey,
           payload: {
             billId: pendingAction.payload.reminderId,
             paymentMethod: isCard ? 'CARD' : 'PIX',
@@ -648,6 +697,7 @@ const ChatInterface: React.FC<ChatProps> = ({
         // Transferência já tem origem e destino identificados pela IA ou parser
         await dispatchEvent(user.uid, {
           ...pendingAction,
+          operationKey,
           source: 'chat',
           createdAt: new Date()
         });
@@ -1223,10 +1273,17 @@ const ChatInterface: React.FC<ChatProps> = ({
                     const isCard = !!pendingAction.payload.cardId;
                     confirmPendingAction(id, isCard);
                   }}
-                  className="w-full bg-[var(--green-whatsapp)] text-white py-5 rounded-[2rem] font-black text-xs uppercase tracking-[0.2em] shadow-xl shadow-[var(--green-whatsapp)]/30 active:scale-[0.98] transition-all flex items-center justify-center gap-3 group"
+                  disabled={isLoading}
+                  className="w-full bg-[var(--green-whatsapp)] text-white py-5 rounded-[2rem] font-black text-xs uppercase tracking-[0.2em] shadow-xl shadow-[var(--green-whatsapp)]/30 active:scale-[0.98] transition-all flex items-center justify-center gap-3 group disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  <span>Confirmar categoria</span>
-                  <Check size={18} className="group-hover:scale-125 transition-transform" />
+                  {isLoading ? (
+                    <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  ) : (
+                    <>
+                      <span>Confirmar categoria</span>
+                      <Check size={18} className="group-hover:scale-125 transition-transform" />
+                    </>
+                  )}
                 </button>
               </div>
             </div>

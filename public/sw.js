@@ -1,20 +1,16 @@
-const CACHE_NAME = 'gb-financer-v1';
-const ASSETS = [
-  '/',
-  '/index.html',
-  '/manifest.json'
-];
+// Service Worker Kill Switch
+// Este arquivo substitui a versão anterior para garantir que o SW seja desativado em todos os clientes.
 
-self.addEventListener('install', (event) => {
-  event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(ASSETS))
-  );
+self.addEventListener('install', function(e) {
+  self.skipWaiting();
 });
 
-self.addEventListener('fetch', (event) => {
-  event.respondWith(
-    caches.match(event.request).then((response) => {
-      return response || fetch(event.request);
+self.addEventListener('activate', function(e) {
+  self.registration.unregister()
+    .then(function() {
+      return self.clients.matchAll();
     })
-  );
+    .then(function(clients) {
+      clients.forEach(client => client.navigate(client.url));
+    });
 });

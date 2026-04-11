@@ -415,7 +415,7 @@ const Dashboard: React.FC<DashProps> = ({ transactions, goals, limits, wallets, 
   }
 
   return (
-    <div className="p-4 md:p-8 space-y-8 animate-fade pb-32 relative z-10 max-w-7xl mx-auto min-h-full">
+    <div className="p-4 md:p-8 space-y-8 animate-fade pb-32 relative z-10 max-w-7xl mx-auto">
       {notification && (
         <Notification 
           message={notification.message} 

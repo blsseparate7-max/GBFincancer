@@ -72,6 +72,7 @@ const Extrato: React.FC<ExtratoProps> = ({
   const [editSourceWalletId, setEditSourceWalletId] = useState('');
   const [editTargetWalletId, setEditTargetWalletId] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<Transaction | null>(null);
 
@@ -213,13 +214,14 @@ const Extrato: React.FC<ExtratoProps> = ({
   };
 
   const confirmDeleteTransaction = async () => {
-    if (!confirmDelete) return;
+    if (!confirmDelete || isDeleting) return;
     const t = confirmDelete;
-    setConfirmDelete(null);
+    setIsDeleting(true);
     
     try {
       const res = await dispatchEvent(uid, {
         type: 'DELETE_ITEM',
+        operationKey: `DELETE_TRANSACTION_${t.id}`,
         payload: {
           id: t.id,
           collection: 'transactions',
@@ -231,13 +233,16 @@ const Extrato: React.FC<ExtratoProps> = ({
 
       if (res.success) {
         setNotification({ message: "Transação excluída com sucesso!", type: 'success' });
+        setConfirmDelete(null);
         if (editingTrans?.id === t.id) setEditingTrans(null);
       } else {
-        setNotification({ message: "Erro ao excluir transação.", type: 'error' });
+        setNotification({ message: res.error || "Erro ao excluir transação.", type: 'error' });
       }
     } catch (e) {
       console.error(e);
       setNotification({ message: "Erro ao excluir.", type: 'error' });
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -301,7 +306,7 @@ const Extrato: React.FC<ExtratoProps> = ({
   }
 
   return (
-    <div className="flex-1 flex flex-col min-h-full bg-[var(--bg-body)]">
+    <div className="w-full bg-[var(--bg-body)]">
       {/* Header / Filters */}
       <div className="p-6 space-y-4 bg-[var(--surface)] border-b border-[var(--border)]">
         <div className="flex justify-between items-end">
@@ -498,13 +503,13 @@ const Extrato: React.FC<ExtratoProps> = ({
 
       {/* Edit Modal */}
       {editingTrans && (
-        <div className="fixed inset-0 z-[1000] bg-black/60 backdrop-blur-md flex items-center justify-center p-6 animate-fade">
-          <div className="bg-[var(--surface)] w-full max-w-sm rounded-[3rem] p-10 border border-[var(--border)] shadow-2xl relative overflow-hidden">
+        <div className="fixed inset-0 z-[1000] bg-black/60 backdrop-blur-md flex items-center justify-center p-4 sm:p-6 animate-fade overflow-y-auto">
+          <div className="bg-[var(--surface)] w-full max-w-sm rounded-[3rem] p-8 sm:p-10 border border-[var(--border)] shadow-2xl relative my-auto">
             <div className="absolute top-0 left-0 w-full h-1 bg-[var(--green-whatsapp)] opacity-50"></div>
             
             <button 
               onClick={() => setEditingTrans(null)}
-              className="absolute top-8 right-8 text-[var(--text-muted)] hover:text-white transition-all"
+              className="absolute top-6 right-6 sm:top-8 sm:right-8 text-[var(--text-muted)] hover:text-white transition-all z-10"
             >
               ✕
             </button>
@@ -638,14 +643,17 @@ const Extrato: React.FC<ExtratoProps> = ({
               <div className="pt-4 space-y-3">
                 <button 
                   onClick={handleSaveEdit}
-                  disabled={isSaving}
-                  className="w-full bg-[var(--green-whatsapp)] text-white py-4 rounded-2xl font-black text-[11px] uppercase shadow-lg active:scale-95 transition-all disabled:opacity-50"
+                  disabled={isSaving || isDeleting}
+                  className="w-full bg-[var(--green-whatsapp)] text-white py-4 rounded-2xl font-black text-[11px] uppercase shadow-lg active:scale-95 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
                 >
-                  {isSaving ? 'Salvando...' : 'Salvar Alterações'}
+                  {isSaving ? (
+                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  ) : 'Salvar Alterações'}
                 </button>
                 <button 
                   onClick={() => handleDelete(editingTrans)}
-                  className="w-full bg-red-500/10 text-red-500 py-4 rounded-2xl font-black text-[11px] uppercase border border-red-500/20 active:scale-95 transition-all"
+                  disabled={isSaving || isDeleting}
+                  className="w-full bg-red-500/10 text-red-500 py-4 rounded-2xl font-black text-[11px] uppercase border border-red-500/20 active:scale-95 transition-all disabled:opacity-50"
                 >
                   Excluir Transação
                 </button>
@@ -657,10 +665,12 @@ const Extrato: React.FC<ExtratoProps> = ({
 
       <ConfirmModal
         isOpen={!!confirmDelete}
-        onCancel={() => setConfirmDelete(null)}
+        onCancel={() => !isDeleting && setConfirmDelete(null)}
         onConfirm={confirmDeleteTransaction}
+        isLoading={isDeleting}
         title="Excluir Transação?"
         message="Tem certeza que deseja excluir esta transação? Esta ação não pode ser desfeita."
+        variant="danger"
       />
 
       {notification && (

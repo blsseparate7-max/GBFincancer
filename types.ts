@@ -183,6 +183,12 @@ export interface Bill {
   resolved?: boolean;
   dedupeKey?: string;
   status?: 'pending' | 'paid' | 'received' | 'canceled';
+  notified7d?: boolean;
+  notified1d?: boolean;
+  notifiedOnDay?: boolean;
+  confirmationProcessed?: boolean;
+  confirmationProcessedAt?: any;
+  confirmationId?: string;
   isQA?: boolean;
 }
 
@@ -232,6 +238,8 @@ export interface OnboardingStatus {
   incomeCaptured?: boolean;
   billsCaptured?: boolean;
   chatContextResponded?: boolean;
+  salaryConfirmed?: boolean;
+  onboardingIncomeProcessed?: boolean;
   limitsCaptured?: boolean;
   goalsCaptured?: boolean;
   tabsPresented?: boolean;
