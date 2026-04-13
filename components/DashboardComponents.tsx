@@ -4,7 +4,7 @@ import {
   TrendingUp, TrendingDown, Wallet as WalletIcon, PiggyBank, 
   AlertCircle, Calendar, Lightbulb, ArrowRight, Target,
   ChevronLeft, ChevronRight, Info, DollarSign, ArrowUpRight, ArrowDownLeft,
-  CheckCircle2, Sparkles, Loader2, Plus, Trophy
+  CheckCircle2, Sparkles, Loader2, Plus, Trophy, ShieldCheck, Activity
 } from 'lucide-react';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
@@ -12,6 +12,65 @@ import {
 } from 'recharts';
 
 const format = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v);
+
+export const FinancialHealthHub: React.FC<{ score: number, level: any, stressLevel: any }> = React.memo(({ score, level, stressLevel }) => (
+  <section className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-12">
+    <motion.div 
+      whileHover={{ y: -5 }}
+      className="bg-[var(--surface)] p-8 rounded-[3rem] border border-[var(--border)] shadow-xl relative overflow-hidden group"
+    >
+      <div className={`absolute top-0 right-0 p-6 opacity-10 group-hover:scale-110 transition-transform ${level.color}`}>
+        <ShieldCheck size={100} />
+      </div>
+      <div className="relative z-10 flex items-center gap-6">
+        <div className="relative flex items-center justify-center">
+          <svg className="w-24 h-24 transform -rotate-90">
+            <circle cx="48" cy="48" r="40" stroke="currentColor" strokeWidth="8" fill="transparent" className="text-[var(--bg-body)]" />
+            <circle cx="48" cy="48" r="40" stroke="currentColor" strokeWidth="8" fill="transparent" strokeDasharray={251.2} strokeDashoffset={251.2 - (251.2 * score) / 100} className={`${level.color} transition-all duration-1000 ease-out`} />
+          </svg>
+          <span className={`absolute text-2xl font-black italic ${level.color}`}>{score}</span>
+        </div>
+        <div>
+          <p className="text-[10px] font-black text-[var(--text-muted)] uppercase tracking-[0.3em] mb-1">Score Financeiro</p>
+          <h3 className={`text-2xl font-black uppercase italic tracking-tighter leading-none mb-2 ${level.color}`}>{level.label}</h3>
+          <p className="text-[10px] font-bold text-[var(--text-muted)] uppercase italic">Sua saúde geral baseada em hábitos</p>
+        </div>
+      </div>
+    </motion.div>
+
+    <motion.div 
+      whileHover={{ y: -5 }}
+      className="bg-[var(--surface)] p-8 rounded-[3rem] border border-[var(--border)] shadow-xl relative overflow-hidden group"
+    >
+      <div className="absolute top-0 right-0 p-6 opacity-10 group-hover:scale-110 transition-transform text-rose-500">
+        <Activity size={100} />
+      </div>
+      <div className="relative z-10">
+        <div className="flex items-center gap-3 mb-4">
+          <div className="w-10 h-10 bg-[var(--bg-body)] rounded-2xl flex items-center justify-center text-rose-500">
+            <AlertCircle size={20} />
+          </div>
+          <div>
+            <p className="text-[10px] font-black text-[var(--text-muted)] uppercase tracking-[0.3em] mb-0.5">Nível de Stress</p>
+            <h3 className="text-xl font-black uppercase italic tracking-tighter leading-none" style={{ color: stressLevel.color }}>{stressLevel.level}</h3>
+          </div>
+        </div>
+        <div className="h-2 bg-[var(--bg-body)] rounded-full overflow-hidden mb-3">
+          <div 
+            className="h-full transition-all duration-1000" 
+            style={{ 
+              width: `${stressLevel.impactPct}%`, 
+              backgroundColor: stressLevel.color 
+            }} 
+          />
+        </div>
+        <p className="text-[10px] font-bold text-[var(--text-muted)] uppercase italic leading-relaxed">
+          {stressLevel.desc}
+        </p>
+      </div>
+    </motion.div>
+  </section>
+));
 
 export const DailyInsight: React.FC<{ insight: string }> = React.memo(({ insight }) => (
   <motion.div 
@@ -406,7 +465,7 @@ export const CompositionChart: React.FC<{ pieData: any[], colors: string[], tota
   </div>
 ));
 
-export const UpcomingBillsCard: React.FC<{ bills: any[] }> = React.memo(({ bills }) => (
+export const UpcomingBillsCard: React.FC<{ bills: any[], onBillClick?: (bill: any) => void }> = React.memo(({ bills, onBillClick }) => (
   <section className="bg-[var(--surface)] p-10 rounded-[3rem] border border-[var(--border)] shadow-sm space-y-8">
     <div className="flex justify-between items-center">
       <div>
@@ -420,7 +479,11 @@ export const UpcomingBillsCard: React.FC<{ bills: any[] }> = React.memo(({ bills
     <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
       {bills.length > 0 ? (
         bills.map(bill => (
-          <div key={bill.id} className="p-6 bg-[var(--bg-body)]/50 rounded-3xl border border-[var(--border)] flex justify-between items-center group hover:border-[var(--text-primary)] transition-all shadow-sm">
+          <button 
+            key={bill.id} 
+            onClick={() => onBillClick?.(bill)}
+            className="p-6 bg-[var(--bg-body)]/50 rounded-3xl border border-[var(--border)] flex justify-between items-center group hover:border-[var(--green-whatsapp)] hover:scale-[1.02] transition-all shadow-sm text-left w-full"
+          >
             <div className="space-y-1">
               <p className="text-xs font-black text-[var(--text-primary)] uppercase italic tracking-tight">{bill.description}</p>
               <div className="flex items-center gap-2">
@@ -431,7 +494,7 @@ export const UpcomingBillsCard: React.FC<{ bills: any[] }> = React.memo(({ bills
               </div>
             </div>
             <p className="text-base font-black text-[var(--text-primary)] italic">{format(bill.amount)}</p>
-          </div>
+          </button>
         ))
       ) : (
         <div className="col-span-3 py-12 text-center bg-[var(--bg-body)]/30 rounded-[2.5rem] border border-dashed border-[var(--border)]">

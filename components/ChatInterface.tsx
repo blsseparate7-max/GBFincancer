@@ -46,6 +46,7 @@ const ChatInterface: React.FC<ChatProps> = ({
   const [isChangingCategory, setIsChangingCategory] = useState(false);
   const [salaryCheckDone, setSalaryCheckDone] = useState(false);
   const [pendingSalaryReminder, setPendingSalaryReminder] = useState<Bill | null>(null);
+  const [pendingBillReminder, setPendingBillReminder] = useState<Bill | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const isProcessingRef = useRef(false);
   const summarySentRef = useRef(false);
@@ -83,8 +84,18 @@ const ChatInterface: React.FC<ChatProps> = ({
   }, [categories]);
 
   // Helper para enviar mensagem para o Firestore (Sincronização Total)
-  const sendMessage = async (text: string, sender: 'user' | 'ai', dedupeKey?: string) => {
-    await sendMessageToFirestore(user.uid, text, sender, dedupeKey);
+  const sendMessage = async (text: string, sender: 'user' | 'ai', dedupeKey?: string, actionType?: string, actionPayload?: any) => {
+    try {
+      await sendMessageToFirestore(user.uid, text, sender, dedupeKey, actionType, actionPayload);
+      if (sender === 'user') {
+        console.log("[chat] user message saved");
+      } else {
+        console.log("[chat] assistant saved");
+      }
+    } catch (err) {
+      console.error(`[chat] error ao salvar mensagem do ${sender}:`, err);
+      throw err;
+    }
   };
 
   const handleCreateCategoryInline = async () => {
@@ -338,67 +349,122 @@ const ChatInterface: React.FC<ChatProps> = ({
   }, [user, reminders]);
 
   const handleSalaryConfirm = async (confirmed: boolean) => {
-    if (!pendingSalaryReminder) return;
+    if (!pendingSalaryReminder || isLoading || isProcessingRef.current) return;
 
-    const today = new Date();
-    const cycleKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
+    console.log("[chat] interceptado: confirmação de salário");
+    setIsLoading(true);
+    isProcessingRef.current = true;
 
-    if (confirmed) {
-      const { dispatchEvent } = await import('../services/eventDispatcher');
-      const incomePayload = {
-        amount: pendingSalaryReminder.amount,
-        category: pendingSalaryReminder.category || 'Recebimento',
-        description: pendingSalaryReminder.description,
-        date: new Date().toISOString(),
-        // Se for onboarding e não tiver ID real, passamos null
-        reminderId: pendingSalaryReminder.id === 'onboarding-income' ? null : pendingSalaryReminder.id,
-        cycleKey,
-        targetWalletName: (pendingSalaryReminder as any).targetWalletName,
-        source: 'onboarding'
-      };
+    try {
+      const today = new Date();
+      const cycleKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
 
-      const result = await dispatchEvent(user.uid, {
-        type: 'ADD_INCOME',
-        payload: incomePayload,
-        source: 'onboarding',
-        createdAt: new Date()
-      });
+      if (confirmed) {
+        const { dispatchEvent } = await import('../services/eventDispatcher');
+        const incomePayload = {
+          amount: pendingSalaryReminder.amount,
+          category: pendingSalaryReminder.category || 'Recebimento',
+          description: pendingSalaryReminder.description,
+          date: new Date().toISOString(),
+          // Se for onboarding e não tiver ID real, passamos null
+          reminderId: pendingSalaryReminder.id === 'onboarding-income' ? null : pendingSalaryReminder.id,
+          cycleKey,
+          targetWalletName: (pendingSalaryReminder as any).targetWalletName,
+          source: 'onboarding'
+        };
 
-      if (result.success) {
-        await sendMessage(`Excelente! Registrei o recebimento de **${formatCurrency(pendingSalaryReminder.amount)}** na sua carteira **${(pendingSalaryReminder as any).targetWalletName || 'Principal'}**. Seu saldo e dashboard já foram atualizados! 🚀`, 'ai');
+        const result = await dispatchEvent(user.uid, {
+          type: 'ADD_INCOME',
+          payload: incomePayload,
+          source: 'onboarding',
+          createdAt: new Date()
+        });
+
+        if (result.success) {
+          await sendMessage(`Excelente! Registrei o recebimento de **${formatCurrency(pendingSalaryReminder.amount)}** na sua carteira **${(pendingSalaryReminder as any).targetWalletName || 'Principal'}**. Seu saldo e dashboard já foram atualizados! 🚀`, 'ai');
+        } else {
+          await sendMessage("Houve um probleminha ao registrar seu salário. Mas não se preocupe, você pode tentar novamente ou registrar manualmente no Dashboard.", 'ai');
+        }
       } else {
-        await sendMessage("Houve um probleminha ao registrar seu salário. Mas não se preocupe, você pode tentar novamente ou registrar manualmente no Dashboard.", 'ai');
+        await sendMessage("Entendido. Vou manter esse recebimento como pendente e te pergunto novamente em breve! 👍", 'ai');
+        
+        // Se for um lembrete real, atualiza o lastPromptedAt para não perguntar de novo imediatamente
+        if (pendingSalaryReminder.id !== 'onboarding-income') {
+          const reminderRef = doc(db, "users", user.uid, "reminders", pendingSalaryReminder.id);
+          await updateDoc(reminderRef, { lastPromptedAt: serverTimestamp() });
+        }
       }
-    } else {
-      await sendMessage("Entendido. Vou manter esse recebimento como pendente e te pergunto novamente em breve! 👍", 'ai');
       
-      // Se for um lembrete real, atualiza o lastPromptedAt para não perguntar de novo imediatamente
-      if (pendingSalaryReminder.id !== 'onboarding-income') {
-        const reminderRef = doc(db, "users", user.uid, "reminders", pendingSalaryReminder.id);
-        await updateDoc(reminderRef, { lastPromptedAt: serverTimestamp() });
+      // Update onboarding status if this was the onboarding step
+      if (user.onboardingStatus?.step === 3 && !confirmed) {
+         const { syncUserData } = await import('../services/databaseService');
+         await syncUserData(user.uid, { 
+           onboardingStatus: { 
+             ...user.onboardingStatus, 
+             chatContextResponded: true,
+             salaryConfirmed: false
+           } as any 
+         });
       }
+      
+      setPendingSalaryReminder(null);
+    } catch (err) {
+      console.error("[chat] error na confirmação de salário:", err);
+      await sendMessage("Tive um problema para processar sua solicitação. Tente novamente.", 'ai');
+    } finally {
+      console.log("[chat] analyzing false");
+      setIsLoading(false);
+      isProcessingRef.current = false;
     }
-    
-    // Update onboarding status if this was the onboarding step
-    if (user.onboardingStatus?.step === 3 && !confirmed) {
-       // Se não confirmou, apenas marcamos que respondeu para não perguntar de novo nesta sessão
-       // Mas o processamento real (onboardingIncomeProcessed) só acontece no ADD_INCOME
-       const { syncUserData } = await import('../services/databaseService');
-       await syncUserData(user.uid, { 
-         onboardingStatus: { 
-           ...user.onboardingStatus, 
-           chatContextResponded: true,
-           salaryConfirmed: false
-         } as any 
-       });
+  };
+
+  const handleBillConfirm = async (confirmed: boolean, billOverride?: Bill) => {
+    const bill = billOverride || pendingBillReminder;
+    if (!bill || isLoading || isProcessingRef.current) return;
+
+    console.log("[chat] interceptado: confirmação de conta");
+    setIsLoading(true);
+    isProcessingRef.current = true;
+
+    try {
+      if (confirmed) {
+        const { dispatchEvent } = await import('../services/eventDispatcher');
+        const result = await dispatchEvent(user.uid, {
+          type: 'PAY_REMINDER',
+          payload: {
+            billId: bill.id,
+            paymentMethod: 'PIX', // Default
+            confirmedBy: user.uid
+          },
+          source: 'chat',
+          createdAt: new Date()
+        });
+
+        if (result.success) {
+          await sendMessage(`Perfeito! Marquei **${bill.description}** como pago e atualizei seu dashboard. ✅`, 'ai');
+        } else {
+          await sendMessage("Tive um problema ao marcar como pago. Tente novamente em instantes.", 'ai');
+        }
+      } else {
+        await sendMessage("Tudo bem, vou manter essa conta pendente. 👍", 'ai');
+      }
+      
+      setPendingBillReminder(null);
+    } catch (err) {
+      console.error("[chat] error na confirmação de conta:", err);
+      await sendMessage("Tive um problema para processar sua solicitação. Tente novamente.", 'ai');
+    } finally {
+      console.log("[chat] analyzing false");
+      setIsLoading(false);
+      isProcessingRef.current = false;
     }
-    
-    // Limpa o estado para não ficar travado
-    setPendingSalaryReminder(null);
   };
 
   const handleSend = async (text: string) => {
-    if (!text.trim() || isLoading || isProcessingRef.current) return;
+    // 1. Bloqueio de clique duplo
+    if (!text.trim() || isLoading || isProcessingRef.current) {
+      return;
+    }
 
     if (isExpired) {
       await sendMessage(text.trim(), 'user');
@@ -410,121 +476,89 @@ const ChatInterface: React.FC<ChatProps> = ({
       return;
     }
 
-    // INTERCEPTAÇÃO CRÍTICA: Verificar se há confirmação pendente de onboarding ou lembrete proativo
-    const lowerText = text.toLowerCase();
-    if (pendingSalaryReminder) {
-      if (lowerText.includes('sim') || lowerText === 's' || lowerText.includes('claro') || lowerText.includes('já') || lowerText.includes('paguei') || lowerText.includes('recebi')) {
-        await handleSalaryConfirm(true);
-        return;
-      }
-      if (lowerText.includes('não') || lowerText === 'n' || lowerText.includes('ainda não')) {
-        await handleSalaryConfirm(false);
-        return;
-      }
-    }
-
-    // Verificar se o usuário está respondendo a um lembrete proativo de conta a pagar
-    const lastAiMessage = [...messages].reverse().find(m => m.sender === 'ai');
-    const billIdFromPayload = lastAiMessage?.actionType === 'BILL_REMINDER' ? lastAiMessage.actionPayload?.billId : null;
-
-    const proactiveReminder = reminders.find(r => 
-      !r.isPaid && 
-      (r.id === billIdFromPayload || lowerText.includes(r.description.toLowerCase()) || (lastAiMessage?.text.includes(r.description)))
-    );
-
-    if (proactiveReminder && (lowerText.includes('sim') || lowerText.includes('paguei') || lowerText.includes('já') || lowerText === 's')) {
-      setIsLoading(true);
-      await sendMessage(text.trim(), 'user');
-      
-      const result = await dispatchEvent(user.uid, {
-        type: 'PAY_REMINDER',
-        payload: {
-          billId: proactiveReminder.id,
-          paymentMethod: 'PIX', // Default
-          confirmedBy: user.uid
-        },
-        source: 'chat',
-        createdAt: new Date()
-      });
-
-      if (result.success) {
-        await sendMessage(`Perfeito! Marquei **${proactiveReminder.description}** como pago e atualizei seu dashboard. ✅`, 'ai');
-      } else {
-        await sendMessage("Tive um problema ao marcar como pago. Tente novamente em instantes.", 'ai');
-      }
-      setIsLoading(false);
-      return;
-    }
-    
     const uid = user.uid || auth.currentUser?.uid;
-    if (!uid) {
-      console.error("GB Chat: UID não encontrado para envio.");
-      return;
-    }
+    if (!uid) return;
 
-    console.log(`GB Chat: handleSend recebido: "${text}"`);
+    // 2. Início
+    console.log("[chat] start");
     isProcessingRef.current = true;
-    await sendMessage(text.trim(), 'user');
     setIsLoading(true);
 
-    try {
-      // No passo 3 do onboarding, não avançamos apenas por "responder" algo genérico.
-      // O avanço deve ser via confirmação/negação do salário no fluxo específico (handleSalaryConfirm).
-      // Removido o bloco que marcava chatContextResponded como true aqui.
+    // 3. Timeout obrigatório (8 segundos)
+    const safetyTimeout = setTimeout(async () => {
+      if (isProcessingRef.current) {
+        console.error("[chat] timeout");
+        setIsLoading(false);
+        isProcessingRef.current = false;
+        try {
+          await sendMessage("Tive um problema para processar sua solicitação. Tente novamente.", 'ai');
+        } catch (e) {
+          console.error("[chat] erro no fallback de timeout:", e);
+        }
+        console.log("[chat] end");
+      }
+    }, 8000);
 
-      // 1. Buscar contexto ATUALIZADO do Firestore (Fonte da Verdade)
-      console.log("GB Chat: Buscando contexto atualizado...");
+    try {
+      // 4. TRY
+      // Salvar mensagem do usuário
+      await sendMessage(text.trim(), 'user');
+
+      // Interceptadores de confirmação
+      const lowerText = text.toLowerCase();
+      if (pendingSalaryReminder) {
+        if (lowerText.includes('sim') || lowerText === 's' || lowerText.includes('claro') || lowerText.includes('já') || lowerText.includes('paguei') || lowerText.includes('recebi')) {
+          await handleSalaryConfirm(true);
+          return;
+        }
+        if (lowerText.includes('não') || lowerText === 'n' || lowerText.includes('ainda não')) {
+          await handleSalaryConfirm(false);
+          return;
+        }
+      }
+
+      if (pendingBillReminder) {
+        if (lowerText.includes('sim') || lowerText === 's' || lowerText.includes('já') || lowerText.includes('paguei')) {
+          await handleBillConfirm(true);
+          return;
+        }
+        if (lowerText.includes('não') || lowerText === 'n' || lowerText.includes('ainda não')) {
+          await handleBillConfirm(false);
+          return;
+        }
+      }
+
+      // Buscar contexto e processar
       const freshContext = await fetchChatContext(uid);
       const finalContext = freshContext 
         ? { ...freshContext, userPatterns: categoryPatterns } 
         : { user, reminders, cards, wallets, categories, transactions, goals, limits, debts, userPatterns: categoryPatterns };
 
-      // Parser Determinístico (Dica para a IA e Safety Net)
-      const parserHint = parseFinancialMessage(text.trim());
-
-      // 2. Processar com Gemini
-      console.log("GB Chat: Chamando Gemini API...");
       const result = await parseMessage(text.trim(), user.name || 'Usuário', finalContext);
-      console.log("GB Chat: Gemini respondeu:", result);
+      console.log("[chat] processed");
       
-      let finalEvents = result.events || [];
-
-      // Safety Net: Se a IA falhou mas o parser tem alta confiança, usamos o parser
-      if (finalEvents.length === 0 && parserHint.confidence > 0.8 && parserHint.type !== 'unknown') {
-        console.log("GB Chat: Usando Safety Net (Parser Hint)");
-        finalEvents = [{
-          type: parserHint.type === 'expense' ? 'ADD_EXPENSE' : (parserHint.type === 'income' ? 'ADD_INCOME' : 'TRANSFER_WALLET'),
-          payload: {
-            amount: parserHint.amount,
-            description: parserHint.description,
-            category: parserHint.categoryHint || 'Outros',
-            sourceWalletName: parserHint.fromWallet,
-            targetWalletName: parserHint.toWallet,
-            date: new Date().toISOString().split('T')[0]
-          }
-        }];
-      }
-
-      if (finalEvents.length > 0) {
-        console.log(`GB Chat: Detectados ${finalEvents.length} eventos.`);
-        if (finalEvents.length === 1) {
-          setPendingAction(finalEvents[0]);
-          setPendingEvents([]);
-        } else {
-          setPendingEvents(finalEvents);
-          setPendingAction(null);
-        }
-      }
-
-      // 3. Enviar resposta da IA para o Firestore
-      await sendMessage(result.reply || "Entendido. ✅", 'ai');
+      // Garantir que a resposta exista (Fallback se vazio)
+      const replyText = result.reply || "Não consegui processar sua solicitação. Tente novamente.";
+      
+      // Salvar resposta do assistant
+      await sendMessage(replyText, 'ai');
 
     } catch (e) {
-      console.error("GB Chat: Erro no processamento:", e);
-      await sendMessage("Houve um pequeno erro na análise, mas anotei sua intenção. Pode repetir? 😅", 'ai');
+      // 5. CATCH
+      console.error("[chat] error", e);
+      try {
+        await sendMessage("Tive um problema para processar sua solicitação.", 'ai');
+      } catch (sendErr) {
+        console.error("[chat] erro ao enviar fallback de erro:", sendErr);
+      }
     } finally {
-      setIsLoading(false);
-      isProcessingRef.current = false;
+      // 6. FINALLY (OBRIGATÓRIO)
+      clearTimeout(safetyTimeout);
+      if (isProcessingRef.current) {
+        setIsLoading(false);
+        isProcessingRef.current = false;
+        console.log("[chat] end");
+      }
     }
   };
 
@@ -839,17 +873,45 @@ const ChatInterface: React.FC<ChatProps> = ({
             )}
             
             {messages.map(msg => (
-              <div key={msg.id} className={`flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'} animate-fade`}>
-                <div className={`max-w-[85%] px-3 py-2 text-[15px] relative shadow-lg ${msg.sender === 'user' ? 'bubble-user' : 'bubble-ai'}`}>
-                  <div className="leading-tight pr-10 whitespace-pre-wrap">{msg.text}</div>
-                  <div className="text-[9px] text-[var(--text-muted)] text-right absolute bottom-1 right-2 font-medium opacity-70">
-                    {(() => {
-                      if (!msg.createdAt) return '';
-                      const d = msg.createdAt.toDate ? msg.createdAt.toDate() : new Date(msg.createdAt);
-                      return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-                    })()}
+              <div key={msg.id} className="space-y-2">
+                <div className={`flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'} animate-fade`}>
+                  <div className={`max-w-[85%] px-3 py-2 text-[15px] relative shadow-lg ${msg.sender === 'user' ? 'bubble-user' : 'bubble-ai'}`}>
+                    <div className="leading-tight pr-10 whitespace-pre-wrap">{msg.text}</div>
+                    <div className="text-[9px] text-[var(--text-muted)] text-right absolute bottom-1 right-2 font-medium opacity-70">
+                      {(() => {
+                        if (!msg.createdAt) return '';
+                        const d = msg.createdAt.toDate ? msg.createdAt.toDate() : new Date(msg.createdAt);
+                        return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                      })()}
+                    </div>
                   </div>
                 </div>
+
+                {/* Botões para Lembretes de Contas */}
+                {msg.sender === 'ai' && msg.actionType === 'BILL_REMINDER' && msg.actionPayload?.billId && (
+                  <div className="flex justify-start animate-fade-in-up ml-2">
+                    <div className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl p-3 shadow-md flex gap-2 max-w-[80%]">
+                      <button 
+                        onClick={() => {
+                          const bill = reminders.find(r => r.id === msg.actionPayload.billId) || { id: msg.actionPayload.billId, description: msg.actionPayload.description } as any;
+                          handleBillConfirm(true, bill);
+                        }}
+                        className="flex-1 bg-[var(--green-whatsapp)] text-white px-4 py-2 rounded-xl font-black text-[10px] uppercase transition-all active:scale-95 whitespace-nowrap"
+                      >
+                        Sim, já paguei
+                      </button>
+                      <button 
+                        onClick={() => {
+                          const bill = reminders.find(r => r.id === msg.actionPayload.billId) || { id: msg.actionPayload.billId, description: msg.actionPayload.description } as any;
+                          handleBillConfirm(false, bill);
+                        }}
+                        className="flex-1 bg-[var(--bg-body)] text-[var(--text-muted)] border border-[var(--border)] px-4 py-2 rounded-xl font-black text-[10px] uppercase transition-all active:scale-95 whitespace-nowrap"
+                      >
+                        Ainda não
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             ))}
 

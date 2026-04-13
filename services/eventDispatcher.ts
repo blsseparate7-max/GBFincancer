@@ -184,8 +184,13 @@ export const dispatchEvent = async (uid: string, event: FinanceEvent & { operati
   }
 
   try {
+    console.log("[chat] executor start");
     const result = await executeDispatch(finalUid!, event);
+    console.log("[chat] executor end", result);
     return result;
+  } catch (err) {
+    console.error("[chat] error no executor:", err);
+    throw err;
   } finally {
     if (opKey) {
       // Pequeno delay para evitar cliques ultra-rápidos que o Set pode não pegar se for async puro
@@ -622,7 +627,7 @@ const executeDispatch = async (uid: string, event: FinanceEvent) => {
       }
 
       case 'CREATE_REMINDER': {
-        const { description, amount, dueDay, category, type, recurring, targetWalletName } = payload;
+        const { description, amount, dueDay, category, type, recurring, targetWalletName, dedupeKey } = payload;
         const catInfo = await getCategoryInfo(uid, category || (type === 'RECEIVE' ? 'Recebimento' : 'Contas'), description);
         
         // Garantir que dueDay seja um número válido
@@ -636,11 +641,16 @@ const executeDispatch = async (uid: string, event: FinanceEvent) => {
         }
         const dueDate = targetDate.toISOString();
         
-        await addDoc(collection(userRef, "reminders"), {
-          description, amount, dueDay: targetDate.getDate(), category: catInfo.name,
+        const reminderData = {
+          description, 
+          amount: Number(amount), 
+          dueDay: targetDate.getDate(), 
+          category: catInfo.name,
           categoryId: catInfo.id,
           categoryName: catInfo.name,
-          dueDate, isPaid: false, recurring: recurring !== undefined ? recurring : true,
+          dueDate, 
+          isPaid: false, 
+          recurring: recurring !== undefined ? recurring : true,
           type: type || 'PAY',
           targetWalletName: targetWalletName || null,
           isQA,
@@ -649,7 +659,24 @@ const executeDispatch = async (uid: string, event: FinanceEvent) => {
           confirmedBy,
           status: 'PENDING',
           resolved: false,
-          createdAt: serverTimestamp(), isActive: true
+          updatedAt: serverTimestamp(),
+          isActive: true,
+          dedupeKey: dedupeKey || null
+        };
+
+        if (dedupeKey) {
+          const q = query(collection(userRef, "reminders"), where("dedupeKey", "==", dedupeKey), limit(1));
+          const snap = await getDocs(q);
+          if (!snap.empty) {
+            await updateDoc(doc(userRef, "reminders", snap.docs[0].id), reminderData);
+            console.log(`GB: Lembrete com dedupeKey "${dedupeKey}" atualizado.`);
+            break;
+          }
+        }
+
+        await addDoc(collection(userRef, "reminders"), {
+          ...reminderData,
+          createdAt: serverTimestamp()
         });
         break;
       }
@@ -666,6 +693,13 @@ const executeDispatch = async (uid: string, event: FinanceEvent) => {
         
         if (billSnap.exists()) {
           const billData = billSnap.data();
+          
+          // Idempotência: Se já foi pago ou processado, ignora
+          if (billData.isPaid || billData.status === 'paid' || billData.status === 'received' || billData.confirmationProcessed) {
+            console.warn("GB: PAY_REMINDER ignorado - Já processado anteriormente.", { billId });
+            return { success: true, message: "Já processado." };
+          }
+
           const isReceive = billData.type === 'RECEIVE';
           const cycleKey = getCycleKey();
           
@@ -939,6 +973,17 @@ const executeDispatch = async (uid: string, event: FinanceEvent) => {
         const { id } = event.payload;
         if (!id) throw new Error("ID is required for DELETE_REMINDER");
         await deleteDoc(doc(userRef, "reminders", id));
+        break;
+      }
+
+      case 'DELETE_REMINDER_BY_DEDUPE': {
+        const { dedupeKey } = event.payload;
+        if (!dedupeKey) throw new Error("dedupeKey is required");
+        const q = query(collection(userRef, "reminders"), where("dedupeKey", "==", dedupeKey));
+        const snap = await getDocs(q);
+        const batch = writeBatch(db);
+        snap.docs.forEach(doc => batch.delete(doc.ref));
+        await batch.commit();
         break;
       }
 

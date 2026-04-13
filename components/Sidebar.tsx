@@ -15,21 +15,21 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, expanded, se
 
   const groups = [
     {
-      label: 'Área principal',
+      label: 'Central de Comando',
       items: [
         { id: 'chat', label: 'Mentor IA', icon: '💬' },
         { id: 'dash', label: 'Dashboard', icon: '📊' },
       ]
     },
     {
-      label: 'Planejamento financeiro',
+      label: 'Planejamento',
       items: [
-        { id: 'goals', label: 'Metas', icon: '🎯' },
         { id: 'reminders', label: 'Lembretes', icon: '⏰' },
+        { id: 'goals', label: 'Metas', icon: '🎯' },
       ]
     },
     {
-      label: 'Controle do dinheiro',
+      label: 'Minhas Contas',
       items: [
         { id: 'wallets', label: 'Carteiras', icon: '👛' },
         { id: 'cc', label: 'Cartão de Crédito', icon: '💳' },
@@ -37,7 +37,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, expanded, se
       ]
     },
     {
-      label: 'Indicadores financeiros',
+      label: 'Inteligência',
       items: [
         { id: 'score', label: 'Score Financeiro', icon: '📈' },
         { id: 'stress', label: 'Stress Test', icon: '🧠' },
@@ -45,16 +45,16 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, expanded, se
       ]
     },
     {
-      label: 'Análises',
+      label: 'Histórico',
       items: [
+        { id: 'extrato', label: 'Extrato', icon: '📝' },
         { id: 'calendar', label: 'Calendário', icon: '📅' },
         { id: 'resumo', label: 'Resumo Anual', icon: '📊' },
-        { id: 'extrato', label: 'Extrato', icon: '📝' },
         { id: 'categories', label: 'Categorias', icon: '🏷️' },
       ]
     },
     {
-      label: 'Configurações do usuário',
+      label: 'Configurações',
       items: [
         { id: 'profile', label: 'Meu Perfil', icon: '👤' },
         { id: 'config', label: 'Ajustes IA', icon: '⚙️' },

@@ -51,19 +51,24 @@ const GuidedOnboarding: React.FC<GuidedOnboardingProps> = ({
   // Step 1: Income
   const [incomeSources, setIncomeSources] = useState<IncomeSource[]>(user.incomeProfile?.sources || []);
   const [showIncomeForm, setShowIncomeForm] = useState(false);
+  const [editingIncomeId, setEditingIncomeId] = useState<string | null>(null);
   const [newIncome, setNewIncome] = useState({
     description: '',
     amount: 0,
     frequency: 'MONTHLY' as any,
-    wallet: ''
+    wallet: '',
+    dueDay: 5
   });
 
   // Step 2: Fixed Bills
   const [bills, setBills] = useState<Bill[]>([]);
+  const [editingBillId, setEditingBillId] = useState<string | null>(null);
   const [newBill, setNewBill] = useState({
     description: '',
     amount: 0,
-    dueDay: new Date().getDate()
+    dueDay: new Date().getDate(),
+    category: 'Contas Fixas',
+    recurring: true
   });
 
   // Step 4: Spending Limits
@@ -130,7 +135,8 @@ const GuidedOnboarding: React.FC<GuidedOnboardingProps> = ({
               category: 'Recebimento',
               type: 'RECEIVE',
               recurring: true,
-              targetWalletName: source.targetWalletName
+              targetWalletName: source.targetWalletName,
+              dedupeKey: `onboarding-income-${source.id}`
             },
             source: 'onboarding',
             createdAt: new Date()
@@ -156,7 +162,8 @@ const GuidedOnboarding: React.FC<GuidedOnboardingProps> = ({
             dueDay: bill.dueDay, 
             category: 'Contas Fixas',
             type: 'PAY',
-            recurring: true
+            recurring: true,
+            dedupeKey: `onboarding-bill-${bill.id}`
           },
           source: 'onboarding',
           createdAt: new Date()
@@ -220,7 +227,21 @@ const GuidedOnboarding: React.FC<GuidedOnboardingProps> = ({
 
             <div className="space-y-3 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
               {incomeSources.map((s, idx) => (
-                <div key={idx} className="bg-[#202C33] p-4 rounded-2xl border border-[#2A3942]/40 flex justify-between items-center group animate-in fade-in slide-in-from-bottom-2">
+                <div 
+                  key={s.id || idx} 
+                  onClick={() => {
+                    setEditingIncomeId(s.id);
+                    setNewIncome({
+                      description: s.description,
+                      amount: s.amountExpected || 0,
+                      frequency: s.frequency || 'MONTHLY',
+                      wallet: s.targetWalletName || '',
+                      dueDay: s.dates && s.dates.length > 0 ? s.dates[0] : 5
+                    } as any);
+                    setShowIncomeForm(true);
+                  }}
+                  className="bg-[#202C33] p-4 rounded-2xl border border-[#2A3942]/40 flex justify-between items-center group animate-in fade-in slide-in-from-bottom-2 cursor-pointer hover:border-[#00A884]/50 transition-all active:scale-[0.98]"
+                >
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 bg-[#00A884]/20 text-[#00A884] rounded-xl flex items-center justify-center">
                       <Wallet size={20} />
@@ -232,7 +253,23 @@ const GuidedOnboarding: React.FC<GuidedOnboardingProps> = ({
                   </div>
                   <div className="text-right flex items-center gap-3">
                     <span className="text-xs font-black text-[#00A884]">R$ {s.amountExpected?.toFixed(2)}</span>
-                    <button onClick={() => setIncomeSources(incomeSources.filter((_, i) => i !== idx))} className="text-rose-500 opacity-0 group-hover:opacity-100 transition-all">
+                    <button 
+                      onClick={async (e) => {
+                        e.stopPropagation();
+                        const itemToDelete = incomeSources[idx];
+                        setIncomeSources(incomeSources.filter((_, i) => i !== idx));
+                        
+                        // Opcional: Deletar do Firestore se já foi criado
+                        const { dispatchEvent } = await import('../services/eventDispatcher');
+                        await dispatchEvent(user.uid, {
+                          type: 'DELETE_REMINDER_BY_DEDUPE',
+                          payload: { dedupeKey: `onboarding-income-${itemToDelete.id}` },
+                          source: 'onboarding',
+                          createdAt: new Date()
+                        });
+                      }} 
+                      className="text-rose-500 opacity-0 group-hover:opacity-100 transition-all p-2 hover:bg-rose-500/10 rounded-lg"
+                    >
                       <Trash2 size={16} />
                     </button>
                   </div>
@@ -241,13 +278,45 @@ const GuidedOnboarding: React.FC<GuidedOnboardingProps> = ({
 
               {!showIncomeForm ? (
                 <button 
-                  onClick={() => setShowIncomeForm(true)}
+                  onClick={() => {
+                    setEditingIncomeId(null);
+                    setNewIncome({ description: '', amount: 0, frequency: 'MONTHLY', wallet: '', dueDay: 5 });
+                    setShowIncomeForm(true);
+                  }}
                   className="w-full py-4 rounded-2xl border-2 border-dashed border-[#2A3942] text-[#8696A0] font-black text-[10px] uppercase flex items-center justify-center gap-2 hover:border-[#00A884] hover:text-[#00A884] transition-all"
                 >
                   <Plus size={16} /> Adicionar Renda
                 </button>
               ) : (
                 <div className="bg-[#202C33] p-5 rounded-3xl border border-[#00A884]/30 space-y-4 animate-in zoom-in-95 duration-300">
+                  <div className="flex justify-between items-center">
+                    <h4 className="text-[10px] font-black text-[#00A884] uppercase tracking-widest">
+                      {editingIncomeId ? 'Editar Renda' : 'Nova Renda'}
+                    </h4>
+                    {editingIncomeId && (
+                      <button 
+                        onClick={async () => {
+                          const itemToDelete = incomeSources.find(s => s.id === editingIncomeId);
+                          setIncomeSources(incomeSources.filter(s => s.id !== editingIncomeId));
+                          setShowIncomeForm(false);
+                          setEditingIncomeId(null);
+
+                          if (itemToDelete) {
+                            const { dispatchEvent } = await import('../services/eventDispatcher');
+                            await dispatchEvent(user.uid, {
+                              type: 'DELETE_REMINDER_BY_DEDUPE',
+                              payload: { dedupeKey: `onboarding-income-${itemToDelete.id}` },
+                              source: 'onboarding',
+                              createdAt: new Date()
+                            });
+                          }
+                        }}
+                        className="text-rose-500 text-[9px] font-black uppercase flex items-center gap-1"
+                      >
+                        <Trash2 size={12} /> Excluir
+                      </button>
+                    )}
+                  </div>
                   <div className="space-y-1">
                     <label className="text-[9px] font-black text-[#8696A0] uppercase ml-2">Descrição</label>
                     <input 
@@ -306,22 +375,39 @@ const GuidedOnboarding: React.FC<GuidedOnboardingProps> = ({
                     <button 
                       onClick={() => {
                         if (!newIncome.description || newIncome.amount <= 0) return;
-                        setIncomeSources([...incomeSources, {
-                          id: Math.random().toString(36).substr(2, 9),
+                        
+                        const incomeData = {
+                          id: editingIncomeId || Math.random().toString(36).substr(2, 9),
                           description: newIncome.description,
                           amountExpected: newIncome.amount,
                           frequency: newIncome.frequency || 'MONTHLY',
                           dates: (newIncome as any).dueDay ? [(newIncome as any).dueDay] : [],
                           targetWalletName: newIncome.wallet || 'Carteira Principal'
-                        }]);
-                        setNewIncome({ description: '', amount: 0, frequency: 'MONTHLY', wallet: '' });
+                        };
+
+                        if (editingIncomeId) {
+                          setIncomeSources(incomeSources.map(s => s.id === editingIncomeId ? incomeData : s));
+                        } else {
+                          setIncomeSources([...incomeSources, incomeData]);
+                        }
+                        
+                        setNewIncome({ description: '', amount: 0, frequency: 'MONTHLY', wallet: '', dueDay: 5 });
                         setShowIncomeForm(false);
+                        setEditingIncomeId(null);
                       }} 
                       className="flex-1 bg-[#00A884] text-white py-3 rounded-xl font-black text-[10px] uppercase"
                     >
-                      Salvar
+                      {editingIncomeId ? 'Salvar Alterações' : 'Adicionar'}
                     </button>
-                    <button onClick={() => setShowIncomeForm(false)} className="flex-1 bg-[#111B21] text-[#8696A0] py-3 rounded-xl font-black text-[10px] uppercase">Cancelar</button>
+                    <button 
+                      onClick={() => {
+                        setShowIncomeForm(false);
+                        setEditingIncomeId(null);
+                      }} 
+                      className="flex-1 bg-[#111B21] text-[#8696A0] py-3 rounded-xl font-black text-[10px] uppercase"
+                    >
+                      Cancelar
+                    </button>
                   </div>
                 </div>
               )}
@@ -343,58 +429,180 @@ const GuidedOnboarding: React.FC<GuidedOnboardingProps> = ({
             </div>
 
             <div className="bg-[#202C33] p-5 rounded-3xl border border-[#2A3942]/40 space-y-4">
-              <div className="space-y-3">
-                <input 
-                  placeholder="Ex: Aluguel, Luz, Internet..." 
-                  className="w-full bg-[#111B21] p-3 rounded-xl text-sm font-bold text-[#E9EDEF] outline-none border-2 border-transparent focus:border-[#00A884] transition-all"
-                  value={newBill.description} onChange={e => setNewBill({...newBill, description: e.target.value})}
-                />
-                <div className="grid grid-cols-2 gap-3">
-                  <MoneyInput 
-                    placeholder="Valor R$" 
-                    className="w-full bg-[#111B21] p-3 rounded-xl text-sm font-bold text-[#E9EDEF] outline-none border-2 border-transparent focus:border-[#00A884] transition-all"
-                    value={newBill.amount} 
-                    onChange={val => setNewBill({...newBill, amount: val})}
-                  />
-                  <input 
-                    placeholder="Dia Venc." type="number" min="1" max="31"
-                    className="w-full bg-[#111B21] p-3 rounded-xl text-sm font-bold text-[#E9EDEF] outline-none border-2 border-transparent focus:border-[#00A884] transition-all"
-                    value={newBill.dueDay || ''} 
-                    onChange={e => {
-                      const val = e.target.value === '' ? '' : parseInt(e.target.value);
-                      setNewBill({...newBill, dueDay: val as any});
+              <div className="flex justify-between items-center">
+                <h4 className="text-[10px] font-black text-[#00A884] uppercase tracking-widest">
+                  {editingBillId ? 'Editar Gasto' : 'Novo Gasto'}
+                </h4>
+                {editingBillId && (
+                  <button 
+                    onClick={async () => {
+                      const itemToDelete = bills.find(b => b.id === editingBillId);
+                      setBills(bills.filter(b => b.id !== editingBillId));
+                      setNewBill({ description: '', amount: 0, dueDay: new Date().getDate(), category: 'Contas Fixas', recurring: true });
+                      setEditingBillId(null);
+
+                      if (itemToDelete) {
+                        const { dispatchEvent } = await import('../services/eventDispatcher');
+                        await dispatchEvent(user.uid, {
+                          type: 'DELETE_REMINDER_BY_DEDUPE',
+                          payload: { dedupeKey: `onboarding-bill-${itemToDelete.id}` },
+                          source: 'onboarding',
+                          createdAt: new Date()
+                        });
+                      }
                     }}
-                  />
+                    className="text-rose-500 text-[9px] font-black uppercase flex items-center gap-1"
+                  >
+                    <Trash2 size={12} /> Excluir
+                  </button>
+                )}
+              </div>
+              <div className="space-y-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <label className="text-[9px] font-black text-[#8696A0] uppercase ml-2">Descrição</label>
+                    <input 
+                      placeholder="Ex: Aluguel, Luz..." 
+                      className="w-full bg-[#111B21] p-3 rounded-xl text-sm font-bold text-[#E9EDEF] outline-none border-2 border-transparent focus:border-[#00A884] transition-all"
+                      value={newBill.description} onChange={e => setNewBill({...newBill, description: e.target.value})}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[9px] font-black text-[#8696A0] uppercase ml-2">Categoria</label>
+                    <select 
+                      className="w-full bg-[#111B21] p-3 rounded-xl text-sm font-bold text-[#E9EDEF] outline-none appearance-none"
+                      value={newBill.category} onChange={e => setNewBill({...newBill, category: e.target.value})}
+                    >
+                      <option value="Contas Fixas">Contas Fixas</option>
+                      <option value="Alimentação">Alimentação</option>
+                      <option value="Transporte">Transporte</option>
+                      <option value="Lazer">Lazer</option>
+                      <option value="Saúde">Saúde</option>
+                      <option value="Educação">Educação</option>
+                      <option value="Outros">Outros</option>
+                    </select>
+                  </div>
                 </div>
-                <button 
-                  onClick={() => {
-                    if (!newBill.description || newBill.amount <= 0 || !newBill.dueDay) return;
-                    setBills([...bills, {
-                      id: Math.random().toString(36).substr(2, 9),
-                      description: newBill.description,
-                      amount: newBill.amount,
-                      dueDay: Number(newBill.dueDay),
-                      type: 'PAY',
-                      recurring: true,
-                      category: 'Contas Fixas'
-                    } as any]);
-                    setNewBill({ description: '', amount: 0, dueDay: new Date().getDate() });
-                  }}
-                  className="w-full py-3 rounded-xl text-[10px] font-black uppercase tracking-widest border-2 border-dashed border-[#00A884]/30 text-[#00A884] hover:bg-[#00A884]/5 transition-all"
-                >
-                  + Adicionar Gasto Fixo
-                </button>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <label className="text-[9px] font-black text-[#8696A0] uppercase ml-2">Valor R$</label>
+                    <MoneyInput 
+                      placeholder="Valor R$" 
+                      className="w-full bg-[#111B21] p-3 rounded-xl text-sm font-bold text-[#E9EDEF] outline-none border-2 border-transparent focus:border-[#00A884] transition-all"
+                      value={newBill.amount} 
+                      onChange={val => setNewBill({...newBill, amount: val})}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[9px] font-black text-[#8696A0] uppercase ml-2">Dia Venc.</label>
+                    <input 
+                      placeholder="Dia Venc." type="number" min="1" max="31"
+                      className="w-full bg-[#111B21] p-3 rounded-xl text-sm font-bold text-[#E9EDEF] outline-none border-2 border-transparent focus:border-[#00A884] transition-all"
+                      value={newBill.dueDay || ''} 
+                      onChange={e => {
+                        const val = e.target.value === '' ? '' : parseInt(e.target.value);
+                        setNewBill({...newBill, dueDay: val as any});
+                      }}
+                    />
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 px-2">
+                  <input 
+                    type="checkbox" 
+                    id="isRecurring"
+                    checked={newBill.recurring}
+                    onChange={e => setNewBill({...newBill, recurring: e.target.checked})}
+                    className="w-4 h-4 accent-[#00A884]"
+                  />
+                  <label htmlFor="isRecurring" className="text-[10px] font-black text-[#8696A0] uppercase cursor-pointer">Gasto Fixo / Recorrente</label>
+                </div>
+                <div className="flex gap-2">
+                  <button 
+                    onClick={() => {
+                      if (!newBill.description || newBill.amount <= 0 || !newBill.dueDay) return;
+                      
+                      const billData = {
+                        id: editingBillId || Math.random().toString(36).substr(2, 9),
+                        description: newBill.description,
+                        amount: newBill.amount,
+                        dueDay: Number(newBill.dueDay),
+                        type: 'PAY',
+                        recurring: newBill.recurring,
+                        category: newBill.category || 'Contas Fixas'
+                      } as any;
+
+                      if (editingBillId) {
+                        setBills(bills.map(b => b.id === editingBillId ? billData : b));
+                      } else {
+                        setBills([...bills, billData]);
+                      }
+                      
+                      setNewBill({ description: '', amount: 0, dueDay: new Date().getDate(), category: 'Contas Fixas', recurring: true });
+                      setEditingBillId(null);
+                    }}
+                    className="flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest bg-[#00A884] text-white shadow-lg active:scale-95 transition-all"
+                  >
+                    {editingBillId ? 'Salvar Alterações' : '+ Adicionar Gasto'}
+                  </button>
+                  {editingBillId && (
+                    <button 
+                      onClick={() => {
+                        setNewBill({ description: '', amount: 0, dueDay: new Date().getDate(), category: 'Contas Fixas', recurring: true });
+                        setEditingBillId(null);
+                      }}
+                      className="px-4 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest bg-[#111B21] text-[#8696A0]"
+                    >
+                      Cancelar
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
 
             <div className="max-h-24 overflow-y-auto space-y-2 px-1 custom-scrollbar">
               {bills.map((b, i) => (
-                <div key={i} className="flex justify-between items-center bg-[#202C33] p-3 rounded-xl border border-[#2A3942]/20">
+                <div 
+                  key={b.id || i} 
+                  onClick={() => {
+                    setEditingBillId(b.id);
+                    setNewBill({
+                      description: b.description,
+                      amount: b.amount,
+                      dueDay: b.dueDay,
+                      category: b.category || 'Contas Fixas',
+                      recurring: b.recurring !== undefined ? b.recurring : true
+                    });
+                  }}
+                  className="flex justify-between items-center bg-[#202C33] p-3 rounded-xl border border-[#2A3942]/20 cursor-pointer hover:border-[#00A884]/50 transition-all active:scale-[0.98] group"
+                >
                   <div className="flex items-center gap-3">
-                    <div className="w-2 h-2 rounded-full bg-rose-500"></div>
-                    <span className="text-xs font-black text-[#E9EDEF] uppercase">{b.description}</span>
+                    <div className={`w-2 h-2 rounded-full ${b.recurring ? 'bg-rose-500' : 'bg-amber-500'}`}></div>
+                    <div>
+                      <span className="text-xs font-black text-[#E9EDEF] uppercase block">{b.description}</span>
+                      <span className="text-[8px] font-bold text-[#8696A0] uppercase">{b.category} • {b.recurring ? 'Fixo' : 'Variável'}</span>
+                    </div>
                   </div>
-                  <span className="text-xs font-black text-rose-500">R$ {b.amount.toFixed(2)}</span>
+                  <div className="flex items-center gap-3">
+                    <span className="text-xs font-black text-rose-500">R$ {b.amount.toFixed(2)}</span>
+                    <button 
+                      onClick={async (e) => {
+                        e.stopPropagation();
+                        const itemToDelete = bills[i];
+                        setBills(bills.filter((_, idx) => idx !== i));
+
+                        const { dispatchEvent } = await import('../services/eventDispatcher');
+                        await dispatchEvent(user.uid, {
+                          type: 'DELETE_REMINDER_BY_DEDUPE',
+                          payload: { dedupeKey: `onboarding-bill-${itemToDelete.id}` },
+                          source: 'onboarding',
+                          createdAt: new Date()
+                        });
+                      }}
+                      className="text-rose-500 opacity-0 group-hover:opacity-100 transition-all p-1 hover:bg-rose-500/10 rounded"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>

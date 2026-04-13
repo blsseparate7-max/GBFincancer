@@ -16,6 +16,7 @@ export const sendMessageToFirestore = async (uid: string, text: string, sender: 
   
   if (dedupeKey) {
     try {
+      console.log(`[chat] verificando dedupeKey: ${dedupeKey}`);
       const q = query(
         collection(db, "users", finalUid, "chat_messages"),
         where("dedupeKey", "==", dedupeKey),
@@ -23,15 +24,16 @@ export const sendMessageToFirestore = async (uid: string, text: string, sender: 
       );
       const snap = await getDocs(q);
       if (!snap.empty) {
-        console.log(`GB Chat Service: Mensagem ignorada (dedupeKey duplicado: ${dedupeKey})`);
+        console.log(`[chat] mensagem ignorada (dedupeKey duplicado: ${dedupeKey})`);
         return; 
       }
     } catch (err) {
-      console.error("GB Chat Service: Erro ao verificar dedupeKey:", err);
+      console.error("[chat] erro ao verificar dedupeKey:", err);
     }
   }
 
   try {
+    console.log(`[chat] salvando mensagem no Firestore (${sender})...`);
     const docRef = await addDoc(collection(db, "users", finalUid, "chat_messages"), {
       text,
       sender,
@@ -42,9 +44,9 @@ export const sendMessageToFirestore = async (uid: string, text: string, sender: 
       actionType: actionType || null,
       actionPayload: actionPayload || null
     });
-    console.log(`GB Chat Service: Mensagem salva com sucesso! ID: ${docRef.id} em chat_messages`);
+    console.log(`[chat] mensagem salva com sucesso! ID: ${docRef.id}`);
   } catch (err) {
-    console.error("GB Chat Service: ERRO CRÍTICO ao salvar mensagem no Firestore:", err);
+    console.error("[chat] erro capturado ao salvar no Firestore:", err);
     throw err; // Repassa o erro para que o chamador saiba que falhou
   }
 };

@@ -118,6 +118,7 @@ export const fetchChatContext = async (uid: string) => {
   try {
     const userRef = doc(db, MAIN_COLLECTION, finalUid);
     
+    console.log("[chat] fetchChatContext: iniciando buscas paralelas...");
     // Buscas paralelas para performance
     const [
       userSnap,
@@ -130,16 +131,17 @@ export const fetchChatContext = async (uid: string) => {
       catsSnap,
       debtsSnap
     ] = await Promise.all([
-      getDoc(userRef),
-      getDocs(query(collection(userRef, "transactions"), orderBy("date", "desc"), limit(50))),
-      getDocs(collection(userRef, "goals")),
-      getDocs(collection(userRef, "reminders")),
-      getDocs(collection(userRef, "limits")),
-      getDocs(collection(userRef, "cards")),
-      getDocs(collection(userRef, "wallets")),
-      getDocs(collection(userRef, "categories")),
-      getDocs(collection(userRef, "debts"))
+      getDoc(userRef).then(res => { console.log("[chat] fetch: user ok"); return res; }),
+      getDocs(query(collection(userRef, "transactions"), orderBy("date", "desc"), limit(50))).then(res => { console.log("[chat] fetch: transactions ok"); return res; }),
+      getDocs(collection(userRef, "goals")).then(res => { console.log("[chat] fetch: goals ok"); return res; }),
+      getDocs(collection(userRef, "reminders")).then(res => { console.log("[chat] fetch: reminders ok"); return res; }),
+      getDocs(collection(userRef, "limits")).then(res => { console.log("[chat] fetch: limits ok"); return res; }),
+      getDocs(collection(userRef, "cards")).then(res => { console.log("[chat] fetch: cards ok"); return res; }),
+      getDocs(collection(userRef, "wallets")).then(res => { console.log("[chat] fetch: wallets ok"); return res; }),
+      getDocs(collection(userRef, "categories")).then(res => { console.log("[chat] fetch: categories ok"); return res; }),
+      getDocs(collection(userRef, "debts")).then(res => { console.log("[chat] fetch: debts ok"); return res; })
     ]);
+    console.log("[chat] fetchChatContext: todas as buscas concluídas.");
 
     return {
       user: userSnap.exists() ? { id: userSnap.id, ...userSnap.data() } as any : null,

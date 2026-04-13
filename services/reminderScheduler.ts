@@ -9,33 +9,45 @@ export const checkAndSendReminderNotifications = async (user: UserSession, remin
   if (!user || !user.uid || !reminders.length || !user.onboardingStatus?.completed) return;
 
   const now = new Date();
+  // Normalizar hoje para o início do dia para comparação precisa
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   
   for (const bill of reminders) {
+    // Pular se já pago, recebido ou sem data
     if (bill.isPaid || bill.status === 'paid' || bill.status === 'received' || !bill.dueDate) continue;
 
     const dueDate = new Date(bill.dueDate);
-    const diffTime = dueDate.getTime() - today.getTime();
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    // Normalizar dueDate para o início do dia
+    const normalizedDueDate = new Date(dueDate.getFullYear(), dueDate.getMonth(), dueDate.getDate());
+    
+    const diffTime = normalizedDueDate.getTime() - today.getTime();
+    const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
 
     // 7 dias antes
     if (diffDays === 7 && !bill.notified7d) {
-      const dedupeKey = `reminder-7d-${bill.id}`;
-      await sendReminderMessage(user.uid, bill, `Você tem uma conta chegando em breve:\n**${bill.description}** - ${formatCurrency(bill.amount)}\nVence em ${new Date(bill.dueDate).toLocaleDateString('pt-BR')}.`, dedupeKey);
+      const dedupeKey = `reminder-7d-${bill.id}-${today.getTime()}`;
+      await sendReminderMessage(user.uid, bill, `Você tem uma conta chegando em breve:\n**${bill.description}** - ${formatCurrency(bill.amount)}\nVence em ${normalizedDueDate.toLocaleDateString('pt-BR')}.`, dedupeKey);
       await updateDoc(doc(db, "users", user.uid, "reminders", bill.id), { notified7d: true, updatedAt: serverTimestamp() });
     }
 
     // 1 dia antes
     if (diffDays === 1 && !bill.notified1d) {
-      const dedupeKey = `reminder-1d-${bill.id}`;
+      const dedupeKey = `reminder-1d-${bill.id}-${today.getTime()}`;
       await sendReminderMessage(user.uid, bill, `Sua conta vence amanhã:\n**${bill.description}** - ${formatCurrency(bill.amount)}\nJá está tudo certo para pagar?`, dedupeKey);
       await updateDoc(doc(db, "users", user.uid, "reminders", bill.id), { notified1d: true, updatedAt: serverTimestamp() });
     }
 
     // No dia do vencimento
     if (diffDays === 0 && !bill.notifiedOnDay) {
-      const dedupeKey = `reminder-0d-${bill.id}`;
-      await sendReminderMessage(user.uid, bill, `Hoje vence:\n**${bill.description}** - ${formatCurrency(bill.amount)}\n\nVocê já pagou essa conta?`, dedupeKey, 'BILL_REMINDER', { billId: bill.id });
+      const dedupeKey = `reminder-0d-${bill.id}-${today.getTime()}`;
+      await sendReminderMessage(
+        user.uid, 
+        bill, 
+        `Hoje vence:\n**${bill.description}** - ${formatCurrency(bill.amount)}\n\nVocê já pagou essa conta?`, 
+        dedupeKey, 
+        'BILL_REMINDER', 
+        { billId: bill.id, description: bill.description, amount: bill.amount }
+      );
       await updateDoc(doc(db, "users", user.uid, "reminders", bill.id), { notifiedOnDay: true, updatedAt: serverTimestamp() });
     }
   }

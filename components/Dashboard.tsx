@@ -28,7 +28,8 @@ import {
   CompositionChart, 
   UpcomingBillsCard,
   SuggestionCard,
-  GoalSuggestionCard
+  GoalSuggestionCard,
+  FinancialHealthHub
 } from './DashboardComponents';
 
 interface DashProps {
@@ -42,10 +43,11 @@ interface DashProps {
   user: any; // UserSession
   loading?: boolean;
   onNavigateToExtrato?: (filters: any) => void;
+  onNavigateToTab?: (tab: string) => void;
   isExpired?: boolean;
 }
 
-const Dashboard: React.FC<DashProps> = ({ transactions, goals, limits, wallets, reminders, categories, uid, user, loading, onNavigateToExtrato, isExpired = false }) => {
+const Dashboard: React.FC<DashProps> = ({ transactions, goals, limits, wallets, reminders, categories, uid, user, loading, onNavigateToExtrato, onNavigateToTab, isExpired = false }) => {
   const [showLimitModal, setShowLimitModal] = useState(false);
   const [showGlobalLimitModal, setShowGlobalLimitModal] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
@@ -317,6 +319,41 @@ const Dashboard: React.FC<DashProps> = ({ transactions, goals, limits, wallets, 
     };
   }, [transactions, goals, limits, wallets, reminders]);
 
+  const healthStats = useMemo(() => {
+    // Simplified Score Calculation
+    const income = stats.income;
+    const expense = stats.expense;
+    const balance = income - expense;
+    const savingsRate = income > 0 ? (balance / income) * 100 : 0;
+    
+    let balancePoints = 0;
+    if (savingsRate >= 30) balancePoints = 100;
+    else if (savingsRate >= 15) balancePoints = 85;
+    else if (savingsRate >= 5) balancePoints = 70;
+    else if (savingsRate >= 0) balancePoints = 50;
+    else balancePoints = 20;
+
+    const limitHealth = limits.length > 0 ? (limits.filter(l => l.spent <= l.limit).length / limits.length) * 100 : 100;
+    const goalProgress = goals.length > 0 ? (goals.reduce((s, g) => s + (g.currentAmount / g.targetAmount || 0), 0) / goals.length) * 100 : 0;
+
+    const score = Math.round((balancePoints * 0.5) + (limitHealth * 0.3) + (goalProgress * 0.2));
+    
+    let level = { label: 'Crítico', color: 'text-rose-500' };
+    if (score > 85) level = { label: 'Excelente', color: 'text-emerald-500' };
+    else if (score > 70) level = { label: 'Saudável', color: 'text-[#00A884]' };
+    else if (score > 50) level = { label: 'Controlado', color: 'text-amber-500' };
+    else if (score > 30) level = { label: 'Atenção', color: 'text-orange-500' };
+
+    // Stress Level (based on balance)
+    const impactPct = income > 0 ? Math.min(100, (expense / income) * 100) : 100;
+    let stress = { level: 'Paz Total', color: '#00A884', desc: 'Suas finanças estão sob controle total.', impactPct };
+    if (impactPct > 90) stress = { level: 'Crítico', color: '#ef4444', desc: 'Você está gastando quase tudo que ganha.', impactPct };
+    else if (impactPct > 70) stress = { level: 'Impacto Alto', color: '#f97316', desc: 'Atenção ao volume de saídas este mês.', impactPct };
+    else if (impactPct > 40) stress = { level: 'Moderado', color: '#f59e0b', desc: 'Equilíbrio razoável entre ganhos e gastos.', impactPct };
+
+    return { score, level, stress };
+  }, [stats, limits, goals]);
+
   const handleCreateLimit = async () => {
     if (!limitCat || !limitVal) return;
     const result = await dispatchEvent(uid, {
@@ -452,6 +489,13 @@ const Dashboard: React.FC<DashProps> = ({ transactions, goals, limits, wallets, 
       {/* 1️⃣ Card Principal – Situação Financeira */}
       <MainStats stats={stats} />
 
+      {/* 💡 Hub de Saúde Financeira (Lapidação) */}
+      <FinancialHealthHub 
+        score={healthStats.score} 
+        level={healthStats.level} 
+        stressLevel={healthStats.stress} 
+      />
+
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
         {/* 2️⃣ Gráfico Financeiro do Mês */}
         <CashFlowChart barData={stats.barData} />
@@ -496,7 +540,10 @@ const Dashboard: React.FC<DashProps> = ({ transactions, goals, limits, wallets, 
       </div>
 
       {/* 7️⃣ Contas Próximas do Vencimento */}
-      <UpcomingBillsCard bills={stats.upcomingBills} />
+      <UpcomingBillsCard 
+        bills={stats.upcomingBills} 
+        onBillClick={() => onNavigateToTab?.('reminders')}
+      />
 
       {/* Modal Limite Global */}
       <AnimatePresence>

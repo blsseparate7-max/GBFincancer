@@ -114,6 +114,7 @@ export type EventType =
   | 'CREATE_REMINDER' 
   | 'PAY_REMINDER'
   | 'DELETE_REMINDER'
+  | 'DELETE_REMINDER_BY_DEDUPE'
   | 'ADD_CARD'
   | 'ADD_CARD_CHARGE'
   | 'UPDATE_CARD'

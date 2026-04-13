@@ -259,13 +259,15 @@ const App: React.FC = () => {
 
     const unsubMessages = onSnapshot(query(
       collection(userRef, "chat_messages"),
-      orderBy("createdAt", "asc"),
+      orderBy("createdAt", "desc"),
       limit(50)
     ), (snap) => {
-      console.log(`GB App: Recebidas ${snap.docs.length} mensagens em tempo real.`);
-      setMessages(snap.docs.map(d => ({ id: d.id, ...d.data() } as Message)));
+      console.log("[chat] listener update");
+      const msgs = snap.docs.map(d => ({ id: d.id, ...d.data({ serverTimestamps: 'estimate' }) } as Message));
+      // Reverter para exibir em ordem cronológica (mais antiga em cima, mais nova embaixo)
+      setMessages(msgs.reverse());
     }, (err) => {
-      console.error("GB App: Erro no listener de chat_messages:", err);
+      console.error("[chat] error no listener de chat_messages:", err);
       handleError(err, "Messages");
     });
 
@@ -476,6 +478,7 @@ const App: React.FC = () => {
             setExtratoFilters(filters);
             setActiveTab('extrato');
           }}
+          onNavigateToTab={(tab) => setActiveTab(tab)}
           isExpired={!hasAccess()}
         />
       ) : null;

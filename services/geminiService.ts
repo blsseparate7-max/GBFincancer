@@ -187,7 +187,13 @@ export const parseMessage = async (text: string, userName: string, context?: { u
         return `MÉDIAS DE GASTO POR CATEGORIA: ${JSON.stringify(averages)}`;
       })() : '';
 
-    const response = await ai.models.generateContent({
+    // Timeout de 15 segundos para evitar travamento eterno
+    const timeoutPromise = new Promise((_, reject) => 
+      setTimeout(() => reject(new Error("TIMEOUT_AI")), 15000)
+    );
+
+    console.log("[chat] parser start");
+    const responsePromise = ai.models.generateContent({
       model: 'gemini-3-flash-preview',
       contents: `Você é o GB, mentor financeiro premium de ${userName}. Hoje é ${today}.
       
@@ -273,11 +279,14 @@ export const parseMessage = async (text: string, userName: string, context?: { u
       }
     });
 
+    const response: any = await Promise.race([responsePromise, timeoutPromise]);
+
     if (!response.text) {
       throw new Error("Resposta da IA vazia");
     }
 
     const parsed = JSON.parse(response.text);
+    console.log("[chat] parser end", parsed);
     
     // Injetar isQA se o contexto for de teste (Fonte da Verdade)
     const isQA = context?.user?.isQA || false;
