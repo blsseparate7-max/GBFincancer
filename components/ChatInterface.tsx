@@ -537,10 +537,21 @@ const ChatInterface: React.FC<ChatProps> = ({
       const result = await parseMessage(text.trim(), user.name || 'Usuário', finalContext);
       console.log("[chat] processed");
       
-      // Garantir que a resposta exista (Fallback se vazio)
+      // 1. Processar eventos (se houver) para mostrar confirmação de categoria/carteira
+      if (result.events && result.events.length > 0) {
+        if (result.events.length === 1) {
+          setPendingAction(result.events[0]);
+          setPendingEvents([]);
+        } else {
+          setPendingEvents(result.events);
+          setPendingAction(null);
+        }
+      }
+
+      // 2. Garantir que a resposta exista (Fallback se vazio)
       const replyText = result.reply || "Não consegui processar sua solicitação. Tente novamente.";
       
-      // Salvar resposta do assistant
+      // 3. Salvar resposta do assistant
       await sendMessage(replyText, 'ai');
 
     } catch (e) {
