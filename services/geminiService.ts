@@ -77,7 +77,17 @@ const FINANCE_PARSER_SCHEMA = {
         required: ["type", "payload"]
       }
     },
-    reply: { type: Type.STRING }
+    reply: { type: Type.STRING },
+    intent: { 
+      type: Type.STRING, 
+      enum: [
+        'expense_summary', 'income_summary', 'balance_summary', 
+        'category_summary', 'wallet_summary', 'statement_query', 
+        'ranking_query', 'limit_query', 'reminder_query', 
+        'comparison_query', 'insight_query', 'goal_query', 
+        'credit_card_query', 'transaction_registration', 'other'
+      ] 
+    }
   },
   required: ["reply"]
 };
@@ -87,7 +97,9 @@ export const parseMessage = async (text: string, userName: string, context?: { u
     const ai = getAI();
     if (!ai) return { reply: "IA Indisponível." };
 
-    const today = new Date().toISOString().split('T')[0];
+    const now = new Date();
+    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    const currentTime = now.toLocaleTimeString('pt-BR');
     
     // Contexto de Categorias
     const categoriesContext = context?.categories && context.categories.length > 0 ?
@@ -112,18 +124,28 @@ export const parseMessage = async (text: string, userName: string, context?: { u
       `LIMITES DE GASTOS: ${JSON.stringify(context.limits.map(l => ({ categoria: l.category, limite: l.limit, gasto: l.spent, disponivel: l.limit - l.spent })))}` :
       'Sem limites configurados.';
 
-    // Contexto de Transações Recentes (para mover categorias ou resumos)
-    const recentTransactions = context?.transactions ? 
-      `TRANSAÇÕES RECENTES: ${JSON.stringify(context.transactions.slice(-15).map(t => ({ id: t.id, desc: t.description, valor: t.amount, cat: t.category, data: t.date })))}` :
-      'Sem transações recentes.';
+    // Contexto de Transações (Fonte da Verdade para Consultas)
+    // Passamos uma lista maior para permitir consultas de períodos (hoje, semana, mês, etc)
+    const transactionsContext = context?.transactions && context.transactions.length > 0 ? 
+      `LISTA DE TRANSAÇÕES (Últimas ${context.transactions.length}): ${JSON.stringify(context.transactions.map(t => ({ 
+        id: t.id, 
+        desc: t.description, 
+        valor: t.amount, 
+        tipo: t.type, 
+        cat: t.category, 
+        data: t.date,
+        carteira: t.walletName || t.sourceWalletName || t.targetWalletName
+      })))}` :
+      'Sem transações registradas.';
 
-    // Resumo por Categoria (para responder perguntas de quanto gastou)
+    // Resumo por Categoria (Mês Atual) - Mantido para facilitar a vida da IA
     const categorySummary = context?.transactions ? 
       (() => {
         const summary: Record<string, { total: number, count: number }> = {};
         let totalMonth = 0;
-        const currentMonth = new Date().getMonth();
-        const currentYear = new Date().getFullYear();
+        const now = new Date();
+        const currentMonth = now.getMonth();
+        const currentYear = now.getFullYear();
         
         context.transactions.forEach(t => {
           const tDate = new Date(t.date);
@@ -147,7 +169,7 @@ export const parseMessage = async (text: string, userName: string, context?: { u
       'Sem cartões.';
 
     const walletsContext = context?.wallets && context.wallets.length > 0 ?
-      `CARTEIRAS: ${JSON.stringify(context.wallets.map(w => ({ id: w.id, nome: w.name, saldo: w.balance })))}` :
+      `CARTEIRAS (Saldos Atuais): ${JSON.stringify(context.wallets.map(w => ({ id: w.id, nome: w.name, saldo: w.balance })))}` :
       'Sem carteiras.';
 
     const spendingLimitContext = context?.spendingLimit ? 
@@ -195,7 +217,7 @@ export const parseMessage = async (text: string, userName: string, context?: { u
     console.log("[chat] parser start");
     const responsePromise = ai.models.generateContent({
       model: 'gemini-3-flash-preview',
-      contents: `Você é o GB, mentor financeiro premium de ${userName}. Hoje é ${today}.
+      contents: `Você é o GB, mentor financeiro premium de ${userName}. Hoje é ${today} e agora são ${currentTime}.
       
       ${categoriesContext}
       ${goalsContext}
@@ -203,7 +225,7 @@ export const parseMessage = async (text: string, userName: string, context?: { u
       ${limitsContext}
       ${categorySummary}
       ${categoryAverages}
-      ${recentTransactions}
+      ${transactionsContext}
       ${remindersContext}
       ${cardsContext}
       ${walletsContext}
@@ -220,6 +242,17 @@ export const parseMessage = async (text: string, userName: string, context?: { u
       3. Se não houver correspondência clara, use "Outros". NUNCA retorne categoria vazia ou null.
       4. Se o usuário disser "recebi", "ganhei" ou confirmar um recebimento, a categoria deve ser "Recebimento" ou similar (Entrada) e você deve gerar um evento ADD_INCOME.
       
+      MOTOR DE CONSULTAS FINANCEIRAS (OBRIGATÓRIO):
+      Você deve atuar como um motor de busca sobre os dados reais acima.
+      1. GASTOS: Calcule somas de 'valor' onde 'tipo' é 'EXPENSE' para o período solicitado (hoje, ontem, semana, mês, ano).
+      2. ENTRADAS: Calcule somas de 'valor' onde 'tipo' é 'INCOME' para o período solicitado.
+      3. SALDO: O saldo atual é a soma de todos os 'saldo' na lista de CARTEIRAS.
+      4. CATEGORIAS: Identifique em qual categoria o usuário mais gastou somando os valores por 'cat'.
+      5. LIMITES: Compare os gastos reais com os LIMITES DE GASTOS e o TETO GLOBAL.
+      6. LEMBRETES: Verifique os LEMBRETES para saber o que vence hoje ou o que está pendente (pago: false).
+      7. COMPARAÇÃO: Compare somas de períodos (ex: este mês vs mês passado).
+      8. NUNCA INVENTE DADOS. Se não houver dados para o período, diga que não encontrou registros.
+      
       REGRAS DE OURO (FONTE DA VERDADE):
       1. Você deve SEMPRE priorizar os dados acima sobre qualquer conversa anterior.
       2. Se houver uma "DICA DO SISTEMA" acima, use-a como base prioritária para extrair o valor e a intenção, a menos que ela esteja claramente errada.
@@ -229,11 +262,11 @@ export const parseMessage = async (text: string, userName: string, context?: { u
       6. CONFIRMAÇÕES (ONBOARDING): Se o usuário confirmar um recebimento (ex: 'Sim', 'Já recebi', 'Confirmado') e estiver no Passo 3 do Onboarding, você DEVE OBRIGATORIAMENTE gerar o evento ADD_INCOME correspondente. 
          - Use o valor de 'amountExpected' das fontes do PERFIL DE RENDA como 'amount'.
          - Use o 'targetWalletName' das fontes do PERFIL DE RENDA como 'targetWalletName'.
-      7. FEEDBACK: Sua resposta ('reply') deve ser curta, amigável e confirmar o que você entendeu. 
-         - Se você gerou um evento de gasto, diga: "Entendi, quer que eu registre esse gasto de R$ [valor] com [descrição]?"
-         - Se você gerou um evento de entrada, diga: "Legal! Vou registrar essa entrada de R$ [valor] como [descrição]."
-         - Se você gerou um evento de transferência, diga: "Certo, vou transferir R$ [valor] de [origem] para [destino]."
-         - Se faltar informação, diga: "Pode me falar o [campo faltante] desse lançamento?"
+      7. FLUXO DE CONFIRMAÇÃO (OBRIGATÓRIO): 
+         - Para QUALQUER gasto, entrada ou transferência, você DEVE gerar o evento correspondente no JSON.
+         - Sua resposta ('reply') NÃO deve dizer que já registrou. Ela deve ser uma pergunta de confirmação ou um aviso de que os dados estão prontos para conferência.
+         - Exemplo: "Certo! Preparei o registro de R$ [valor] para [descrição]. Pode confirmar os detalhes abaixo? 👇"
+         - NUNCA diga "Registrado!" se você está enviando um evento para confirmação na UI. Diga "Preparei o registro" ou "Confirme os detalhes".
       
       INTELIGÊNCIA FINANCEIRA (UPGRADES):
       1. DETECÇÃO DE GASTOS SUSPEITOS:
@@ -256,7 +289,12 @@ export const parseMessage = async (text: string, userName: string, context?: { u
       - Se o usuário disser "paguei 100 em 12x", o "amount" deve ser 1200 (100 * 12).
       - NUNCA envie o valor da parcela no campo "amount". O sistema faz a divisão automaticamente.
 
-      OBJETIVO: Analisar a mensagem e retornar um JSON com "reply" e opcionalmente uma lista de "events".
+      OBJETIVO: Analisar a mensagem e retornar um JSON com "reply", "intent" e opcionalmente uma lista de "events".
+      
+      IDENTIFICAÇÃO DE INTENT:
+      - Use 'transaction_registration' para quando o usuário quer registrar algo.
+      - Use os intents específicos de consulta (expense_summary, balance_summary, etc) para perguntas.
+      - Use 'other' para conversas gerais.
       
       ESTILO DE RESPOSTA (PREMIUM):
       - Seja extremamente curto, profissional e direto.

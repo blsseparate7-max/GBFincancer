@@ -230,7 +230,7 @@ const ProfileEdit: React.FC<ProfileEditProps> = ({ user, onUpdate, onLogout, set
           <div className="space-y-2">
             <label className="text-[10px] font-black text-[var(--text-muted)] uppercase tracking-widest ml-1">ID da Auditoria</label>
             <input 
-              value={user.userId}
+              value={user.userId || ''}
               disabled
               className="w-full bg-[var(--bg-body)] border border-[var(--border)]/30 rounded-2xl p-4 text-sm font-bold text-[var(--text-muted)] outline-none opacity-60 cursor-not-allowed"
             />
@@ -238,7 +238,7 @@ const ProfileEdit: React.FC<ProfileEditProps> = ({ user, onUpdate, onLogout, set
           <div className="space-y-2">
             <label className="text-[10px] font-black text-[var(--text-muted)] uppercase tracking-widest ml-1">E-mail de Acesso</label>
             <input 
-              value={user.email}
+              value={user.email || ''}
               disabled
               className="w-full bg-[var(--bg-body)] border border-[var(--border)]/30 rounded-2xl p-4 text-sm font-bold text-[var(--text-muted)] outline-none opacity-60 cursor-not-allowed"
             />

@@ -600,8 +600,8 @@ const DebtAssistant: React.FC<DebtAssistantProps> = ({ uid, transactions, wallet
                     type="number" step="0.01"
                     className="w-full bg-[var(--bg-body)] rounded-2xl p-4 text-sm font-bold text-[var(--text-primary)] outline-none border border-transparent focus:border-[var(--green-whatsapp)] transition-all" 
                     placeholder="Ex: 12.5"
-                    value={debtForm.interestRate || ''}
-                    onChange={e => setDebtForm({...debtForm, interestRate: parseFloat(e.target.value)})}
+                    value={debtForm.interestRate ?? ''}
+                    onChange={e => setDebtForm({...debtForm, interestRate: parseFloat(e.target.value) || 0})}
                   />
                 </div>
               </div>

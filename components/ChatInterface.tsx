@@ -480,24 +480,33 @@ const ChatInterface: React.FC<ChatProps> = ({
     if (!uid) return;
 
     // 2. Início
-    console.log("[chat] start");
+    console.log("[chat] handleSend start - text:", text);
+    
+    // Limpar estados de ação pendente ao iniciar nova conversa (a menos que seja uma confirmação)
+    const lowerText = text.toLowerCase();
+    const isConfirmation = lowerText.includes('sim') || lowerText === 's' || lowerText.includes('não') || lowerText === 'n' || lowerText.includes('já') || lowerText.includes('paguei');
+    
+    if (!isConfirmation) {
+      setPendingAction(null);
+      setPendingEvents([]);
+    }
+
     isProcessingRef.current = true;
     setIsLoading(true);
 
-    // 3. Timeout obrigatório (8 segundos)
+    // 3. Timeout obrigatório (10 segundos para dar margem à IA)
     const safetyTimeout = setTimeout(async () => {
       if (isProcessingRef.current) {
-        console.error("[chat] timeout");
+        console.error("[chat] safety timeout triggered");
         setIsLoading(false);
         isProcessingRef.current = false;
         try {
-          await sendMessage("Tive um problema para processar sua solicitação. Tente novamente.", 'ai');
+          await sendMessage("Tive um problema para processar sua solicitação. Tente novamente ou seja mais específico.", 'ai');
         } catch (e) {
           console.error("[chat] erro no fallback de timeout:", e);
         }
-        console.log("[chat] end");
       }
-    }, 8000);
+    }, 10000);
 
     try {
       // 4. TRY
@@ -505,7 +514,6 @@ const ChatInterface: React.FC<ChatProps> = ({
       await sendMessage(text.trim(), 'user');
 
       // Interceptadores de confirmação
-      const lowerText = text.toLowerCase();
       if (pendingSalaryReminder) {
         if (lowerText.includes('sim') || lowerText === 's' || lowerText.includes('claro') || lowerText.includes('já') || lowerText.includes('paguei') || lowerText.includes('recebi')) {
           await handleSalaryConfirm(true);
@@ -529,16 +537,19 @@ const ChatInterface: React.FC<ChatProps> = ({
       }
 
       // Buscar contexto e processar
+      console.log("[chat] fetching context...");
       const freshContext = await fetchChatContext(uid);
       const finalContext = freshContext 
         ? { ...freshContext, userPatterns: categoryPatterns } 
         : { user, reminders, cards, wallets, categories, transactions, goals, limits, debts, userPatterns: categoryPatterns };
 
+      console.log("[chat] calling parseMessage...");
       const result = await parseMessage(text.trim(), user.name || 'Usuário', finalContext);
-      console.log("[chat] processed");
+      console.log("[chat] parseMessage result:", result);
       
       // 1. Processar eventos (se houver) para mostrar confirmação de categoria/carteira
       if (result.events && result.events.length > 0) {
+        console.log("[chat] events found:", result.events.length);
         if (result.events.length === 1) {
           setPendingAction(result.events[0]);
           setPendingEvents([]);
@@ -546,30 +557,30 @@ const ChatInterface: React.FC<ChatProps> = ({
           setPendingEvents(result.events);
           setPendingAction(null);
         }
+      } else {
+        console.log("[chat] no events found in AI response");
       }
 
       // 2. Garantir que a resposta exista (Fallback se vazio)
-      const replyText = result.reply || "Não consegui processar sua solicitação. Tente novamente.";
+      const replyText = result.reply || "Entendi sua mensagem, mas não consegui identificar uma ação financeira. Pode me dar mais detalhes?";
       
       // 3. Salvar resposta do assistant
       await sendMessage(replyText, 'ai');
 
     } catch (e) {
       // 5. CATCH
-      console.error("[chat] error", e);
+      console.error("[chat] critical error in pipeline:", e);
       try {
-        await sendMessage("Tive um problema para processar sua solicitação.", 'ai');
+        await sendMessage("Tive um problema técnico ao processar sua mensagem. Por favor, tente novamente em alguns instantes.", 'ai');
       } catch (sendErr) {
         console.error("[chat] erro ao enviar fallback de erro:", sendErr);
       }
     } finally {
       // 6. FINALLY (OBRIGATÓRIO)
       clearTimeout(safetyTimeout);
-      if (isProcessingRef.current) {
-        setIsLoading(false);
-        isProcessingRef.current = false;
-        console.log("[chat] end");
-      }
+      setIsLoading(false);
+      isProcessingRef.current = false;
+      console.log("[chat] handleSend finished");
     }
   };
 

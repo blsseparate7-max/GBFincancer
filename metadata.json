@@ -2,6 +2,8 @@
   "name": "GBFinancer - AI Finance",
   "description": "Mentor financeiro proativo com IA e interface estilo WhatsApp.",
   "requestFramePermissions": [
-    "microphone"
+    "microphone",
+    "camera",
+    "geolocation"
   ]
 }

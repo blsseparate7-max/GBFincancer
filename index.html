@@ -28,7 +28,8 @@
       
       // Limpeza de cache forçada se houver erro crítico
       window.addEventListener('error', function(e) {
-        if (e.message.indexOf('Loading chunk') > -1 || e.message.indexOf('unexpected token') > -1) {
+        var msg = e.message || '';
+        if (msg.indexOf('Loading chunk') > -1 || msg.indexOf('unexpected token') > -1) {
           console.warn('Erro de carregamento de asset detectado. Limpando cache e recarregando...');
           if (window.caches) {
             caches.keys().then(function(names) {

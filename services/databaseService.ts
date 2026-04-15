@@ -132,7 +132,7 @@ export const fetchChatContext = async (uid: string) => {
       debtsSnap
     ] = await Promise.all([
       getDoc(userRef).then(res => { console.log("[chat] fetch: user ok"); return res; }),
-      getDocs(query(collection(userRef, "transactions"), orderBy("date", "desc"), limit(50))).then(res => { console.log("[chat] fetch: transactions ok"); return res; }),
+      getDocs(query(collection(userRef, "transactions"), orderBy("date", "desc"), limit(300))).then(res => { console.log("[chat] fetch: transactions ok"); return res; }),
       getDocs(collection(userRef, "goals")).then(res => { console.log("[chat] fetch: goals ok"); return res; }),
       getDocs(collection(userRef, "reminders")).then(res => { console.log("[chat] fetch: reminders ok"); return res; }),
       getDocs(collection(userRef, "limits")).then(res => { console.log("[chat] fetch: limits ok"); return res; }),

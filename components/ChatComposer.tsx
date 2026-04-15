@@ -35,83 +35,111 @@ const ChatComposer: React.FC<ChatComposerProps> = ({ onSendText, onSendFile, isL
     }
   }, [text]);
 
-  const startRecording = async () => {
+  const startRecording = () => {
+    if (isRecording || recognitionRef.current) return;
+
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    const isInIframe = window.self !== window.top;
     
     if (!SpeechRecognition) {
       setNotification({ message: "Seu navegador não suporta reconhecimento de voz. Tente usar o Chrome ou Safari.", type: 'error' });
       return;
     }
 
-    try {
-      // Solicita permissão explicitamente para "acordar" o microfone em iframes
-      await navigator.mediaDevices.getUserMedia({ audio: true });
-      
-      const recognition = new SpeechRecognition();
-      recognition.lang = 'pt-BR';
-      recognition.continuous = true;
-      recognition.interimResults = true;
+    console.log("GB: Iniciando processo de gravação...");
 
-      textBeforeRecordingRef.current = text;
-      recognitionRef.current = recognition;
+    // Solicitar permissão explicitamente antes de iniciar o reconhecimento
+    navigator.mediaDevices.getUserMedia({ audio: true })
+      .then((stream) => {
+        console.log("GB: Permissão de microfone concedida.");
+        stream.getTracks().forEach(t => t.stop());
 
-      recognition.onstart = () => {
-        setIsRecording(true);
-        setIsCancelled(false);
-        recordingStartTimeRef.current = Date.now();
-        timerRef.current = setInterval(() => {
-          setRecordingTime(Math.floor((Date.now() - recordingStartTimeRef.current) / 1000));
-        }, 1000);
-      };
+        // Double check if we should still start (user might have released button during getUserMedia)
+        if (recognitionRef.current) return;
 
-      recognition.onresult = (event: any) => {
-        let interimTranscript = '';
-        let finalTranscript = '';
+        const recognition = new SpeechRecognition();
+        recognition.lang = 'pt-BR';
+        recognition.continuous = true;
+        recognition.interimResults = true;
 
-        for (let i = event.resultIndex; i < event.results.length; ++i) {
-          if (event.results[i].isFinal) {
-            finalTranscript += event.results[i][0].transcript;
-          } else {
-            interimTranscript += event.results[i][0].transcript;
+        textBeforeRecordingRef.current = text;
+        recognitionRef.current = recognition;
+
+        recognition.onstart = () => {
+          setIsRecording(true);
+          setIsCancelled(false);
+          recordingStartTimeRef.current = Date.now();
+          timerRef.current = setInterval(() => {
+            setRecordingTime(Math.floor((Date.now() - recordingStartTimeRef.current) / 1000));
+          }, 1000);
+        };
+
+        recognition.onresult = (event: any) => {
+          let interimTranscript = '';
+          let finalTranscript = '';
+
+          for (let i = event.resultIndex; i < event.results.length; ++i) {
+            if (event.results[i].isFinal) {
+              finalTranscript += event.results[i][0].transcript;
+            } else {
+              interimTranscript += event.results[i][0].transcript;
+            }
           }
-        }
-        
-        const base = textBeforeRecordingRef.current;
-        const newText = base + (base && !base.endsWith(' ') ? ' ' : '') + finalTranscript;
-        
-        if (finalTranscript) {
-          textBeforeRecordingRef.current = newText;
-        }
-        
-        setText(newText + interimTranscript);
-      };
+          
+          const base = textBeforeRecordingRef.current;
+          const newText = base + (base && !base.endsWith(' ') ? ' ' : '') + finalTranscript;
+          
+          if (finalTranscript) {
+            textBeforeRecordingRef.current = newText;
+          }
+          
+          setText(newText + interimTranscript);
+        };
 
-      recognition.onerror = (event: any) => {
-        console.error("Erro no reconhecimento de voz:", event.error);
-        if (event.error === 'not-allowed') {
-          setNotification({ message: "Permissão de microfone negada.", type: 'error' });
+        recognition.onerror = (event: any) => {
+          if (event.error === 'aborted') return;
+          
+          console.error("GB: Erro no reconhecimento de voz:", event.error);
+          let errorMsg = "Erro no microfone.";
+          
+          if (event.error === 'not-allowed') {
+            errorMsg = isInIframe
+              ? "Permissão negada. Tente abrir o app em uma NOVA ABA (ícone no topo direito) para usar o microfone."
+              : "Permissão negada. Verifique se o microfone está bloqueado nas configurações do seu navegador (ícone de cadeado).";
+          } else if (event.error === 'no-speech') {
+            errorMsg = "Nenhuma voz detectada.";
+          } else if (event.error === 'network') {
+            errorMsg = "Erro de rede no reconhecimento de voz.";
+          }
+          
+          setNotification({ message: errorMsg, type: 'error' });
+          stopRecording(true);
+        };
+
+        recognition.onend = () => {
+          if (isRecording) {
+            stopRecording();
+          }
+        };
+
+        recognition.start();
+      })
+      .catch((micErr: any) => {
+        console.error("GB: Erro ao solicitar permissão de microfone:", micErr);
+        if (micErr.name === 'NotAllowedError' || micErr.name === 'PermissionDeniedError') {
+          const msg = isInIframe 
+            ? "Acesso negado. Tente abrir o app em uma NOVA ABA (ícone no topo direito) para permitir o microfone."
+            : "Acesso ao microfone negado. Clique no ícone de cadeado na barra de endereços e permita o microfone.";
+          
+          setNotification({ message: msg, type: 'error' });
+        } else {
+          setNotification({ 
+            message: "Não foi possível iniciar o microfone. Verifique as permissões do navegador.", 
+            type: 'error' 
+          });
         }
         stopRecording(true);
-      };
-
-      recognition.onerror = (event: any) => {
-        console.error('Speech recognition error', event.error);
-        setNotification({ message: `Erro no microfone: ${event.error}`, type: 'error' });
-        setIsRecording(false);
-        clearInterval(timerRef.current);
-      };
-
-      recognition.onend = () => {
-        if (isRecording) {
-          stopRecording();
-        }
-      };
-
-      recognition.start();
-    } catch (err) {
-      console.error("Erro ao iniciar reconhecimento:", err);
-      stopRecording(true);
-    }
+      });
   };
 
   const stopRecording = (cancel = false) => {

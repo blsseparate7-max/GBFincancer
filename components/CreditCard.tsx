@@ -501,7 +501,7 @@ const CreditCard: React.FC<CreditCardProps> = ({ transactions, uid, cards, walle
                       <label className="text-[9px] font-black text-[var(--text-muted)] uppercase ml-1">Nome do Cartão</label>
                       <input 
                         className="bg-[var(--bg-body)] border border-[var(--border)] rounded-2xl p-4 w-full text-sm font-bold outline-none focus:border-[var(--green-whatsapp)] text-[var(--text-primary)] transition-all"
-                        value={editingData?.name ?? card.name}
+                        value={editingData?.name ?? card.name ?? ''}
                         onChange={(e) => setEditingData(prev => ({ ...(prev || { name: card.name, limit: card.limit, dueDay: card.dueDay, closingDay: card.closingDay || 5 }), name: e.target.value }))}
                       />
                     </div>
@@ -509,7 +509,7 @@ const CreditCard: React.FC<CreditCardProps> = ({ transactions, uid, cards, walle
                       <label className="text-[9px] font-black text-[var(--text-muted)] uppercase ml-1">Novo Limite Total</label>
                       <MoneyInput 
                         className="bg-[var(--bg-body)] border border-[var(--border)] rounded-2xl p-4 w-full text-center text-xl font-black outline-none focus:border-[var(--green-whatsapp)] text-[var(--text-primary)] transition-all"
-                        value={editingData?.limit ?? card.limit}
+                        value={editingData?.limit ?? card.limit ?? 0}
                         onChange={(val) => setEditingData(prev => ({ ...(prev || { name: card.name, limit: card.limit, dueDay: card.dueDay, closingDay: card.closingDay || 5 }), limit: val }))}
                       />
                     </div>
@@ -530,7 +530,7 @@ const CreditCard: React.FC<CreditCardProps> = ({ transactions, uid, cards, walle
                         <label className="text-[9px] font-black text-[var(--text-muted)] uppercase ml-1">Dia de Vencimento</label>
                         <select 
                           className="bg-[var(--bg-body)] border border-[var(--border)] rounded-2xl p-4 w-full text-center text-sm font-black outline-none appearance-none text-[var(--text-primary)] focus:border-[var(--green-whatsapp)] transition-all"
-                          value={editingData?.dueDay ?? card.dueDay}
+                          value={editingData?.dueDay ?? card.dueDay ?? 10}
                           onChange={(e) => setEditingData(prev => ({ ...(prev || { name: card.name, limit: card.limit, dueDay: card.dueDay, closingDay: card.closingDay || 5 }), dueDay: parseInt(e.target.value) }))}
                         >
                           {Array.from({length: 31}, (_, i) => i + 1).map(d => (
