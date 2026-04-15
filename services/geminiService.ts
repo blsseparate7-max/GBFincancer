@@ -1,5 +1,5 @@
 
-import { GoogleGenAI, Type, ThinkingLevel } from "@google/genai";
+import { GoogleGenAI, Type } from "@google/genai";
 import { getCategoryMappingPrompt, suggestCategory } from "./categoryService";
 import { parseFinancialMessage } from "./financialMessageParser";
 
@@ -216,7 +216,7 @@ export const parseMessage = async (text: string, userName: string, context?: { u
 
     console.log("[chat] parser start");
     const responsePromise = ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
+      model: 'gemini-2.0-flash',
       contents: `Você é o GB, mentor financeiro premium de ${userName}. Hoje é ${today} e agora são ${currentTime}.
       
       ${categoriesContext}
@@ -312,8 +312,7 @@ export const parseMessage = async (text: string, userName: string, context?: { u
       MENSAGEM DO USUÁRIO: "${text}"`,
       config: {
         responseMimeType: "application/json",
-        responseSchema: FINANCE_PARSER_SCHEMA,
-        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW }
+        responseSchema: FINANCE_PARSER_SCHEMA
       }
     });
 
