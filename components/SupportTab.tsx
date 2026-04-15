@@ -22,6 +22,12 @@ import { GoogleGenAI, Type, FunctionDeclaration } from "@google/genai";
 interface SupportTabProps {
   user: UserSession | null;
   onBackToAuth?: () => void;
+  initialContext?: {
+    message: string;
+    module: string;
+    type: string;
+    reason: string;
+  } | null;
 }
 
 interface LocalMessage {
@@ -31,7 +37,7 @@ interface LocalMessage {
   createdAt: Date;
 }
 
-const SupportTab: React.FC<SupportTabProps> = ({ user, onBackToAuth }) => {
+const SupportTab: React.FC<SupportTabProps> = ({ user, onBackToAuth, initialContext }) => {
   const [visitorId, setVisitorId] = useState<string>('');
   const [threads, setThreads] = useState<SupportThread[]>([]);
   const [activeThread, setActiveThread] = useState<SupportThread | null>(null);
@@ -40,6 +46,53 @@ const SupportTab: React.FC<SupportTabProps> = ({ user, onBackToAuth }) => {
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const initialContextProcessed = useRef(false);
+
+  // Handle Initial Context from Chat
+  useEffect(() => {
+    if (initialContext && !loading && visitorId && !initialContextProcessed.current) {
+      initialContextProcessed.current = true;
+      const startThreadWithContext = async () => {
+        setSending(true);
+        try {
+          const text = `[ORIGEM: CHAT]\nProblema: ${initialContext.message}\nMódulo: ${initialContext.module}\nTipo: ${initialContext.type}\nDiagnóstico: ${initialContext.reason}`;
+          
+          const newThread = {
+            userId: user?.uid || null,
+            visitorId: user ? null : visitorId,
+            userName: user?.name || 'Visitante',
+            userEmail: user?.email || 'visitante@anonimo.com',
+            status: 'waiting_admin', // Escala direto para humano se veio do chat como erro
+            lastMessage: text,
+            lastSender: 'user',
+            unreadByAdmin: true,
+            unreadByUser: false,
+            source: 'ai-escalation',
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp()
+          };
+          
+          const docRef = await addDoc(collection(db, 'supportThreads'), newThread);
+          const threadId = docRef.id;
+          
+          await addDoc(collection(db, `supportThreads/${threadId}/messages`), {
+            senderId: user?.uid || visitorId,
+            senderRole: 'user',
+            text,
+            createdAt: serverTimestamp()
+          });
+
+          setActiveThread({ id: threadId, ...newThread } as SupportThread);
+        } catch (error) {
+          console.error("Error starting thread from context:", error);
+        } finally {
+          setSending(false);
+        }
+      };
+
+      startThreadWithContext();
+    }
+  }, [initialContext, loading, visitorId]);
 
   // Initialize Visitor ID
   useEffect(() => {

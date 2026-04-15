@@ -278,6 +278,12 @@ const App: React.FC = () => {
     };
   }, [session?.uid]);
 
+  useEffect(() => {
+    if (activeTab !== 'support') {
+      setSupportContext(null);
+    }
+  }, [activeTab]);
+
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loadingTransactions, setLoadingTransactions] = useState(true);
   const [goals, setGoals] = useState<SavingGoal[]>([]);
@@ -292,6 +298,7 @@ const App: React.FC = () => {
   const [categoryPatterns, setCategoryPatterns] = useState<CategoryPattern[]>([]);
   const [extratoFilters, setExtratoFilters] = useState<any>(null);
   const [onboarding, setOnboarding] = useState<UserOnboarding>({});
+  const [supportContext, setSupportContext] = useState<any>(null);
 
   const [loadingCards, setLoadingCards] = useState(true);
   const [loadingGoals, setLoadingGoals] = useState(true);
@@ -447,6 +454,10 @@ const App: React.FC = () => {
             setExtratoFilters(filters);
             setActiveTab('extrato');
           }}
+          onNavigateToSupport={(context) => {
+            setSupportContext(context);
+            setActiveTab('support');
+          }}
           isExpired={!hasAccess()}
         />
       ) : <LandingPage onLogin={(s) => setSession(s)} onOpenSupport={() => setActiveTab('support')} />;
@@ -493,7 +504,7 @@ const App: React.FC = () => {
       case 'stress': return session ? <ImpactSimulator transactions={transactions} /> : null;
       case 'debts': return session ? <DebtAssistant uid={session.uid} transactions={transactions} wallets={wallets} user={session} goals={goals} cards={cards} debts={debts} isExpired={!hasAccess()} /> : null;
       case 'profile': return session ? <ProfileEdit user={session} onUpdate={(d) => setSession(p => p ? {...p, ...d} : null)} onLogout={() => signOut(auth)} setActiveTab={setActiveTab} /> : null;
-      case 'support': return <SupportTab user={session} onBackToAuth={() => setActiveTab('chat')} />;
+      case 'support': return <SupportTab user={session} onBackToAuth={() => setActiveTab('chat')} initialContext={supportContext} />;
       case 'admin_support': return session?.role === 'admin' ? <AdminSupport admin={session} /> : null;
       case 'config': return session ? <Settings user={session} onLogout={() => signOut(auth)} /> : null;
       case 'qa':
@@ -548,6 +559,10 @@ const App: React.FC = () => {
           onNavigateToExtrato={(filters) => {
             setExtratoFilters(filters);
             setActiveTab('extrato');
+          }}
+          onNavigateToSupport={(context) => {
+            setSupportContext(context);
+            setActiveTab('support');
           }}
           highlightInput={onboardingStep === 'guided' && session.onboardingStatus?.step === 3}
         />

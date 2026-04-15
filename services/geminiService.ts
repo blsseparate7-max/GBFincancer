@@ -37,7 +37,8 @@ const FINANCE_PARSER_SCHEMA = {
               'UPDATE_LIMIT', 'CREATE_REMINDER', 'ADD_CARD_CHARGE', 
               'PAY_CARD', 'TRANSFER_WALLET', 'CREATE_CATEGORY', 
               'UPDATE_CATEGORY', 'DELETE_CATEGORY', 'MOVE_TRANSACTION_CATEGORY',
-              'CREATE_DEBT', 'UPDATE_DEBT', 'DELETE_DEBT', 'REGISTER_DEBT_PAYMENT'
+              'CREATE_DEBT', 'UPDATE_DEBT', 'DELETE_DEBT', 'REGISTER_DEBT_PAYMENT',
+              'ESCALATE_SUPPORT'
             ] 
           },
           payload: { 
@@ -70,7 +71,10 @@ const FINANCE_PARSER_SCHEMA = {
               oldName: { type: Type.STRING },
               transactionId: { type: Type.STRING },
               newCategory: { type: Type.STRING },
-              installments: { type: Type.NUMBER, description: "Número de parcelas (ex: 12). Se for compra parcelada, este campo é OBRIGATÓRIO." }
+              installments: { type: Type.NUMBER, description: "Número de parcelas (ex: 12). Se for compra parcelada, este campo é OBRIGATÓRIO." },
+              reason: { type: Type.STRING, description: "Motivo do escalonamento para suporte" },
+              module: { type: Type.STRING, enum: ['chat', 'extrato', 'dashboard', 'categorias', 'carteiras', 'outros'], description: "Módulo onde o problema ocorreu" },
+              issueType: { type: Type.STRING, enum: ['bug', 'duvida', 'erro', 'sugestao'], description: "Tipo do problema relatado" }
             }
           }
         },
@@ -85,7 +89,7 @@ const FINANCE_PARSER_SCHEMA = {
         'category_summary', 'wallet_summary', 'statement_query', 
         'ranking_query', 'limit_query', 'reminder_query', 
         'comparison_query', 'insight_query', 'goal_query', 
-        'credit_card_query', 'transaction_registration', 'other'
+        'credit_card_query', 'transaction_registration', 'support_escalation', 'other'
       ] 
     }
   },
@@ -267,6 +271,14 @@ export const parseMessage = async (text: string, userName: string, context?: { u
          - Sua resposta ('reply') NÃO deve dizer que já registrou. Ela deve ser uma pergunta de confirmação ou um aviso de que os dados estão prontos para conferência.
          - Exemplo: "Certo! Preparei o registro de R$ [valor] para [descrição]. Pode confirmar os detalhes abaixo? 👇"
          - NUNCA diga "Registrado!" se você está enviando um evento para confirmação na UI. Diga "Preparei o registro" ou "Confirme os detalhes".
+      8. SUPORTE E ESCALONAMENTO (OBRIGATÓRIO):
+         - Você é a primeira camada de suporte. Se o usuário tiver dúvidas sobre como usar o app, responda e oriente.
+         - Se o usuário relatar um BUG, ERRO técnico, ou se você não conseguir resolver o problema após 1 tentativa, você DEVE gerar o evento ESCALATE_SUPPORT.
+         - No payload de ESCALATE_SUPPORT, inclua:
+           - 'reason': Breve descrição do problema.
+           - 'module': O módulo afetado (chat, extrato, dashboard, etc).
+           - 'issueType': bug, duvida, erro ou sugestao.
+         - Sua resposta ('reply') deve ser: "Esse caso precisa de ajuda humana. Clique abaixo para abrir o suporte."
       
       INTELIGÊNCIA FINANCEIRA (UPGRADES):
       1. DETECÇÃO DE GASTOS SUSPEITOS:

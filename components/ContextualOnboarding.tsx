@@ -72,12 +72,21 @@ const ONBOARDING_CONTENT: Record<string, { title: string; description: string }>
 };
 
 const ContextualOnboarding: React.FC<ContextualOnboardingProps> = ({ uid, activeTab, onboarding, setOnboarding }) => {
+  const [isVisible, setIsVisible] = React.useState(true);
   const content = ONBOARDING_CONTENT[activeTab];
   const hasSeen = onboarding[activeTab];
 
-  if (!content || hasSeen) return null;
+  // Check session storage to prevent "looping" in the same session
+  const sessionKey = `gb_onboarding_${activeTab}_${uid}`;
+  const hasSeenInSession = React.useMemo(() => {
+    return sessionStorage.getItem(sessionKey) === 'true';
+  }, [sessionKey]);
+
+  if (!content || hasSeen || hasSeenInSession || !isVisible) return null;
 
   const handleDismiss = async () => {
+    setIsVisible(false);
+    sessionStorage.setItem(sessionKey, 'true');
     try {
       const onboardingRef = doc(db, "users", uid, "onboarding", "flags");
       await setDoc(onboardingRef, { [activeTab]: true }, { merge: true });

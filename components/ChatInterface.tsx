@@ -9,7 +9,7 @@ import { sendMessageToFirestore } from '../services/chatService';
 import { fetchChatContext } from '../services/databaseService';
 import { formatCurrency, calculateMonthlySummary } from '../services/summaryService';
 import ChatComposer from './ChatComposer';
-import { X, Check, Trash2, CreditCard, Tag, Plus } from 'lucide-react';
+import { X, Check, Trash2, CreditCard, Tag, Plus, ArrowRight, AlertCircle } from 'lucide-react';
 
 import { db, auth } from '../services/firebaseConfig';
 import { collection, addDoc, serverTimestamp, query, where, getDocs, limit, doc, updateDoc, getDoc } from 'firebase/firestore';
@@ -30,13 +30,14 @@ interface ChatProps {
   onOpenProfile: () => void;
   setMessages?: (msgs: Message[]) => void;
   onNavigateToExtrato?: (filters: any) => void;
+  onNavigateToSupport?: (context: any) => void;
   highlightInput?: boolean;
   isExpired?: boolean;
 }
 
 const ChatInterface: React.FC<ChatProps> = ({ 
   user, messages, transactions, limits, reminders, 
-  cards, wallets, categories, goals, debts, categoryPatterns, onToggleSidebar, onOpenProfile, setMessages, onNavigateToExtrato, highlightInput,
+  cards, wallets, categories, goals, debts, categoryPatterns, onToggleSidebar, onOpenProfile, setMessages, onNavigateToExtrato, onNavigateToSupport, highlightInput,
   isExpired = false
 }) => {
   const [isLoading, setIsLoading] = useState(false);
@@ -47,6 +48,7 @@ const ChatInterface: React.FC<ChatProps> = ({
   const [salaryCheckDone, setSalaryCheckDone] = useState(false);
   const [pendingSalaryReminder, setPendingSalaryReminder] = useState<Bill | null>(null);
   const [pendingBillReminder, setPendingBillReminder] = useState<Bill | null>(null);
+  const [supportEscalation, setSupportEscalation] = useState<any>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const isProcessingRef = useRef(false);
   const summarySentRef = useRef(false);
@@ -550,12 +552,26 @@ const ChatInterface: React.FC<ChatProps> = ({
       // 1. Processar eventos (se houver) para mostrar confirmação de categoria/carteira
       if (result.events && result.events.length > 0) {
         console.log("[chat] events found:", result.events.length);
-        if (result.events.length === 1) {
+        
+        // Detectar escalonamento de suporte
+        const escalationEvent = result.events.find((e: any) => e.type === 'ESCALATE_SUPPORT');
+        if (escalationEvent) {
+          setSupportEscalation({
+            ...escalationEvent.payload,
+            message: text.trim()
+          });
+        }
+
+        if (result.events.length === 1 && !escalationEvent) {
           setPendingAction(result.events[0]);
           setPendingEvents([]);
-        } else {
-          setPendingEvents(result.events);
-          setPendingAction(null);
+        } else if (result.events.length > 1) {
+          // Se houver múltiplos eventos, filtramos o de suporte se houver outros
+          const otherEvents = result.events.filter((e: any) => e.type !== 'ESCALATE_SUPPORT');
+          if (otherEvents.length > 0) {
+            setPendingEvents(otherEvents);
+            setPendingAction(null);
+          }
         }
       } else {
         console.log("[chat] no events found in AI response");
@@ -1370,6 +1386,39 @@ const ChatInterface: React.FC<ChatProps> = ({
                   )}
                 </button>
               </div>
+            </div>
+          </div>
+        )}
+
+        {supportEscalation && (
+          <div className="flex flex-col items-start gap-2 animate-fade-in-up w-full">
+            <div className="bg-[var(--surface)] border border-[var(--border)] rounded-[2rem] p-6 shadow-xl w-full max-w-[90%] mx-auto">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-10 h-10 rounded-full bg-amber-500/10 text-amber-500 flex items-center justify-center">
+                  <AlertCircle size={20} />
+                </div>
+                <div>
+                  <h4 className="text-xs font-black uppercase tracking-tight text-[var(--text-primary)]">Suporte Especializado</h4>
+                  <p className="text-[10px] text-[var(--text-muted)] font-bold">Escalonamento para atendimento humano</p>
+                </div>
+              </div>
+              
+              <p className="text-xs text-[var(--text-primary)] mb-6 leading-relaxed">
+                Esse caso precisa de ajuda humana. Clique abaixo para abrir o suporte e resolveremos isso para você agora mesmo.
+              </p>
+              
+              <button 
+                onClick={() => {
+                  if (onNavigateToSupport) {
+                    onNavigateToSupport(supportEscalation);
+                    setSupportEscalation(null);
+                  }
+                }}
+                className="w-full bg-amber-500 text-white py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest shadow-lg shadow-amber-500/20 active:scale-95 transition-all flex items-center justify-center gap-2"
+              >
+                <span>Ir para o suporte</span>
+                <ArrowRight size={14} />
+              </button>
             </div>
           </div>
         )}
