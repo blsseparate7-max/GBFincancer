@@ -402,11 +402,17 @@ const ChatInterface: React.FC<ChatProps> = ({
          await syncUserData(user.uid, { 
            onboardingStatus: { 
              ...user.onboardingStatus, 
+             step: 4, // Avança para o Passo 4 (Wizard de Metas)
              chatContextResponded: true,
              salaryConfirmed: confirmed,
              onboardingIncomeProcessed: confirmed
            } as any 
          });
+         
+         // Pequeno delay para a mensagem de feedback aparecer antes de trocar a aba ou abrir o wizard
+         setTimeout(async () => {
+           await sendMessage("Perfeito! Vamos continuar sua configuração. Clique no botão abaixo para definir suas metas.", 'ai');
+         }, 1500);
       }
       
       setPendingSalaryReminder(null);
@@ -499,7 +505,9 @@ const ChatInterface: React.FC<ChatProps> = ({
       lowerText.includes('claro') || lowerText.includes('ainda não') ||
       (lowerText.includes('já') && !hasNumbers) || 
       (lowerText.includes('paguei') && !hasNumbers) ||
-      (lowerText.includes('recebi') && !hasNumbers)
+      (lowerText.includes('recebi') && !hasNumbers) ||
+      (lowerText.includes('to sabendo') && !hasNumbers) ||
+      (lowerText.includes('caiu') && !hasNumbers)
     );
     
     // Se não for uma confirmação clara de algo pendente, limpamos as ações anteriores para não confundir

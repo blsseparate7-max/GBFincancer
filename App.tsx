@@ -19,6 +19,7 @@ import SetupWizard from './components/SetupWizard';
 import GuidedOnboarding from './components/GuidedOnboarding';
 import WelcomeOnboarding from './components/WelcomeOnboarding';
 import LGPDOnboarding from './components/LGPDOnboarding';
+import { saveWizardPhase1, finalizeOnboarding } from './services/onboardingService';
 import ImpactSimulator from './components/ImpactSimulator';
 import YearlySummary from './components/YearlySummary';
 import Settings from './components/Settings';
@@ -324,64 +325,42 @@ const App: React.FC = () => {
     setOnboardingStep('guided');
   };
 
+  // Monitor de Re-abertura do Wizard (Passo 4 do Onboarding)
+  useEffect(() => {
+    if (session?.onboardingStatus?.step === 4 && !session.onboardingStatus.completed && onboardingStep === 'none') {
+      const timer = setTimeout(() => {
+        setOnboardingStep('setup');
+      }, 5000); // Dá 5 segundos pro usuário ler o feedback no chat antes de abrir o wizard
+      return () => clearTimeout(timer);
+    }
+  }, [session?.onboardingStatus?.step, onboardingStep]);
+
   const handleSetupComplete = async (data: { 
     incomeProfile?: any; 
     bills?: any[]; 
     goals?: any[]; 
     spendingLimit?: number;
     onboardingSeen?: boolean;
-  }) => {
-    if (!session?.uid) return;
+  }, phase: number) => {
+    if (!session?.uid || !session.onboardingStatus) return;
     
-    const { dispatchEvent } = await import('./services/eventDispatcher');
-    const { syncUserData } = await import('./services/databaseService');
-
-    let defaultWalletId = null;
-
-    // 1. Criar Carteiras e Lembretes para Fontes de Renda (Apenas se não for onboarding, pois o onboarding já cria nos passos)
-    if (data.incomeProfile?.sources && !data.onboardingSeen) {
-      // ... existing logic for creating wallets if needed ...
-      // Mas os lembretes já foram criados nos passos do GuidedOnboarding
-    }
-
-    // 2. Salvar Perfil de Renda, Carteira Padrão e Marcar Onboarding como visto
-    await syncUserData(session.uid, { 
-      incomeProfile: data.incomeProfile,
-      spendingLimit: data.spendingLimit,
-      onboardingSeen: true 
-    });
-
-    // 3. Salvar Contas Fixas (Apenas se não for onboarding)
-    if (data.bills && data.bills.length > 0 && !data.onboardingSeen) {
-       // ...
-    }
-
-    // 4. Salvar Metas Sugeridas
-    if (data.goals && data.goals.length > 0) {
-      await syncUserData(session.uid, { 
-        suggestedGoals: data.goals 
+    if (phase === 1) {
+      // Phase 1: Income + Bills
+      const newStatus = await saveWizardPhase1(session.uid, { 
+        incomeProfile: data.incomeProfile!, 
+        bills: data.bills || [] 
       });
+      
+      setSession(prev => prev ? { ...prev, onboardingStatus: newStatus, incomeProfile: data.incomeProfile } : null);
+      setOnboardingStep('none'); 
+      setActiveTab('chat');
+    } else {
+      // Phase 2: Goals + Finalize
+      const finalStatus = await finalizeOnboarding(session.uid, { goals: data.goals || [] }, session.onboardingStatus);
+      
+      setSession(prev => prev ? { ...prev, onboardingStatus: finalStatus, onboardingSeen: true } : null);
+      setOnboardingStep('none');
     }
-    
-    // 5. Mensagem de Boas-vindas (Surgical Fix)
-    const { sendMessageToFirestore } = await import('./services/chatService');
-    await sendMessageToFirestore(
-      session.uid, 
-      "Bem-vindo ao GBFinancer! Agora vamos cuidar do seu dinheiro com inteligência. 🚀", 
-      'ai', 
-      `welcome-${session.uid}`
-    );
-    
-    setSession(prev => {
-      if (!prev) return null;
-      return { 
-        ...prev, 
-        onboardingSeen: true, 
-        incomeProfile: data.incomeProfile || prev.incomeProfile, 
-        suggestedGoals: data.goals || prev.suggestedGoals 
-      };
-    });
-    setOnboardingStep('none');
   };
 
   const hasAccess = () => {
@@ -427,7 +406,18 @@ const App: React.FC = () => {
       return <LGPDOnboarding onAccept={handleLGPDAccept} />;
     }
     if (onboardingStep === 'setup' && session) {
-      return <SetupWizard user={session} onComplete={handleSetupComplete} />;
+      const step = session.onboardingStatus?.step || 1;
+      // Se estiver no passo 3 (Chat), não mostramos o SetupWizard aqui,
+      // ele reaparecerá no passo 4.
+      if (step === 3) return null; 
+
+      return (
+        <SetupWizard 
+          user={session} 
+          initialStep={step >= 4 ? 4 : 1}
+          onComplete={handleSetupComplete} 
+        />
+      );
     }
 
     // O Paywall agora é um overlay, então renderizamos o conteúdo normalmente

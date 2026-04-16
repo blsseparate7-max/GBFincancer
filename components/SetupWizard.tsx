@@ -29,14 +29,15 @@ import { Notification } from './UI';
 
 interface SetupWizardProps {
   user: UserSession;
-  onComplete: (data: { incomeProfile: IncomeProfile; bills: any[]; goals: any[] }) => void;
+  onComplete: (data: { incomeProfile: IncomeProfile; bills: any[]; goals: any[] }, phase: number) => void;
+  initialStep?: number;
 }
 
-const SetupWizard: React.FC<SetupWizardProps> = ({ user, onComplete }) => {
-  const [step, setStep] = useState(0);
-  const [occupation, setOccupation] = useState<OccupationType | null>(null);
-  const [sources, setSources] = useState<IncomeSource[]>([]);
-  const [bills, setBills] = useState<any[]>([]);
+const SetupWizard: React.FC<SetupWizardProps> = ({ user, onComplete, initialStep = 1 }) => {
+  const [step, setStep] = useState(initialStep);
+  const [occupation, setOccupation] = useState<OccupationType | null>(user.incomeProfile?.occupationType || null);
+  const [sources, setSources] = useState<IncomeSource[]>(user.incomeProfile?.sources || []);
+  const [bills, setBills] = useState<any[]>([]); // Contas geralmente não salvamos na raiz, mas em subcoleções.
   const [goals, setGoals] = useState<any[]>([]);
   const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 
@@ -132,8 +133,23 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ user, onComplete }) => {
   };
 
   const finish = () => {
-    const generatedGoals = [];
-    if (carValue) {
+    if (step <= 3) {
+      // Phase 1 Complete (Income + Bills)
+      const incomeProfile: IncomeProfile = {
+        occupationType: occupation || 'OTHER',
+        sources,
+        totalExpectedMonthly: sources.reduce((acc, s) => acc + (s.amountExpected || 0), 0)
+      };
+      
+      onComplete({
+        incomeProfile,
+        bills,
+        goals: []
+      }, 1);
+    } else {
+      // Phase 2 Complete (Goals + Finish)
+      const generatedGoals = [];
+      if (carValue) {
       generatedGoals.push({
         name: hasCar ? 'Manutenção Carro/Moto' : 'Comprar Carro/Moto',
         targetAmount: parseFloat(carValue) * 0.30,
@@ -177,17 +193,18 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ user, onComplete }) => {
       });
     }
 
-    const incomeProfile: IncomeProfile = {
-      occupationType: occupation || 'OTHER',
-      sources,
-      totalExpectedMonthly: sources.reduce((acc, s) => acc + (s.amountExpected || 0), 0)
-    };
+      const incomeProfile: IncomeProfile = {
+        occupationType: occupation || 'OTHER',
+        sources,
+        totalExpectedMonthly: sources.reduce((acc, s) => acc + (s.amountExpected || 0), 0) || (user.incomeProfile?.totalExpectedMonthly || 0)
+      };
 
-    onComplete({
-      incomeProfile,
-      bills,
-      goals: generatedGoals
-    });
+      onComplete({
+        incomeProfile,
+        bills,
+        goals: generatedGoals
+      }, 2);
+    }
   };
 
   const renderStep = () => {
@@ -473,10 +490,10 @@ const SetupWizard: React.FC<SetupWizardProps> = ({ user, onComplete }) => {
             </div>
 
             <button 
-              onClick={() => setStep(4)}
+              onClick={() => finish()}
               className="w-full bg-[#00A884] text-white font-black py-5 rounded-2xl shadow-xl active:scale-95 transition-all uppercase tracking-widest text-xs flex items-center justify-center gap-3"
             >
-              Próximo: Metas <ArrowRight size={18} />
+              Próximo: Etapa no Chat <ArrowRight size={18} />
             </button>
           </div>
         );
