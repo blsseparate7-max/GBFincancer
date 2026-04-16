@@ -397,14 +397,14 @@ const ChatInterface: React.FC<ChatProps> = ({
         }
       }
       
-      // Update onboarding status if this was the onboarding step
-      if (user.onboardingStatus?.step === 3 && !confirmed) {
+      if (user.onboardingStatus?.step === 3) {
          const { syncUserData } = await import('../services/databaseService');
          await syncUserData(user.uid, { 
            onboardingStatus: { 
              ...user.onboardingStatus, 
              chatContextResponded: true,
-             salaryConfirmed: false
+             salaryConfirmed: confirmed,
+             onboardingIncomeProcessed: confirmed
            } as any 
          });
       }
