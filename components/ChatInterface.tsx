@@ -484,11 +484,26 @@ const ChatInterface: React.FC<ChatProps> = ({
     // 2. Início
     console.log("[chat] handleSend start - text:", text);
     
-    // Limpar estados de ação pendente ao iniciar nova conversa (a menos que seja uma confirmação)
-    const lowerText = text.toLowerCase();
-    const isConfirmation = lowerText.includes('sim') || lowerText === 's' || lowerText.includes('não') || lowerText === 'n' || lowerText.includes('já') || lowerText.includes('paguei');
+    // Normalização básica
+    const trimmedText = text.trim();
+    const lowerText = trimmedText.toLowerCase();
+
+    // 2.5 Camada de Inteligência Determinística (Parser Rápido)
+    const hasNumbers = /\d/.test(trimmedText);
+
+    // Refinamento do Interceptador de confirmação:
+    // Só é confirmação se for SIM/NÃO puro ou curto, E NÃO tiver cara de comando financeiro (números)
+    const isPureConfirmation = (
+      lowerText.includes('sim') || lowerText === 's' || 
+      lowerText.includes('não') || lowerText === 'n' || 
+      lowerText.includes('claro') || lowerText.includes('ainda não') ||
+      (lowerText.includes('já') && !hasNumbers) || 
+      (lowerText.includes('paguei') && !hasNumbers) ||
+      (lowerText.includes('recebi') && !hasNumbers)
+    );
     
-    if (!isConfirmation) {
+    // Se não for uma confirmação clara de algo pendente, limpamos as ações anteriores para não confundir
+    if (!isPureConfirmation) {
       setPendingAction(null);
       setPendingEvents([]);
     }
@@ -513,61 +528,103 @@ const ChatInterface: React.FC<ChatProps> = ({
     try {
       // 4. TRY
       // Salvar mensagem do usuário
-      await sendMessage(text.trim(), 'user');
+      await sendMessage(trimmedText, 'user');
 
-      // Interceptadores de confirmação
-      if (pendingSalaryReminder) {
-        if (lowerText.includes('sim') || lowerText === 's' || lowerText.includes('claro') || lowerText.includes('já') || lowerText.includes('paguei') || lowerText.includes('recebi')) {
-          await handleSalaryConfirm(true);
-          return;
-        }
-        if (lowerText.includes('não') || lowerText === 'n' || lowerText.includes('ainda não')) {
-          await handleSalaryConfirm(false);
-          return;
-        }
-      }
+      // 4.1 Parser Local Determinístico (Fast Path / Fallback)
+      // Tenta entender comandos financeiros simples antes da IA para garantir robustez absoluta
+      const localResult = parseFinancialMessage(trimmedText);
+      console.log("[chat] local parser result:", localResult);
 
-      if (pendingBillReminder) {
-        if (lowerText.includes('sim') || lowerText === 's' || lowerText.includes('já') || lowerText.includes('paguei')) {
-          await handleBillConfirm(true);
-          return;
+      // Interceptadores de confirmação (agora protegidos pelo isPureConfirmation)
+      if (isPureConfirmation) {
+        if (pendingSalaryReminder) {
+          const isPositive = lowerText.includes('sim') || lowerText === 's' || lowerText.includes('claro') || lowerText.includes('já') || lowerText.includes('recebi');
+          const isNegative = lowerText.includes('não') || lowerText === 'n' || lowerText.includes('ainda não');
+          
+          if (isPositive) {
+            await handleSalaryConfirm(true);
+            return;
+          }
+          if (isNegative) {
+            await handleSalaryConfirm(false);
+            return;
+          }
         }
-        if (lowerText.includes('não') || lowerText === 'n' || lowerText.includes('ainda não')) {
-          await handleBillConfirm(false);
-          return;
+
+        if (pendingBillReminder) {
+          const isPositive = lowerText.includes('sim') || lowerText === 's' || lowerText.includes('já') || lowerText.includes('paguei');
+          const isNegative = lowerText.includes('não') || lowerText === 'n' || lowerText.includes('ainda não');
+
+          if (isPositive) {
+            await handleBillConfirm(true);
+            return;
+          }
+          if (isNegative) {
+            await handleBillConfirm(false);
+            return;
+          }
         }
       }
 
       // Buscar contexto e processar
       console.log("[chat] fetching context...");
-      const freshContext = await fetchChatContext(uid);
+      const uidForContext = user.uid || auth.currentUser?.uid || '';
+      const freshContext = await fetchChatContext(uidForContext);
       const finalContext = freshContext 
         ? { ...freshContext, userPatterns: categoryPatterns } 
         : { user, reminders, cards, wallets, categories, transactions, goals, limits, debts, userPatterns: categoryPatterns };
 
       console.log("[chat] calling parseMessage...");
-      const result = await parseMessage(text.trim(), user.name || 'Usuário', finalContext);
-      console.log("[chat] parseMessage result:", result);
+      let aiResult = await parseMessage(trimmedText, user.name || 'Usuário', finalContext);
+      console.log("[chat] parseMessage result:", aiResult);
+
+      // 4.3 Reconciliação entre Local Parser e IA
+      // Se a IA não retornar eventos mas o parser local tiver alta confiança, usamos o parser local
+      if ((!aiResult.events || aiResult.events.length === 0) && localResult.confidence >= 0.8 && localResult.type !== 'unknown') {
+        console.log("[chat] AI didn't catch, using local parser result as fallback");
+        
+        let eventType = 'ADD_EXPENSE';
+        if (localResult.type === 'income') eventType = 'ADD_INCOME';
+        if (localResult.type === 'transfer') eventType = 'TRANSFER_WALLET';
+
+        const fallbackEvent = {
+          type: eventType,
+          payload: {
+            amount: localResult.amount,
+            description: localResult.description,
+            category: localResult.categoryHint || 'Outros',
+            sourceWalletName: localResult.fromWallet,
+            targetWalletName: localResult.toWallet,
+            isQA: user.isQA
+          }
+        };
+        
+        aiResult = {
+          ...aiResult,
+          events: [fallbackEvent],
+          reply: aiResult.reply || `Anotado! Preparei o registro de ${formatCurrency(localResult.amount || 0)} para você conferir abaixo. 👇`
+        };
+      }
       
-      // 1. Processar eventos (se houver) para mostrar confirmação de categoria/carteira
-      if (result.events && result.events.length > 0) {
-        console.log("[chat] events found:", result.events.length);
+      // 5. Processar eventos (se houver) para mostrar confirmação de categoria/carteira
+      if (aiResult.events && aiResult.events.length > 0) {
+        console.log("[chat] events found:", aiResult.events.length);
         
         // Detectar escalonamento de suporte
-        const escalationEvent = result.events.find((e: any) => e.type === 'ESCALATE_SUPPORT');
+        const escalationEvent = aiResult.events.find((e: any) => e.type === 'ESCALATE_SUPPORT');
         if (escalationEvent) {
           setSupportEscalation({
             ...escalationEvent.payload,
-            message: text.trim()
+            message: trimmedText
           });
         }
 
-        if (result.events.length === 1 && !escalationEvent) {
-          setPendingAction(result.events[0]);
+        if (aiResult.events.length === 1 && !escalationEvent) {
+          setPendingAction(aiResult.events[0]);
           setPendingEvents([]);
-        } else if (result.events.length > 1) {
+        } else if (aiResult.events.length > 1) {
           // Se houver múltiplos eventos, filtramos o de suporte se houver outros
-          const otherEvents = result.events.filter((e: any) => e.type !== 'ESCALATE_SUPPORT');
+          const otherEvents = aiResult.events.filter((e: any) => e.type !== 'ESCALATE_SUPPORT');
           if (otherEvents.length > 0) {
             setPendingEvents(otherEvents);
             setPendingAction(null);
@@ -577,10 +634,10 @@ const ChatInterface: React.FC<ChatProps> = ({
         console.log("[chat] no events found in AI response");
       }
 
-      // 2. Garantir que a resposta exista (Fallback se vazio)
-      const replyText = result.reply || "Entendi sua mensagem, mas não consegui identificar uma ação financeira. Pode me dar mais detalhes?";
+      // 6. Garantir que a resposta exista (Fallback se vazio ou genérico indevido)
+      const replyText = aiResult.reply || "Entendi sua mensagem, mas não consegui identificar uma ação financeira. Pode me dar mais detalhes?";
       
-      // 3. Salvar resposta do assistant
+      // 7. Salvar resposta do assistant
       await sendMessage(replyText, 'ai');
 
     } catch (e) {

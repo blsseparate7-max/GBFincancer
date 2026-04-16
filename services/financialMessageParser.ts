@@ -24,7 +24,10 @@ const normalizeMessage = (text: string): string => {
     .trim()
     .replace(/\s+/g, ' ')
     .replace(/r\$/g, 'R$')
-    .replace(/\$/g, '$');
+    .replace(/\$/g, '$')
+    .replace(/[.,]00\b/g, '') // remove centavos se forem zero
+    .replace(/(\d+)\s+reais/g, '$1') // converte "50 reais" para "50"
+    .replace(/(\d+)\s+conto/g, '$1');
 };
 
 /**

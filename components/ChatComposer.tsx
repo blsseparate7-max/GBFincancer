@@ -75,25 +75,28 @@ const ChatComposer: React.FC<ChatComposerProps> = ({ onSendText, onSendFile, isL
         };
 
         recognition.onresult = (event: any) => {
-          let interimTranscript = '';
           let finalTranscript = '';
+          let interimTranscript = '';
 
           for (let i = event.resultIndex; i < event.results.length; ++i) {
+            const transcript = event.results[i][0].transcript;
             if (event.results[i].isFinal) {
-              finalTranscript += event.results[i][0].transcript;
+              finalTranscript += transcript;
             } else {
-              interimTranscript += event.results[i][0].transcript;
+              interimTranscript += transcript;
             }
           }
           
           const base = textBeforeRecordingRef.current;
-          const newText = base + (base && !base.endsWith(' ') ? ' ' : '') + finalTranscript;
+          // Garantir que não existam múltiplos espaços e que a concatenação seja limpa
+          const cleanFinal = finalTranscript.trim();
+          const newText = base + (base && cleanFinal ? ' ' : '') + cleanFinal;
           
-          if (finalTranscript) {
+          if (cleanFinal) {
             textBeforeRecordingRef.current = newText;
           }
           
-          setText(newText + interimTranscript);
+          setText(newText + (interimTranscript ? (newText ? ' ' : '') + interimTranscript.trim() : ''));
         };
 
         recognition.onerror = (event: any) => {
@@ -113,7 +116,7 @@ const ChatComposer: React.FC<ChatComposerProps> = ({ onSendText, onSendFile, isL
           }
           
           setNotification({ message: errorMsg, type: 'error' });
-          stopRecording(true);
+          stopRecording(event.error === 'not-allowed');
         };
 
         recognition.onend = () => {

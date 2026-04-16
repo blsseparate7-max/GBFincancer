@@ -259,8 +259,8 @@ export const parseMessage = async (text: string, userName: string, context?: { u
       
       REGRAS DE OURO (FONTE DA VERDADE):
       1. Você deve SEMPRE priorizar os dados acima sobre qualquer conversa anterior.
-      2. Se houver uma "DICA DO SISTEMA" acima, use-a como base prioritária para extrair o valor e a intenção, a menos que ela esteja claramente errada.
-      3. Se houver "CAMPOS FALTANTES" na dica, peça educadamente ao usuário para fornecer essas informações em vez de tentar adivinhar com baixa confiança.
+      2. Se houver uma "DICA DO SISTEMA" acima, considere-a como prova de que a mensagem É um comando financeiro. Se a confiança for alta, você DEVE gerar o evento correspondente, mesmo que precise adivinhar campos secundários usando o contexto (ex: se o usuário diz "gastei 50 no mercado", adivinhe que a categoria é mercado ou 'Alimentação' baseado no seu conhecimento e padrões do usuário).
+      3. NUNCA diga "Não entendi" para mensagens que contenham claramente valores monetários ou intenções financeiras listadas na "DICA DO SISTEMA". Se faltar informação, gere o evento com o que tem e peça o restante no 'reply'.
       4. Se o usuário perguntar sobre pendências, verifique os LEMBRETES onde "pago" é false.
       5. MAPEAMENTO DE CARTEIRAS: Sempre que o usuário mencionar uma carteira pelo nome (ex: 'Nubank', 'Carteira'), procure o 'id' correspondente na lista de CARTEIRAS e use-o em 'sourceWalletId' ou 'targetWalletId'.
       6. CONFIRMAÇÕES (ONBOARDING): Se o usuário confirmar um recebimento (ex: 'Sim', 'Já recebi', 'Confirmado') e estiver no Passo 3 do Onboarding, você DEVE OBRIGATORIAMENTE gerar o evento ADD_INCOME correspondente. 
