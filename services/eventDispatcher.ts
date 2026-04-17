@@ -359,14 +359,16 @@ const executeDispatch = async (uid: string, event: FinanceEvent) => {
         const catInfo = await getCategoryInfo(uid, category || 'Recebimento', description);
 
         await runTransaction(db, async (transaction) => {
+          // 1. READS AT THE TOP
+          const userSnap = await transaction.get(userRef);
+          const userData = userSnap.data();
+
           let finalAmount = Number(amount);
           let finalDescription = description;
           let finalCategory = catInfo.name;
 
           // RECUPERAÇÃO DE DADOS DO PERFIL (Caso a IA envie payload incompleto no Onboarding)
           if (!finalAmount || !walletInfo) {
-            const userSnap = await transaction.get(userRef);
-            const userData = userSnap.data();
             if (userData?.incomeProfile?.sources?.length > 0) {
               const mainSource = userData.incomeProfile.sources[0];
               finalAmount = finalAmount || mainSource.amountExpected;
@@ -387,6 +389,7 @@ const executeDispatch = async (uid: string, event: FinanceEvent) => {
           
           const transRef = doc(collection(userRef, "transactions"));
           
+          // 2. WRITES START HERE
           transaction.set(transRef, {
             amount: Number(finalAmount),
             description: finalDescription || "Recebimento confirmado via Chat",
@@ -431,8 +434,6 @@ const executeDispatch = async (uid: string, event: FinanceEvent) => {
 
           // Idempotência Onboarding: Marcar como processado no perfil do usuário
           if (source === 'onboarding') {
-            const userSnap = await transaction.get(userRef);
-            const userData = userSnap.data();
             if (userData?.onboardingStatus) {
               transaction.update(userRef, {
                 "onboardingStatus.chatContextResponded": true,
