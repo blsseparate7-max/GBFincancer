@@ -12,6 +12,8 @@ export interface ParsedFinancialMessage {
   confidence: number;
   fromWallet?: string;
   toWallet?: string;
+  paymentMethod?: 'CARD' | 'PIX' | 'CASH';
+  installments?: number;
   missingFields: string[];
 }
 
@@ -27,7 +29,32 @@ const normalizeMessage = (text: string): string => {
     .replace(/\$/g, '$')
     .replace(/[.,]00\b/g, '') // remove centavos se forem zero
     .replace(/(\d+)\s+reais/g, '$1') // converte "50 reais" para "50"
-    .replace(/(\d+)\s+conto/g, '$1');
+    .replace(/(\d+)\s+conto/g, '$1')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, ""); // Remove acentos
+};
+
+/**
+ * Detecta o método de pagamento
+ */
+const detectPaymentMethod = (text: string): 'CARD' | 'PIX' | 'CASH' | undefined => {
+  const cardKeywords = ['cartao', 'credito', 'nubank', 'inter', 'itau', 'mastercard', 'visa', 'parcelado', 'vezes', 'parcela', 'x'];
+  const pixKeywords = ['pix', 'transferencia', 'transferi'];
+  const cashKeywords = ['dinheiro', 'especie', 'notas'];
+
+  const lower = text.toLowerCase();
+  if (cardKeywords.some(k => lower.includes(k))) return 'CARD';
+  if (pixKeywords.some(k => lower.includes(k))) return 'PIX';
+  if (cashKeywords.some(k => lower.includes(k))) return 'CASH';
+  return undefined;
+};
+
+/**
+ * Extrai o número de parcelas
+ */
+const extractInstallments = (text: string): number | undefined => {
+  const match = text.match(/(\d+)\s*(?:x|vezes|parcelas)/i) || text.match(/(?:em|de)\s*(\d+)\s*(?:x|vezes|parcelas)/i);
+  if (match) return parseInt(match[1]);
+  return undefined;
 };
 
 /**
@@ -103,6 +130,8 @@ export const parseFinancialMessage = (message: string): ParsedFinancialMessage =
   const normalized = normalizeMessage(message);
   const amount = extractAmount(normalized);
   const intent = detectIntent(normalized);
+  const paymentMethod = detectPaymentMethod(normalized);
+  const installments = extractInstallments(normalized);
   
   const amountMatch = normalized.match(/(?:R\$|\$)?\s*(\d+(?:\.\d{3})*(?:,\d{2})?|\d+(?:[.,]\d+)?)\s*(?:\$|R\$)?/);
   const rawAmountStr = amountMatch ? amountMatch[1] : null;
@@ -112,6 +141,10 @@ export const parseFinancialMessage = (message: string): ParsedFinancialMessage =
 
   if (!amount) missingFields.push('valor');
   if (intent === 'unknown') missingFields.push('tipo de transação');
+  
+  // Se detectou parcelas ou "cartão", confere se é gasto
+  const finalMethod = paymentMethod || (installments ? 'CARD' : undefined);
+
   if (!description || description.length < 2) {
     if (intent !== 'income') missingFields.push('descrição');
   }
@@ -130,9 +163,10 @@ export const parseFinancialMessage = (message: string): ParsedFinancialMessage =
   }
 
   let confidence = 0;
-  if (amount !== null) confidence += 0.5;
+  if (amount !== null) confidence += 0.4;
   if (intent !== 'unknown') confidence += 0.3;
   if (description.length > 1) confidence += 0.2;
+  if (finalMethod === 'CARD') confidence += 0.1;
   if (missingFields.length > 0) confidence -= (missingFields.length * 0.1);
 
   return {
@@ -143,6 +177,8 @@ export const parseFinancialMessage = (message: string): ParsedFinancialMessage =
     confidence: Math.max(0, Math.min(1, confidence)),
     fromWallet,
     toWallet,
+    paymentMethod: finalMethod,
+    installments,
     missingFields
   };
 };

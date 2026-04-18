@@ -16,7 +16,6 @@ export interface SavingGoal {
   name: string;
   targetAmount: number;
   currentAmount: number;
-  location: string;
   category?: 'Viagem' | 'Carro' | 'Casa' | 'Reserva' | 'Educação' | 'Lazer' | 'Outros';
   priority?: 'Baixa' | 'Média' | 'Alta';
   icon?: string;
@@ -110,6 +109,7 @@ export type EventType =
   | 'DELETE_GOAL'
   | 'SPEND_FROM_GOAL'
   | 'UPDATE_LIMIT' 
+  | 'DELETE_LIMIT'
   | 'UPDATE_USER'
   | 'CREATE_REMINDER' 
   | 'PAY_REMINDER'

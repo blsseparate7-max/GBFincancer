@@ -16,7 +16,7 @@ export const calculateWeeklySummary = (transactions: Transaction[]): WeeklySumma
     .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
 
   const expense = weekTransactions
-    .filter(t => t.type === 'EXPENSE')
+    .filter(t => t.type === 'EXPENSE' && t.paymentMethod !== 'CARD')
     .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
 
   const balance = income - expense;
@@ -24,7 +24,7 @@ export const calculateWeeklySummary = (transactions: Transaction[]): WeeklySumma
   // Agrupar por categorias (apenas despesas)
   const categoryMap: Record<string, number> = {};
   weekTransactions
-    .filter(t => t.type === 'EXPENSE')
+    .filter(t => t.type === 'EXPENSE' && t.paymentMethod !== 'CARD')
     .forEach(t => {
       categoryMap[t.category] = (categoryMap[t.category] || 0) + (Number(t.amount) || 0);
     });
@@ -67,7 +67,7 @@ export const calculateMonthlySummary = (transactions: Transaction[]) => {
 
   const categoryMap: Record<string, number> = {};
   monthTransactions
-    .filter(t => t.type === 'EXPENSE')
+    .filter(t => t.type === 'EXPENSE' && t.paymentMethod !== 'CARD')
     .forEach(t => {
       categoryMap[t.category] = (categoryMap[t.category] || 0) + (Number(t.amount) || 0);
     });
@@ -103,11 +103,11 @@ export const calculateForecast = (transactions: Transaction[], reminders: any[],
     .filter(w => w.isActive !== false)
     .reduce((sum, w) => sum + (Number(w.balance) || 0), 0);
 
-  // Gastos do mês até agora
+  // Gastos do mês até agora (saída real de dinheiro)
   const monthExpenses = transactions
     .filter(t => {
       const d = new Date(t.date);
-      return d.getMonth() === currentMonth && d.getFullYear() === currentYear && t.type === 'EXPENSE';
+      return d.getMonth() === currentMonth && d.getFullYear() === currentYear && t.type === 'EXPENSE' && t.paymentMethod !== 'CARD';
     })
     .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
 

@@ -92,6 +92,7 @@ const Extrato: React.FC<ExtratoProps> = ({
     const userRef = doc(db, "users", uid);
     let q = query(
       collection(userRef, "transactions"),
+      where("date", "<=", new Date().toISOString()),
       orderBy("date", "desc")
     );
 
@@ -130,6 +131,7 @@ const Extrato: React.FC<ExtratoProps> = ({
     const userRef = doc(db, "users", uid);
     let q = query(
       collection(userRef, "transactions"),
+      where("date", "<=", new Date().toISOString()),
       orderBy("date", "desc")
     );
 

@@ -89,7 +89,12 @@ export const saveWizardPhase1 = async (uid: string, data: { incomeProfile: Incom
   return await updateOnboardingStep(uid, ONBOARDING_STEPS.CHAT_CONFIRM, { step: ONBOARDING_STEPS.BILLS, completed: false });
 };
 
-export const finalizeOnboarding = async (uid: string, data: { goals: any[] }, currentStatus: OnboardingStatus) => {
+export const finalizeOnboarding = async (uid: string, data: { goals: any[], spendingLimit?: number }, currentStatus: OnboardingStatus) => {
+  // 0. Salvar Limite de Gastos se informado
+  if (data.spendingLimit !== undefined) {
+    await syncUserData(uid, { spendingLimit: data.spendingLimit });
+  }
+
   // 1. Salvar Metas
   if (data.goals && data.goals.length > 0) {
     await syncUserData(uid, { suggestedGoals: data.goals });

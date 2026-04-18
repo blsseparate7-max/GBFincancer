@@ -120,7 +120,6 @@ export const normalizeGoal = (docSnap: any, uid?: string): SavingGoal => {
     name: data.name || data.title || 'Meta sem nome',
     targetAmount: data.targetAmount !== undefined ? data.targetAmount : (data.target || data.goalAmount || 0),
     currentAmount: data.currentAmount !== undefined ? data.currentAmount : (data.saved || data.balance || 0),
-    location: data.location || data.bank || 'Cofre Principal',
     category: data.category || 'Outros',
     priority: data.priority || 'Média',
     deadlineMonths: data.deadlineMonths || 12,

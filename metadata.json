@@ -3,7 +3,6 @@
   "description": "Mentor financeiro proativo com IA e interface estilo WhatsApp.",
   "requestFramePermissions": [
     "microphone",
-    "camera",
-    "geolocation"
+    "camera"
   ]
 }

@@ -21,7 +21,6 @@ const Goals: React.FC<GoalsProps> = ({ goals, transactions, wallets, uid, user, 
   const [editingGoalId, setEditingGoalId] = useState<string | null>(null);
   const [newGoalName, setNewGoalName] = useState('');
   const [newGoalTarget, setNewGoalTarget] = useState('');
-  const [newGoalLocation, setNewGoalLocation] = useState('');
   const [newGoalCategory, setNewGoalCategory] = useState<SavingGoal['category']>('Outros');
   const [newGoalPriority, setNewGoalPriority] = useState<SavingGoal['priority']>('Média');
   const [newGoalIcon, setNewGoalIcon] = useState('💰');
@@ -70,7 +69,7 @@ const Goals: React.FC<GoalsProps> = ({ goals, transactions, wallets, uid, user, 
       return;
     }
 
-    if (!newGoalName || !newGoalTarget || !newGoalLocation) {
+    if (!newGoalName || !newGoalTarget) {
       setNotification({ message: "Preencha todos os campos obrigatórios.", type: 'error' });
       return;
     }
@@ -82,7 +81,6 @@ const Goals: React.FC<GoalsProps> = ({ goals, transactions, wallets, uid, user, 
           goalId: editingGoalId,
           name: newGoalName,
           targetAmount: parseFloat(newGoalTarget),
-          location: newGoalLocation,
           category: newGoalCategory,
           priority: newGoalPriority,
           icon: newGoalIcon,
@@ -97,7 +95,6 @@ const Goals: React.FC<GoalsProps> = ({ goals, transactions, wallets, uid, user, 
         payload: {
           name: newGoalName,
           targetAmount: parseFloat(newGoalTarget),
-          location: newGoalLocation,
           currentAmount: 0,
           category: newGoalCategory,
           priority: newGoalPriority,
@@ -120,7 +117,6 @@ const Goals: React.FC<GoalsProps> = ({ goals, transactions, wallets, uid, user, 
 
     setNewGoalName('');
     setNewGoalTarget('');
-    setNewGoalLocation('');
     setNewGoalCategory('Outros');
     setNewGoalPriority('Média');
     setNewGoalIcon('💰');
@@ -132,7 +128,6 @@ const Goals: React.FC<GoalsProps> = ({ goals, transactions, wallets, uid, user, 
   const handleUseSuggestion = (suggestion: any) => {
     setNewGoalName(suggestion.name);
     setNewGoalTarget(suggestion.targetAmount.toString());
-    setNewGoalLocation(suggestion.location);
     setNewGoalCategory(suggestion.category || 'Outros');
     setNewGoalPriority(suggestion.priority || 'Média');
     setNewGoalIcon(suggestion.icon || '💰');
@@ -146,7 +141,6 @@ const Goals: React.FC<GoalsProps> = ({ goals, transactions, wallets, uid, user, 
     
     setNewGoalName(goal.name);
     setNewGoalTarget(nextTarget.toFixed(2));
-    setNewGoalLocation(goal.location);
     setNewGoalCategory(goal.category || 'Outros');
     setNewGoalPriority(goal.priority || 'Média');
     setNewGoalIcon(goal.icon || '💰');
@@ -159,7 +153,6 @@ const Goals: React.FC<GoalsProps> = ({ goals, transactions, wallets, uid, user, 
     setEditingGoalId(goal.id);
     setNewGoalName(goal.name);
     setNewGoalTarget(goal.targetAmount?.toString() || '0');
-    setNewGoalLocation(goal.location);
     setNewGoalCategory(goal.category || 'Outros');
     setNewGoalPriority(goal.priority || 'Média');
     setNewGoalIcon(goal.icon || '💰');
@@ -460,7 +453,6 @@ const Goals: React.FC<GoalsProps> = ({ goals, transactions, wallets, uid, user, 
                   <div>
                     <h4 className="text-2xl font-black text-[var(--text-primary)] uppercase italic tracking-tighter leading-none">{goal.name}</h4>
                     <div className="flex gap-2 mt-2">
-                      <span className="text-[9px] bg-[var(--bg-body)] px-2 py-0.5 rounded-full text-[var(--text-muted)] font-black uppercase tracking-tighter">📍 {goal.location}</span>
                       <span className="text-[9px] bg-amber-500/10 px-2 py-0.5 rounded-full text-amber-600 font-black uppercase tracking-tighter">⭐ Nível {goal.level || 1}</span>
                       {goal.category && <span className="text-[9px] bg-[var(--green-whatsapp)]/10 px-2 py-0.5 rounded-full text-[var(--green-whatsapp)] font-black uppercase tracking-tighter">🏷️ {goal.category}</span>}
                     </div>
@@ -601,20 +593,14 @@ const Goals: React.FC<GoalsProps> = ({ goals, transactions, wallets, uid, user, 
                 <input className="w-full bg-[var(--bg-body)] rounded-2xl p-5 text-sm font-bold outline-none focus:border-[var(--green-whatsapp)] border-2 border-transparent transition-all" placeholder="Ex: Viagem para Maldivas" value={newGoalName} onChange={e => setNewGoalName(e.target.value)} />
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <label className="text-[9px] font-black text-[var(--text-muted)] uppercase ml-2">Meta Financeira</label>
-                  <MoneyInput 
-                    className="w-full bg-[var(--bg-body)] rounded-2xl p-5 text-sm font-bold outline-none focus:border-[var(--green-whatsapp)] border-2 border-transparent transition-all" 
-                    placeholder="R$ 0,00" 
-                    value={Number(newGoalTarget) || 0} 
-                    onChange={val => setNewGoalTarget(val.toString())} 
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-[9px] font-black text-[var(--text-muted)] uppercase ml-2">Onde Guardar?</label>
-                  <input className="w-full bg-[var(--bg-body)] rounded-2xl p-5 text-sm font-bold outline-none focus:border-[var(--green-whatsapp)] border-2 border-transparent transition-all" placeholder="Ex: NuConta" value={newGoalLocation} onChange={e => setNewGoalLocation(e.target.value)} />
-                </div>
+              <div className="space-y-2">
+                <label className="text-[9px] font-black text-[var(--text-muted)] uppercase ml-2">Meta Financeira</label>
+                <MoneyInput 
+                  className="w-full bg-[var(--bg-body)] rounded-2xl p-5 text-sm font-bold outline-none focus:border-[var(--green-whatsapp)] border-2 border-transparent transition-all" 
+                  placeholder="R$ 0,00" 
+                  value={Number(newGoalTarget) || 0} 
+                  onChange={val => setNewGoalTarget(val.toString())} 
+                />
               </div>
 
               <div className="grid grid-cols-2 gap-4">

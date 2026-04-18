@@ -342,11 +342,14 @@ const executeDispatch = async (uid: string, event: FinanceEvent) => {
 
           const limitId = catInfo.id;
           const limitRef = doc(userRef, "limits", limitId);
-          transaction.set(limitRef, {
-            category: catInfo.name,
-            spent: increment(amount),
-            updatedAt: serverTimestamp()
-          }, { merge: true });
+          const limitSnap = await transaction.get(limitRef);
+          
+          if (limitSnap.exists()) {
+            transaction.update(limitRef, {
+              spent: increment(amount),
+              updatedAt: serverTimestamp()
+            });
+          }
         });
         break;
       }
@@ -540,11 +543,14 @@ const executeDispatch = async (uid: string, event: FinanceEvent) => {
 
           const limitId = catInfo.id;
           const limitRef = doc(userRef, "limits", limitId);
-          batch.set(limitRef, {
-            category: catInfo.name,
-            spent: increment(amount),
-            updatedAt: serverTimestamp()
-          }, { merge: true });
+          const limitSnap = await getDoc(limitRef);
+          
+          if (limitSnap.exists()) {
+            batch.update(limitRef, {
+              spent: increment(amount),
+              updatedAt: serverTimestamp()
+            });
+          }
 
           await batch.commit();
         }
@@ -552,10 +558,13 @@ const executeDispatch = async (uid: string, event: FinanceEvent) => {
       }
 
       case 'PAY_CARD': {
-        const { cardId, amount, cycle, sourceWalletId } = event.payload;
+        const { cardId, amount, cycle, sourceWalletId } = payload;
+        const payBatch = writeBatch(db);
+        const now = new Date();
         
         // 1. Registra a saída real de dinheiro do Dashboard
-        await addDoc(collection(userRef, "transactions"), {
+        const transRef = doc(collection(userRef, "transactions"));
+        payBatch.set(transRef, {
           description: `Pagamento Fatura ${cycle || ''}`,
           amount,
           category: 'Cartão de Crédito',
@@ -565,33 +574,27 @@ const executeDispatch = async (uid: string, event: FinanceEvent) => {
           date: now.toISOString(),
           isQA,
           source,
-          cycleKey,
           confirmedBy,
           status: 'CONFIRMED',
           resolved: true,
           createdAt: serverTimestamp()
         });
 
-        // Atualiza saldo da carteira se houver
-        if (sourceWalletId) {
-          await updateWalletBalance(uid, sourceWalletId, -amount);
-        }
-
-        // 2. Atualiza o cartão (Regra da Vida Real)
+        // 2. Atualiza o cartão
         const cardRef = doc(userRef, "cards", cardId);
-        await updateDoc(cardRef, {
+        payBatch.update(cardRef, {
           usedLimit: increment(-amount),
           availableLimit: increment(amount),
           currentInvoiceAmount: increment(-amount),
-          // Compatibilidade
+          // Sincronização de campos redundantes
           usedAmount: increment(-amount),
           availableAmount: increment(amount),
           invoiceAmount: increment(-amount),
           updatedAt: serverTimestamp()
         });
 
-        // 3. Marca as transações do ciclo como pagas (ou todas se não houver ciclo)
-        const q = cycle 
+        // 3. Marca as transações do ciclo como pagas
+        const qTransactions = cycle 
           ? query(
               collection(userRef, "transactions"), 
               where("cardId", "==", cardId),
@@ -606,24 +609,45 @@ const executeDispatch = async (uid: string, event: FinanceEvent) => {
               where("isPaid", "==", false)
             );
         
-        const snap = await getDocs(q);
-        for (const d of snap.docs) {
-          await updateDoc(doc(userRef, "transactions", d.id), { isPaid: true });
+        const snapTransactions = await getDocs(qTransactions);
+        snapTransactions.docs.forEach(d => {
+          payBatch.update(doc(userRef, "transactions", d.id), { isPaid: true });
+        });
+
+        // 4. Saldo da carteira
+        if (sourceWalletId) {
+          const walletRef = doc(userRef, "wallets", sourceWalletId);
+          payBatch.update(walletRef, {
+            balance: increment(-amount),
+            updatedAt: serverTimestamp()
+          });
         }
+
+        await payBatch.commit();
         break;
       }
 
       case 'UPDATE_LIMIT': {
-        const { category, amount } = event.payload;
-        const normalizedCat = normalizeCategoryName(category);
-        const limitId = getCategoryId(normalizedCat);
-        await setDoc(doc(userRef, "limits", limitId), {
-          category: normalizedCat,
+        const { category, amount, id } = event.payload;
+        const limitId = id || getCategoryId(normalizeCategoryName(category));
+        const limitData: any = {
           limit: amount,
-          spent: 0, // Reset ou incremento pode ser feito via job/listener
           isActive: true,
           updatedAt: serverTimestamp()
-        }, { merge: true });
+        };
+        if (!id) {
+          limitData.category = normalizeCategoryName(category);
+          limitData.spent = 0;
+        }
+        await setDoc(doc(userRef, "limits", limitId), limitData, { merge: true });
+        break;
+      }
+
+      case 'DELETE_LIMIT': {
+        const { id } = event.payload;
+        if (id) {
+          await deleteDoc(doc(userRef, "limits", id));
+        }
         break;
       }
 

@@ -56,7 +56,6 @@ const FINANCE_PARSER_SCHEMA = {
               installmentAmount: { type: Type.NUMBER },
               debtId: { type: Type.STRING },
               targetAmount: { type: Type.NUMBER },
-              location: { type: Type.STRING },
               goalId: { type: Type.STRING },
               targetWalletId: { type: Type.STRING, description: "ID da carteira de destino para entradas ou transferências" },
               sourceWalletId: { type: Type.STRING, description: "ID da carteira de origem para saídas ou transferências" },

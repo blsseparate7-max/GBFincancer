@@ -356,7 +356,10 @@ const App: React.FC = () => {
       setActiveTab('chat');
     } else {
       // Phase 2: Goals + Finalize
-      const finalStatus = await finalizeOnboarding(session.uid, { goals: data.goals || [] }, session.onboardingStatus);
+      const finalStatus = await finalizeOnboarding(session.uid, { 
+        goals: data.goals || [],
+        spendingLimit: data.spendingLimit
+      }, session.onboardingStatus);
       
       setSession(prev => prev ? { ...prev, onboardingStatus: finalStatus, onboardingSeen: true } : null);
       setOnboardingStep('none');

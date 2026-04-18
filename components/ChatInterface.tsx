@@ -594,6 +594,7 @@ const ChatInterface: React.FC<ChatProps> = ({
         let eventType = 'ADD_EXPENSE';
         if (localResult.type === 'income') eventType = 'ADD_INCOME';
         if (localResult.type === 'transfer') eventType = 'TRANSFER_WALLET';
+        if (localResult.type === 'expense' && localResult.paymentMethod === 'CARD') eventType = 'ADD_CARD_CHARGE';
 
         const fallbackEvent = {
           type: eventType,
@@ -603,6 +604,8 @@ const ChatInterface: React.FC<ChatProps> = ({
             category: localResult.categoryHint || 'Outros',
             sourceWalletName: localResult.fromWallet,
             targetWalletName: localResult.toWallet,
+            paymentMethod: localResult.paymentMethod,
+            installments: localResult.installments,
             isQA: user.isQA
           }
         };

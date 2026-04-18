@@ -17,6 +17,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import MoneyInput from './MoneyInput';
 import { Notification } from './UI';
 import { GoogleGenAI } from "@google/genai";
+import { sendMessageToFirestore } from '../services/chatService';
 import { 
   DailyInsight, 
   MainStats, 
@@ -49,6 +50,7 @@ interface DashProps {
 
 const Dashboard: React.FC<DashProps> = ({ transactions, goals, limits, wallets, reminders, categories, uid, user, loading, onNavigateToExtrato, onNavigateToTab, isExpired = false }) => {
   const [showLimitModal, setShowLimitModal] = useState(false);
+  const [editingLimit, setEditingLimit] = useState<CategoryLimit | null>(null);
   const [showGlobalLimitModal, setShowGlobalLimitModal] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showFullRanking, setShowFullRanking] = useState(false);
@@ -143,12 +145,12 @@ const Dashboard: React.FC<DashProps> = ({ transactions, goals, limits, wallets, 
     const now = new Date();
     const currentMonth = now.getMonth();
     const currentYear = now.getFullYear();
+    const monthKey = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}`;
     const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
     const currentDay = now.getDate();
     const firstDayOfMonth = new Date(currentYear, currentMonth, 1).getDay();
 
-    // Filter transactions for current month (YYYY-MM-DD)
-    const monthKey = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}`;
+    // Stats calculation logic...
     const monthTransactions = transactions.filter(t => {
       return t.date && t.date.startsWith(monthKey);
     });
@@ -157,8 +159,9 @@ const Dashboard: React.FC<DashProps> = ({ transactions, goals, limits, wallets, 
       .filter(t => t.type === 'INCOME')
       .reduce((s, t) => s + Math.abs(Number(t.amount) || 0), 0);
     
+    // Regra: Não considera gastos de cartão como saída real (apenas o PIX do pagamento da fatura conta)
     const expense = monthTransactions
-      .filter(t => t.type === 'EXPENSE')
+      .filter(t => t.type === 'EXPENSE' && t.paymentMethod !== 'CARD')
       .reduce((s, t) => s + Math.abs(Number(t.amount) || 0), 0);
     
     const totalSaved = goals.reduce((s, g) => s + (Number(g.currentAmount) || 0), 0);
@@ -172,6 +175,9 @@ const Dashboard: React.FC<DashProps> = ({ transactions, goals, limits, wallets, 
     }
 
     monthTransactions.forEach(t => {
+      // Regra: No calendário, apenas saída real (ignora cartão individual)
+      if (t.type === 'EXPENSE' && t.paymentMethod === 'CARD') return;
+
       // t.date is YYYY-MM-DD, we want the DD part
       const dayPart = t.date.split('-')[2];
       const d = parseInt(dayPart);
@@ -216,7 +222,7 @@ const Dashboard: React.FC<DashProps> = ({ transactions, goals, limits, wallets, 
 
     // Expense Ranking - Agregação robusta por categoria
     const expenseCategories = monthTransactions
-      .filter(t => t.type === 'EXPENSE')
+      .filter(t => t.type === 'EXPENSE' && t.paymentMethod !== 'CARD')
       .reduce((acc, t) => {
         const rawCat = t.category || 'Outros';
         const displayCat = normalizeCategoryName(rawCat);
@@ -240,11 +246,13 @@ const Dashboard: React.FC<DashProps> = ({ transactions, goals, limits, wallets, 
       }))
       .sort((a, b) => b.value - a.value);
 
-    // Spending Limits
-    const spendingLimits = limits.map(lim => {
-      const pct = lim.limit > 0 ? (lim.spent / lim.limit) * 100 : 0;
-      return { ...lim, pct };
-    }).sort((a, b) => b.pct - a.pct);
+    // Spending Limits - Apenas categorias configuradas manualmente
+    const spendingLimits = limits
+      .filter(lim => lim.limit && lim.limit > 0)
+      .map(lim => {
+        const pct = lim.limit > 0 ? (lim.spent / lim.limit) * 100 : 0;
+        return { ...lim, pct };
+      }).sort((a, b) => b.pct - a.pct);
 
     const globalLimit = user?.spendingLimit || null;
     const globalSpent = expense; // Total monthly expense
@@ -311,6 +319,7 @@ const Dashboard: React.FC<DashProps> = ({ transactions, goals, limits, wallets, 
     const userLevel = { level, xp, progress, nextLevelXp };
 
     return { 
+      monthKey,
       income, expense, saldoLivre, totalSaved, expenseRanking, spendingLimits, 
       projectedBalance, suggestion, upcomingBills, goalSuggestion, barData, pieData, COLORS,
       dailyStats, daysInMonth, firstDayOfMonth, currentMonth, currentYear,
@@ -318,6 +327,58 @@ const Dashboard: React.FC<DashProps> = ({ transactions, goals, limits, wallets, 
       userLevel, globalLimit, globalSpent
     };
   }, [transactions, goals, limits, wallets, reminders]);
+
+  // Alert Manager (Chat & Visual)
+  useEffect(() => {
+    if (!uid || isExpired) return;
+
+    const checkLimits = async () => {
+      const { globalLimit, globalSpent, spendingLimits, monthKey } = stats;
+
+      // 1. Global Limit Alerts
+      if (globalLimit && globalLimit > 0) {
+        const pct = (globalSpent / globalLimit) * 100;
+        
+        if (pct >= 100) {
+          await sendMessageToFirestore(
+            uid,
+            `🚨 ALERTA: Você ultrapassou seu limite de gastos global de ${format(globalLimit)}! Total gasto: ${format(globalSpent)}.`,
+            'ai',
+            `limit-global-100-${uid}-${monthKey}`
+          );
+        } else if (pct >= 80) {
+          await sendMessageToFirestore(
+            uid,
+            `⚠️ ATENÇÃO: Você atingiu ${pct.toFixed(0)}% do seu limite global (${format(globalSpent)} de ${format(globalLimit)}).`,
+            'ai',
+            `limit-global-80-${uid}-${monthKey}`
+          );
+        }
+      }
+
+      // 2. Category Limit Alerts
+      for (const lim of spendingLimits) {
+        if (lim.pct >= 100) {
+          await sendMessageToFirestore(
+            uid,
+            `🚩 LIMITE ATINGIDO: A categoria "${lim.category}" ultrapassou o teto de ${format(lim.limit)}. Gasto atual: ${format(lim.spent)}.`,
+            'ai',
+            `limit-cat-100-${uid}-${lim.id}-${monthKey}`
+          );
+        } else if (lim.pct >= 80) {
+          await sendMessageToFirestore(
+            uid,
+            `⏳ QUASE LÁ: A categoria "${lim.category}" atingiu ${lim.pct.toFixed(0)}% do limite planejado (${format(lim.spent)} de ${format(lim.limit)}).`,
+            'ai',
+            `limit-cat-80-${uid}-${lim.id}-${monthKey}`
+          );
+        }
+      }
+    };
+
+    const timer = setTimeout(checkLimits, 3000); // Debounce check
+    return () => clearTimeout(timer);
+  }, [uid, stats.globalSpent, stats.spendingLimits, isExpired]);
 
   const healthStats = useMemo(() => {
     // Simplified Score Calculation
@@ -358,17 +419,35 @@ const Dashboard: React.FC<DashProps> = ({ transactions, goals, limits, wallets, 
     if (!limitCat || !limitVal) return;
     const result = await dispatchEvent(uid, {
       type: 'UPDATE_LIMIT',
-      payload: { category: limitCat, amount: parseFloat(limitVal) },
+      payload: { 
+        id: editingLimit?.id,
+        category: limitCat, 
+        amount: parseFloat(limitVal) 
+      },
       source: 'ui',
       createdAt: new Date()
     });
     
     if (result && !result.success) {
-      setNotification({ message: result.error || "Erro ao criar limite.", type: 'error' });
+      setNotification({ message: result.error || "Erro ao salvar limite.", type: 'error' });
       return;
     }
 
-    setLimitCat(''); setLimitVal(''); setShowLimitModal(false);
+    setLimitCat(''); setLimitVal(''); setShowLimitModal(false); setEditingLimit(null);
+  };
+
+  const handleDeleteLimit = async (limitId: string) => {
+    const result = await dispatchEvent(uid, {
+      type: 'DELETE_LIMIT',
+      payload: { id: limitId },
+      source: 'ui',
+      createdAt: new Date()
+    });
+
+    if (result && !result.success) {
+      setNotification({ message: result.error || "Erro ao excluir limite.", type: 'error' });
+      return;
+    }
   };
 
   const handleSaveGlobalLimit = async () => {
@@ -513,14 +592,34 @@ const Dashboard: React.FC<DashProps> = ({ transactions, goals, limits, wallets, 
           limit={5}
         />
 
-        {/* 4️⃣ Teto de Gastos Global */}
-        <GlobalSpendingLimitCard 
-          limit={stats.globalLimit} 
-          spent={stats.globalSpent} 
-          onAdd={() => setShowGlobalLimitModal(true)}
-          onEdit={() => setShowGlobalLimitModal(true)}
-          onDelete={handleDeleteGlobalLimit}
-        />
+        <div className="flex flex-col gap-8">
+          {/* 4️⃣ Teto de Gastos Global */}
+          <GlobalSpendingLimitCard 
+            limit={stats.globalLimit} 
+            spent={stats.globalSpent} 
+            onAdd={() => setShowGlobalLimitModal(true)}
+            onEdit={() => setShowGlobalLimitModal(true)}
+            onDelete={handleDeleteGlobalLimit}
+          />
+
+          {/* Limites por Categoria */}
+          <SpendingLimitsCard 
+            limits={stats.spendingLimits} 
+            onAdd={() => {
+              setEditingLimit(null);
+              setLimitCat('');
+              setLimitVal('');
+              setShowLimitModal(true);
+            }} 
+            onEdit={(lim) => {
+              setEditingLimit(lim);
+              setLimitCat(lim.category);
+              setLimitVal(lim.limit.toString());
+              setShowLimitModal(true);
+            }}
+            onDelete={(lim) => handleDeleteLimit(lim.id)}
+          />
+        </div>
 
         {/* 9️⃣ Distribuição dos Gastos (Pie Chart) */}
         <CompositionChart pieData={stats.pieData} colors={stats.COLORS} totalExpense={stats.expense} />
@@ -622,7 +721,9 @@ const Dashboard: React.FC<DashProps> = ({ transactions, goals, limits, wallets, 
               
               <div className="text-center mb-8">
                 <p className="text-[10px] font-black text-[var(--green-whatsapp)] uppercase tracking-[0.4em] mb-2">Planejamento</p>
-                <h3 className="text-2xl font-black text-[var(--text-primary)] uppercase italic tracking-tighter leading-none">Definir Teto</h3>
+                <h3 className="text-2xl font-black text-[var(--text-primary)] uppercase italic tracking-tighter leading-none">
+                  {editingLimit ? 'Editar Teto' : 'Definir Teto'}
+                </h3>
               </div>
 
               <div className="space-y-5">
@@ -633,6 +734,7 @@ const Dashboard: React.FC<DashProps> = ({ transactions, goals, limits, wallets, 
                     placeholder="Ex: Alimentação, Lazer..." 
                     value={limitCat} 
                     onChange={e => setLimitCat(e.target.value)} 
+                    disabled={!!editingLimit}
                   />
                 </div>
                 

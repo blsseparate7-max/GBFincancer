@@ -21,7 +21,6 @@ const GoalsManager: React.FC<Props> = ({ goals, onAdd }) => {
       name,
       targetAmount: Number(target),
       currentAmount: 0,
-      location: 'Geral',
       type: 'CUSTOM',
       deadlineMonths: 12,
       updatedAt: new Date()
