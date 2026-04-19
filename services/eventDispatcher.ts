@@ -67,11 +67,22 @@ async function resolveWallet(uid: string, walletId?: string, walletName?: string
   }
   
   if (walletName) {
+    // 1. Tenta match exato primeiro (mais rápido)
     const q = query(collection(db, "users", uid, "wallets"), where("name", "==", walletName), limit(1));
     const snap = await getDocs(q);
     if (!snap.empty) {
       const d = snap.docs[0];
       return { id: d.id, name: d.data().name };
+    }
+    
+    // 2. Fuzzy match case-insensitive no servidor (se houver poucos docs)
+    const allWalletsSnap = await getDocs(collection(db, "users", uid, "wallets"));
+    const match = allWalletsSnap.docs.find(d => 
+      d.data().name?.toLowerCase().trim() === walletName.toLowerCase().trim()
+    );
+    
+    if (match) {
+      return { id: match.id, name: match.data().name };
     }
     
     // Auto-create wallet if it doesn't exist (Surgical fix for Onboarding Step 1 & 3)
@@ -302,6 +313,11 @@ const executeDispatch = async (uid: string, event: FinanceEvent) => {
 
         await runTransaction(db, async (transaction) => {
           const transRef = doc(collection(userRef, "transactions"));
+          const limitId = catInfo.id;
+          const limitRef = doc(userRef, "limits", limitId);
+          
+          // 1. READS AT THE TOP
+          const limitSnap = await transaction.get(limitRef);
           
           // Determinar paymentMethod se não fornecido
           let finalPaymentMethod = paymentMethod;
@@ -311,6 +327,8 @@ const executeDispatch = async (uid: string, event: FinanceEvent) => {
             }
           }
 
+          // 2. WRITES START HERE
+          console.log("[TRANSACTION] criando:", description);
           transaction.set(transRef, {
             amount, 
             category: catInfo.name,
@@ -331,8 +349,10 @@ const executeDispatch = async (uid: string, event: FinanceEvent) => {
             resolved: true,
             createdAt: serverTimestamp()
           });
+          console.log("[EXTRATO] atualizando...");
 
           if (walletInfo?.id) {
+            console.log("[WALLET] atualizando:", walletInfo.name);
             const walletRef = doc(userRef, "wallets", walletInfo.id);
             transaction.update(walletRef, { 
               balance: increment(-amount),
@@ -340,11 +360,8 @@ const executeDispatch = async (uid: string, event: FinanceEvent) => {
             });
           }
 
-          const limitId = catInfo.id;
-          const limitRef = doc(userRef, "limits", limitId);
-          const limitSnap = await transaction.get(limitRef);
-          
           if (limitSnap.exists()) {
+            console.log("[DASHBOARD] atualizando:", catInfo.name);
             transaction.update(limitRef, {
               spent: increment(amount),
               updatedAt: serverTimestamp()
@@ -393,6 +410,7 @@ const executeDispatch = async (uid: string, event: FinanceEvent) => {
           const transRef = doc(collection(userRef, "transactions"));
           
           // 2. WRITES START HERE
+          console.log("[TRANSACTION] criando:", finalDescription);
           transaction.set(transRef, {
             amount: Number(finalAmount),
             description: finalDescription || "Recebimento confirmado via Chat",
@@ -412,8 +430,10 @@ const executeDispatch = async (uid: string, event: FinanceEvent) => {
             resolved: true,
             createdAt: serverTimestamp()
           });
+          console.log("[EXTRATO] atualizando...");
 
           if (finalWalletInfo?.id) {
+            console.log("[WALLET] atualizando:", finalWalletInfo.name);
             const walletRef = doc(userRef, "wallets", finalWalletInfo.id);
             transaction.update(walletRef, { 
               balance: increment(Number(finalAmount)),
@@ -451,7 +471,8 @@ const executeDispatch = async (uid: string, event: FinanceEvent) => {
       }
 
       case 'ADD_CARD_CHARGE': {
-        let { amount, category, description, cardId, date, sourceWalletId, installments } = payload;
+        let { amount: rawAmount, category, description, cardId, date, sourceWalletId, installments } = payload;
+        const amount = Number(rawAmount);
         const catInfo = await getCategoryInfo(uid, category, description);
         const chargeDate = parseSafeDate(date);
         const numInstallments = Math.max(1, installments || 1);
@@ -481,10 +502,8 @@ const executeDispatch = async (uid: string, event: FinanceEvent) => {
 
           for (let i = 0; i < numInstallments; i++) {
             const currentInstallmentDate = new Date(chargeDate);
-            // Correção do pulo de mês: define dia 1 antes de mudar o mês
             currentInstallmentDate.setDate(1);
             currentInstallmentDate.setMonth(chargeDate.getMonth() + i);
-            // Restaura o dia original ou o último dia do mês alvo
             const lastDayOfTargetMonth = new Date(currentInstallmentDate.getFullYear(), currentInstallmentDate.getMonth() + 1, 0).getDate();
             currentInstallmentDate.setDate(Math.min(chargeDate.getDate(), lastDayOfTargetMonth));
             
@@ -503,6 +522,7 @@ const executeDispatch = async (uid: string, event: FinanceEvent) => {
               : description;
 
             const transRef = doc(collection(userRef, "transactions"));
+            console.log("[TRANSACTION] criando (parcela):", installmentDesc);
             batch.set(transRef, {
               amount: installmentAmount, 
               category: catInfo.name,
@@ -529,8 +549,10 @@ const executeDispatch = async (uid: string, event: FinanceEvent) => {
               totalInstallments: numInstallments,
               originalAmount: amount
             });
+            console.log("[EXTRATO] atualizando...");
           }
 
+          console.log("[WALLET] atualizando cartão:", cardName);
           batch.update(cardRef, {
             usedLimit: increment(amount),
             availableLimit: increment(-amount),
@@ -541,11 +563,13 @@ const executeDispatch = async (uid: string, event: FinanceEvent) => {
             updatedAt: serverTimestamp()
           });
 
+          // Sincronização com Dashboard: Atualizar limite de categoria
           const limitId = catInfo.id;
           const limitRef = doc(userRef, "limits", limitId);
           const limitSnap = await getDoc(limitRef);
           
           if (limitSnap.exists()) {
+            console.log("[DASHBOARD] atualizando:", catInfo.name);
             batch.update(limitRef, {
               spent: increment(amount),
               updatedAt: serverTimestamp()
@@ -580,7 +604,18 @@ const executeDispatch = async (uid: string, event: FinanceEvent) => {
           createdAt: serverTimestamp()
         });
 
-        // 2. Atualiza o cartão
+        // 2. Atualização de Limite de Categoria (Rastreamento de orçamento da fatura)
+        const limitId = getCategoryId('Cartão de Crédito');
+        const limitRef = doc(userRef, "limits", limitId);
+        const limitSnap = await getDoc(limitRef);
+        if (limitSnap.exists()) {
+          payBatch.update(limitRef, {
+            spent: increment(amount),
+            updatedAt: serverTimestamp()
+          });
+        }
+
+        // 3. Atualiza o cartão
         const cardRef = doc(userRef, "cards", cardId);
         payBatch.update(cardRef, {
           usedLimit: increment(-amount),
@@ -742,6 +777,7 @@ const executeDispatch = async (uid: string, event: FinanceEvent) => {
           if (paymentMethod === 'CARD' && !isReceive) {
             // Para cartão, o ADD_CARD_CHARGE já faz o commit do batch dele
             // Então precisamos commitar este primeiro
+            console.log("[EXECUTOR] ação (lembrete->cartão)");
             await batch.commit();
             await dispatchEvent(uid, {
               type: 'ADD_CARD_CHARGE',
@@ -758,6 +794,7 @@ const executeDispatch = async (uid: string, event: FinanceEvent) => {
             });
           } else {
             const transRef = doc(collection(userRef, "transactions"));
+            console.log("[TRANSACTION] criando (lembrete):", billData.description);
             batch.set(transRef, {
               description: isReceive ? `REC: ${billData.description}` : `PGTO: ${billData.description}`,
               amount: billData.amount,
@@ -774,8 +811,10 @@ const executeDispatch = async (uid: string, event: FinanceEvent) => {
               resolved: true,
               createdAt: serverTimestamp()
             });
+            console.log("[EXTRATO] atualizando...");
 
             if (sourceWalletId) {
+              console.log("[WALLET] atualizando:", sourceWalletId);
               const walletRef = doc(userRef, "wallets", sourceWalletId);
               batch.update(walletRef, { 
                 balance: increment(isReceive ? billData.amount : -billData.amount),
@@ -787,6 +826,7 @@ const executeDispatch = async (uid: string, event: FinanceEvent) => {
             const normalizedCat = normalizeCategoryName(billData.category || 'Contas');
             const limitId = getCategoryId(normalizedCat);
             const limitRef = doc(userRef, "limits", limitId);
+            console.log("[DASHBOARD] atualizando:", normalizedCat);
             batch.set(limitRef, {
               category: normalizedCat,
               spent: increment(billData.amount),
@@ -990,7 +1030,73 @@ const executeDispatch = async (uid: string, event: FinanceEvent) => {
       case 'DELETE_CARD': {
         const { id } = event.payload;
         if (!id) throw new Error("ID is required for DELETE_CARD");
-        await deleteDoc(doc(userRef, "cards", id));
+        
+        console.log("GB Dispatch: Iniciando exclusão de cartão e limpeza de órfãos...", id);
+        
+        // 1. Busca todas as transações vinculadas a este cartão para limpeza
+        const transQ = query(collection(userRef, "transactions"), where("cardId", "==", id));
+        const transSnap = await getDocs(transQ);
+        
+        let batch = writeBatch(db);
+        let opCount = 0;
+
+        if (!transSnap.empty) {
+          const limitChanges: Record<string, number> = {};
+
+          for (const tDoc of transSnap.docs) {
+            const data = tDoc.data();
+            const amount = Number(data.amount || 0);
+            const category = data.category || 'Outros';
+            const limitId = getCategoryId(category);
+
+            // Reverte o impacto no limite de categoria (Limpeza de resíduos)
+            if (data.type === 'EXPENSE') {
+              limitChanges[limitId] = (limitChanges[limitId] || 0) + amount;
+            }
+
+            // Se for um pagamento (que afetou carteira), estorna o valor para a carteira
+            if (data.sourceWalletId && data.type === 'EXPENSE' && data.paymentMethod !== 'CARD') {
+              const walletRef = doc(userRef, "wallets", data.sourceWalletId);
+              batch.update(walletRef, {
+                balance: increment(amount),
+                updatedAt: serverTimestamp()
+              });
+              opCount++;
+            }
+
+            // Exclui a transação
+            batch.delete(tDoc.ref);
+            opCount++;
+
+            // Respeita o limite de 500 operações por batch do Firestore
+            if (opCount >= 450) {
+              await batch.commit();
+              batch = writeBatch(db);
+              opCount = 0;
+            }
+          }
+
+          // Aplica os estornos nos limites de categoria
+          for (const [lId, amountToSubtract] of Object.entries(limitChanges)) {
+            const limitRef = doc(userRef, "limits", lId);
+            batch.update(limitRef, {
+              spent: increment(-amountToSubtract),
+              updatedAt: serverTimestamp()
+            });
+            opCount++;
+            if (opCount >= 450) {
+              await batch.commit();
+              batch = writeBatch(db);
+              opCount = 0;
+            }
+          }
+        }
+
+        // 2. Exclui o cartão propriamente dito
+        batch.delete(doc(userRef, "cards", id));
+        await batch.commit();
+        
+        console.log("GB Dispatch: Card e dados vinculados excluídos com sucesso.");
         break;
       }
 

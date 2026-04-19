@@ -535,6 +535,8 @@ const ChatInterface: React.FC<ChatProps> = ({
 
     try {
       // 4. TRY
+      console.log("[CHAT] mensagem recebida:", trimmedText);
+      
       // Salvar mensagem do usuário
       await sendMessage(trimmedText, 'user');
 
@@ -585,6 +587,7 @@ const ChatInterface: React.FC<ChatProps> = ({
       console.log("[chat] calling parseMessage...");
       let aiResult = await parseMessage(trimmedText, user.name || 'Usuário', finalContext);
       console.log("[chat] parseMessage result:", aiResult);
+      console.log("[PARSER] resultado:", aiResult);
 
       // 4.3 Reconciliação entre Local Parser e IA
       // Se a IA não retornar eventos mas o parser local tiver alta confiança, usamos o parser local
@@ -594,6 +597,7 @@ const ChatInterface: React.FC<ChatProps> = ({
         let eventType = 'ADD_EXPENSE';
         if (localResult.type === 'income') eventType = 'ADD_INCOME';
         if (localResult.type === 'transfer') eventType = 'TRANSFER_WALLET';
+        if (localResult.type === 'pay_card') eventType = 'PAY_CARD';
         if (localResult.type === 'expense' && localResult.paymentMethod === 'CARD') eventType = 'ADD_CARD_CHARGE';
 
         const fallbackEvent = {
@@ -651,9 +655,15 @@ const ChatInterface: React.FC<ChatProps> = ({
       // 7. Salvar resposta do assistant
       await sendMessage(replyText, 'ai');
 
-    } catch (e) {
+    } catch (error: any) {
       // 5. CATCH
-      console.error("[chat] critical error in pipeline:", e);
+      console.error("[CHAT ERROR]", error);
+      
+      alert(
+        'Erro no sistema:\n\n' +
+        (error?.message || JSON.stringify(error))
+      );
+
       try {
         await sendMessage("Tive um problema técnico ao processar sua mensagem. Por favor, tente novamente em alguns instantes.", 'ai');
       } catch (sendErr) {
@@ -728,6 +738,9 @@ const ChatInterface: React.FC<ChatProps> = ({
 
     setIsLoading(true);
     try {
+      const selectedEvents = pendingEvents.filter(ev => ev.payload.selected);
+      console.log("[EXECUTOR] ação (lote):", selectedEvents);
+
       // 1. Deduplicar e criar novas categorias se necessário
       const newCategoryNames: string[] = Array.from(new Set(
         selectedEvents
@@ -750,7 +763,7 @@ const ChatInterface: React.FC<ChatProps> = ({
 
       // 2. Processar eventos
       for (const event of selectedEvents) {
-        const eventToDispatch = { ...event };
+        const eventToDispatch = JSON.parse(JSON.stringify(event));
         eventToDispatch.payload.confirmedBy = user.uid;
         
         // Aprender padrão de categoria do extrato
@@ -770,19 +783,29 @@ const ChatInterface: React.FC<ChatProps> = ({
           }
         }
 
-        await dispatchEvent(user.uid, {
+        const response = await dispatchEvent(user.uid, {
           ...eventToDispatch,
           source: 'chat',
           createdAt: new Date()
         });
+
+        if (!response.success) {
+          console.warn(`GB Chat: Evento parcial falhou: ${response.error}`);
+        }
       }
 
       const name = isCard ? cards.find(c => c.id === id)?.name || 'Cartão' : wallets.find(w => w.id === id)?.name || 'Carteira';
       await sendMessage(`✅ Sucesso! Importei ${selectedEvents.length} lançamentos para sua conta (${name}).`, 'ai');
       setPendingEvents([]);
-    } catch (e) {
-      console.error("GB Chat: Erro ao confirmar eventos em lote:", e);
-      await sendMessage("Ocorreu um erro ao salvar alguns lançamentos.", 'ai');
+    } catch (error: any) {
+      console.error("[CHAT ERROR]", error);
+
+      alert(
+        'Erro no sistema:\n\n' +
+        (error?.message || JSON.stringify(error))
+      );
+      
+      await sendMessage(`Ocorreu um erro ao salvar alguns lançamentos: ${error.message || 'Erro desconhecido'}.`, 'ai');
     } finally {
       setIsLoading(false);
     }
@@ -811,15 +834,20 @@ const ChatInterface: React.FC<ChatProps> = ({
 
     setIsLoading(true);
     try {
-      const eventToDispatch = { ...pendingAction, operationKey };
+      console.log("[EXECUTOR] ação:", pendingAction);
+      
+      const eventToDispatch = JSON.parse(JSON.stringify(pendingAction));
+      eventToDispatch.operationKey = operationKey;
       
       // Aprender padrão de categoria
       if (eventToDispatch.payload.description && eventToDispatch.payload.category) {
         await learnCategoryPattern(user.uid, eventToDispatch.payload.description, eventToDispatch.payload.category);
       }
 
+      let response: any;
+
       if (pendingAction.payload.reminderId) {
-        await dispatchEvent(user.uid, {
+        response = await dispatchEvent(user.uid, {
           type: 'PAY_REMINDER',
           operationKey,
           payload: {
@@ -835,7 +863,7 @@ const ChatInterface: React.FC<ChatProps> = ({
         });
       } else if (pendingAction.type === 'TRANSFER_WALLET') {
         // Transferência já tem origem e destino identificados pela IA ou parser
-        await dispatchEvent(user.uid, {
+        response = await dispatchEvent(user.uid, {
           ...pendingAction,
           operationKey,
           source: 'chat',
@@ -856,11 +884,15 @@ const ChatInterface: React.FC<ChatProps> = ({
           eventToDispatch.payload.confirmedBy = user.uid;
         }
 
-        await dispatchEvent(user.uid, {
+        response = await dispatchEvent(user.uid, {
           ...eventToDispatch,
           source: 'chat',
           createdAt: new Date()
         });
+      }
+
+      if (response && !response.success) {
+        throw new Error(response.error || "Erro ao processar transação");
       }
 
       let feedback = '';
@@ -878,8 +910,15 @@ const ChatInterface: React.FC<ChatProps> = ({
       
       await sendMessage(feedback, 'ai');
       setPendingAction(null);
-    } catch (e) {
-      console.error(e);
+    } catch (error: any) {
+      console.error("[CHAT ERROR]", error);
+
+      alert(
+        'Erro no sistema:\n\n' +
+        (error?.message || JSON.stringify(error))
+      );
+
+      await sendMessage(`Desculpe, ocorreu um erro ao registrar: ${error.message || 'Erro desconhecido'}.`, 'ai');
     } finally {
       setIsLoading(false);
     }

@@ -5,7 +5,7 @@
  */
 
 export interface ParsedFinancialMessage {
-  type: 'expense' | 'income' | 'transfer' | 'unknown';
+  type: 'expense' | 'income' | 'transfer' | 'pay_card' | 'unknown';
   amount: number | null;
   description: string;
   categoryHint: string;
@@ -85,7 +85,7 @@ const extractAmount = (text: string): number | null => {
 /**
  * Identifica a intenção da mensagem
  */
-const detectIntent = (text: string): 'expense' | 'income' | 'transfer' | 'unknown' => {
+const detectIntent = (text: string): 'expense' | 'income' | 'transfer' | 'pay_card' | 'unknown' => {
   const expenseKeywords = ['gastei', 'paguei', 'saiu', 'saíram', 'comprei', 'compra', 'pagamento', 'despesa', 'gasto', 'débito'];
   const incomeKeywords = ['recebi', 'ganhei', 'entrou', 'caiu', 'recebimento', 'salário', 'renda', 'pix recebido', 'crédito'];
   const transferKeywords = ['transferi', 'transferência', 'passei', 'mandei para', 'transferir', 'pix para'];
@@ -93,6 +93,12 @@ const detectIntent = (text: string): 'expense' | 'income' | 'transfer' | 'unknow
   const lower = text.toLowerCase();
   if (transferKeywords.some(k => lower.includes(k))) return 'transfer';
   if (incomeKeywords.some(k => lower.includes(k))) return 'income';
+  
+  // Detecção específica de pagamento de fatura
+  if ((lower.includes('fatura') || lower.includes('pagamento do cartão')) && (lower.includes('paguei') || lower.includes('pagamento') || lower.includes('quitei'))) {
+    return 'expense'; // Mantemos como expense, mas vamos refinar no parseFinancialMessage
+  }
+
   if (expenseKeywords.some(k => lower.includes(k))) return 'expense';
 
   return 'unknown';
@@ -143,7 +149,15 @@ export const parseFinancialMessage = (message: string): ParsedFinancialMessage =
   if (intent === 'unknown') missingFields.push('tipo de transação');
   
   // Se detectou parcelas ou "cartão", confere se é gasto
-  const finalMethod = paymentMethod || (installments ? 'CARD' : undefined);
+  let finalMethod = paymentMethod || (installments ? 'CARD' : undefined);
+  let finalType: any = intent;
+
+  // Refinamento de Pagamento de Fatura vs Compra no Cartão
+  const isInvoicePayment = normalized.includes('fatura') || normalized.includes('pagamento do cartão') || normalized.includes('paguei o cartão');
+  if (intent === 'expense' && isInvoicePayment) {
+     finalType = 'pay_card';
+     finalMethod = 'PIX'; // Pagamento de fatura geralmente é via saldo/pix
+  }
 
   if (!description || description.length < 2) {
     if (intent !== 'income') missingFields.push('descrição');
@@ -170,7 +184,7 @@ export const parseFinancialMessage = (message: string): ParsedFinancialMessage =
   if (missingFields.length > 0) confidence -= (missingFields.length * 0.1);
 
   return {
-    type: intent,
+    type: finalType,
     amount,
     description: description || (intent === 'income' ? 'Recebimento' : 'Gasto'),
     categoryHint: description,

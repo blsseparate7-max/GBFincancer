@@ -159,7 +159,8 @@ const Dashboard: React.FC<DashProps> = ({ transactions, goals, limits, wallets, 
       .filter(t => t.type === 'INCOME')
       .reduce((s, t) => s + Math.abs(Number(t.amount) || 0), 0);
     
-    // Regra: Não considera gastos de cartão como saída real (apenas o PIX do pagamento da fatura conta)
+    // Regra: Saída real (Wallet) + Compromissos de Cartão
+    // Isso garante que o usuário veja o impacto imediato de um gasto no cartão no Dashboard
     const expense = monthTransactions
       .filter(t => t.type === 'EXPENSE' && t.paymentMethod !== 'CARD')
       .reduce((s, t) => s + Math.abs(Number(t.amount) || 0), 0);

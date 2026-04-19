@@ -259,7 +259,7 @@ const Extrato: React.FC<ExtratoProps> = ({
       // Advanced Filters
       // Date filters are now handled by Firestore query for efficiency
       const matchesCategory = !selectedCategory || t.category === selectedCategory;
-      const matchesMethod = !selectedMethod || t.paymentMethod === selectedMethod;
+      const matchesMethod = selectedMethod ? t.paymentMethod === selectedMethod : t.paymentMethod !== 'CARD';
       const matchesCard = !selectedCard || t.cardId === selectedCard;
       const matchesWallet = !selectedWalletId || t.sourceWalletId === selectedWalletId || t.targetWalletId === selectedWalletId;
       const matchesMin = !minVal || t.amount >= Number(minVal);

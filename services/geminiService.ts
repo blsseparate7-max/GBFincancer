@@ -292,12 +292,11 @@ export const parseMessage = async (text: string, userName: string, context?: { u
       - O valor deve ser positivo.
       4. PREVISÃO:
       - Se o usuário perguntar "como vou terminar o mês?", use os dados para estimar se o saldo será positivo ou negativo.
-      4. PARCELAMENTO (CARTÃO DE CRÉDITO):
-      - Se o usuário disser algo como "gastei 1200 em 12x" ou "comprei 300 no cartão em 6x", você deve identificar que é uma compra parcelada.
-      - O evento deve ser ADD_CARD_CHARGE.
-      - O "amount" deve ser o VALOR TOTAL da compra (ex: 1200).
-      - O campo "installments" deve conter o número de parcelas (ex: 12).
-      - Se o usuário disser "paguei 100 em 12x", o "amount" deve ser 1200 (100 * 12).
+      4. PARCELAMENTO vs PAGAMENTO (CARTÃO DE CRÉDITO):
+      - COMPRA NO CARTÃO: Se o usuário disser "gastei 1200 em 12x" ou "comprei 300 no cartão", use ADD_CARD_CHARGE. Isso NÃO impacta o Dashboard como gasto real ainda.
+      - PAGAMENTO DE FATURA: Se o usuário disser "paguei a fatura", "paguei o cartão" ou "quitei o gasto do cartão", use PAY_CARD. Isso É uma saída real e deve registrar qual carteira foi usada (sourceWalletName).
+      - Para ADD_CARD_CHARGE, o campo "installments" é obrigatório para compras parceladas.
+      - Para PAY_CARD, use 'amount' para o valor pago na fatura.
       - NUNCA envie o valor da parcela no campo "amount". O sistema faz a divisão automaticamente.
 
       OBJETIVO: Analisar a mensagem e retornar um JSON com "reply", "intent" e opcionalmente uma lista de "events".
