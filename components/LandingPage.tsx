@@ -179,7 +179,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onLogin, onOpenSupport }) => 
                       <CheckCircle2 size={14} className="text-[#00A884]" />
                       <span className="text-[10px] font-black text-[#00A884] uppercase tracking-widest">Lançamento Confirmado</span>
                     </div>
-                    <p className="text-sm font-black text-white italic">R$ 50,00 — Mercado Muffato</p>
+                    <p className="text-sm font-black text-white italic">R$ 50,00 — Mercado </p>
                   </div>
                 </div>
               </motion.div>

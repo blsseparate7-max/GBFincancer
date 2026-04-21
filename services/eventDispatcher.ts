@@ -745,7 +745,7 @@ const executeDispatch = async (uid: string, event: FinanceEvent) => {
         const billId = payload.billId || payload.id;
         const { paymentMethod, sourceWalletId, cardId } = payload;
         if (!billId) {
-          console.error("GB: PAY_REMINDER sem ID no payload");
+          console.error("[REMINDER] error: PAY_REMINDER sem ID no payload");
           break;
         }
         const billRef = doc(userRef, "reminders", billId);
@@ -760,9 +760,11 @@ const executeDispatch = async (uid: string, event: FinanceEvent) => {
             return { success: true, message: "Já processado." };
           }
 
+          console.log("[REMINDER] user clicked paid:", billData.description);
           const isReceive = billData.type === 'RECEIVE';
           const cycleKey = getCycleKey();
           
+          // 1. Atualizar status do lembrete
           batch.update(billRef, { 
             isPaid: true, 
             paidAt: now.toISOString(),
@@ -773,8 +775,10 @@ const executeDispatch = async (uid: string, event: FinanceEvent) => {
             confirmationProcessedAt: serverTimestamp(),
             cycleKey
           });
+          console.log("[REMINDER] reminder status updated");
           
           if (paymentMethod === 'CARD' && !isReceive) {
+            console.log("[REMINDER] creating payment transaction (CARD)");
             // Para cartão, o ADD_CARD_CHARGE já faz o commit do batch dele
             // Então precisamos commitar este primeiro
             console.log("[EXECUTOR] ação (lembrete->cartão)");
@@ -792,8 +796,26 @@ const executeDispatch = async (uid: string, event: FinanceEvent) => {
               source,
               createdAt: serverTimestamp()
             });
+            console.log("[REMINDER] completed successfully (CARD)");
           } else {
+            console.log("[REMINDER] creating payment transaction");
             const transRef = doc(collection(userRef, "transactions"));
+            
+            // Tenta resolver a carteira se não veio no payload
+            let finalWalletId = sourceWalletId;
+            let finalWalletName = null;
+
+            if (!finalWalletId && billData.targetWalletName) {
+              const resolved = await resolveWallet(uid, undefined, billData.targetWalletName);
+              if (resolved) {
+                finalWalletId = resolved.id;
+                finalWalletName = resolved.name;
+              }
+            }
+
+            // A data da transação DEVE ser 'now' (hoje) para refletir o fluxo de caixa real noDashboard e ser pega pelo listener do App.tsx
+            const transactionDate = now.toISOString();
+
             console.log("[TRANSACTION] criando (lembrete):", billData.description);
             batch.set(transRef, {
               description: isReceive ? `REC: ${billData.description}` : `PGTO: ${billData.description}`,
@@ -801,38 +823,45 @@ const executeDispatch = async (uid: string, event: FinanceEvent) => {
               category: billData.category || (isReceive ? 'Recebimento' : 'Contas'),
               type: isReceive ? 'INCOME' : 'EXPENSE',
               paymentMethod: paymentMethod || 'PIX',
-              sourceWalletId: sourceWalletId || null,
-              date: billData.dueDate || now.toISOString(),
+              sourceWalletId: finalWalletId || null,
+              walletId: finalWalletId || null,
+              walletName: finalWalletName,
+              date: transactionDate,
               isQA,
               source,
-              cycleKey,
+              cycleKey: getCycleKey(transactionDate),
               confirmedBy,
               status: 'CONFIRMED',
               resolved: true,
               createdAt: serverTimestamp()
             });
-            console.log("[EXTRATO] atualizando...");
+            console.log("[REMINDER] updating wallet");
 
-            if (sourceWalletId) {
-              console.log("[WALLET] atualizando:", sourceWalletId);
-              const walletRef = doc(userRef, "wallets", sourceWalletId);
+            if (finalWalletId) {
+              console.log("[WALLET] atualizando:", finalWalletId);
+              const walletRef = doc(userRef, "wallets", finalWalletId);
               batch.update(walletRef, { 
                 balance: increment(isReceive ? billData.amount : -billData.amount),
                 updatedAt: serverTimestamp()
               });
             }
 
-          if (!isReceive) {
-            const normalizedCat = normalizeCategoryName(billData.category || 'Contas');
-            const limitId = getCategoryId(normalizedCat);
-            const limitRef = doc(userRef, "limits", limitId);
-            console.log("[DASHBOARD] atualizando:", normalizedCat);
-            batch.set(limitRef, {
-              category: normalizedCat,
-              spent: increment(billData.amount),
-              updatedAt: serverTimestamp()
-            }, { merge: true });
-          }
+            if (!isReceive) {
+              console.log("[REMINDER] updating dashboard");
+              const normalizedCat = normalizeCategoryName(billData.category || 'Contas');
+              const limitId = getCategoryId(normalizedCat);
+              const limitRef = doc(userRef, "limits", limitId);
+              console.log("[DASHBOARD] atualizando:", normalizedCat);
+              batch.set(limitRef, {
+                category: normalizedCat,
+                spent: increment(billData.amount),
+                updatedAt: serverTimestamp()
+              }, { merge: true });
+            }
+
+            console.log("[REMINDER] updating financial summary");
+            // Nota: O resumo financeiro é calculado on-the-fly a partir das transações no GBFinancer v4.
+            // Ao criar a transação com data de HOJE, o resumo no dashboard será atualizado automaticamente pelo Re-render.
 
             // Se for recorrente, cria o do próximo mês
             if (billData.recurring) {
@@ -859,6 +888,7 @@ const executeDispatch = async (uid: string, event: FinanceEvent) => {
             }
 
             await batch.commit();
+            console.log("[REMINDER] completed successfully");
           }
         }
         break;

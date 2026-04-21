@@ -353,7 +353,10 @@ const ChatInterface: React.FC<ChatProps> = ({
   const handleSalaryConfirm = async (confirmed: boolean) => {
     if (!pendingSalaryReminder || isLoading || isProcessingRef.current) return;
 
-    console.log("[chat] interceptado: confirmação de salário");
+    if (confirmed) {
+      console.log("[REMINDER] user clicked paid: Salário");
+    }
+
     setIsLoading(true);
     isProcessingRef.current = true;
 
@@ -383,8 +386,10 @@ const ChatInterface: React.FC<ChatProps> = ({
         });
 
         if (result.success) {
+          console.log("[REMINDER] completed successfully: Salário");
           await sendMessage(`Excelente! Registrei o recebimento de **${formatCurrency(pendingSalaryReminder.amount)}** na sua carteira **${(pendingSalaryReminder as any).targetWalletName || 'Principal'}**. Seu saldo e dashboard já foram atualizados! 🚀`, 'ai');
         } else {
+          console.error("[REMINDER] error in salary confirm:", result.error);
           await sendMessage("Houve um probleminha ao registrar seu salário. Mas não se preocupe, você pode tentar novamente ou registrar manualmente no Dashboard.", 'ai');
         }
       } else {
@@ -417,10 +422,9 @@ const ChatInterface: React.FC<ChatProps> = ({
       
       setPendingSalaryReminder(null);
     } catch (err) {
-      console.error("[chat] error na confirmação de salário:", err);
+      console.error("[REMINDER] error:", err);
       await sendMessage("Tive um problema para processar sua solicitação. Tente novamente.", 'ai');
     } finally {
-      console.log("[chat] analyzing false");
       setIsLoading(false);
       isProcessingRef.current = false;
     }
@@ -430,7 +434,10 @@ const ChatInterface: React.FC<ChatProps> = ({
     const bill = billOverride || pendingBillReminder;
     if (!bill || isLoading || isProcessingRef.current) return;
 
-    console.log("[chat] interceptado: confirmação de conta");
+    if (confirmed) {
+      console.log("[REMINDER] user clicked paid:", bill.description);
+    }
+
     setIsLoading(true);
     isProcessingRef.current = true;
 
@@ -449,8 +456,10 @@ const ChatInterface: React.FC<ChatProps> = ({
         });
 
         if (result.success) {
+          console.log("[REMINDER] completed successfully:", bill.description);
           await sendMessage(`Perfeito! Marquei **${bill.description}** como pago e atualizei seu dashboard. ✅`, 'ai');
         } else {
+          console.error("[REMINDER] error paying bill:", result.error);
           await sendMessage("Tive um problema ao marcar como pago. Tente novamente em instantes.", 'ai');
         }
       } else {
@@ -459,10 +468,9 @@ const ChatInterface: React.FC<ChatProps> = ({
       
       setPendingBillReminder(null);
     } catch (err) {
-      console.error("[chat] error na confirmação de conta:", err);
+      console.error("[REMINDER] error:", err);
       await sendMessage("Tive um problema para processar sua solicitação. Tente novamente.", 'ai');
     } finally {
-      console.log("[chat] analyzing false");
       setIsLoading(false);
       isProcessingRef.current = false;
     }
