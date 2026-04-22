@@ -219,7 +219,7 @@ export const parseMessage = async (text: string, userName: string, context?: { u
 
     console.log("[chat] parser start");
     const responsePromise = ai.models.generateContent({
-      model: 'gemini-2.0-flash',
+      model: 'gemini-3-flash-preview',
       contents: `Você é o GB, mentor financeiro premium de ${userName}. Hoje é ${today} e agora são ${currentTime}.
       
       ${categoriesContext}
@@ -328,7 +328,7 @@ export const parseMessage = async (text: string, userName: string, context?: { u
 
     const response: any = await Promise.race([responsePromise, timeoutPromise]);
 
-    if (!response.text) {
+    if (!response || !response.text) {
       throw new Error("Resposta da IA vazia");
     }
 

@@ -476,6 +476,59 @@ const ChatInterface: React.FC<ChatProps> = ({
     }
   };
 
+  const handleFastPathQuery = async (text: string): Promise<boolean> => {
+    const lower = text.toLowerCase().trim();
+    const now = new Date();
+    const todayStr = now.toISOString().split('T')[0];
+    
+    // GASTEI HOJE
+    if (lower.includes('gastei hoje') || lower.includes('quanto gastei hoje')) {
+      const todayExpenses = transactions
+        .filter(t => t.type === 'EXPENSE' && t.date.startsWith(todayStr) && t.paymentMethod !== 'CARD')
+        .reduce((acc, t) => acc + t.amount, 0);
+      await sendMessage(`Você gastou **${formatCurrency(todayExpenses)}** hoje (em dinheiro/PIX/débito). 💸`, 'ai');
+      return true;
+    }
+
+    // RECEBI ESSE MÊS
+    if (lower.includes('recebi esse mês') || lower.includes('quanto recebi esse mes') || lower.includes('quanto recebi este mes')) {
+      const monthIncome = transactions
+        .filter(t => t.type === 'INCOME' && new Date(t.date).getMonth() === now.getMonth() && new Date(t.date).getFullYear() === now.getFullYear())
+        .reduce((acc, t) => acc + t.amount, 0);
+      await sendMessage(`Este mês você recebeu um total de **${formatCurrency(monthIncome)}**. 💰`, 'ai');
+      return true;
+    }
+
+    // GASTEI ESSE MÊS
+    if (lower.includes('gastei esse mês') || lower.includes('quanto gastei esse mes') || lower.includes('quanto gastei este mes')) {
+      const monthExpenses = transactions
+        .filter(t => t.type === 'EXPENSE' && t.paymentMethod !== 'CARD' && new Date(t.date).getMonth() === now.getMonth() && new Date(t.date).getFullYear() === now.getFullYear())
+        .reduce((acc, t) => acc + t.amount, 0);
+      await sendMessage(`Suas despesas confirmadas este mês totalizam **${formatCurrency(monthExpenses)}**. 📉`, 'ai');
+      return true;
+    }
+
+    // SALDO ATUAL
+    if (lower.includes('saldo atual') || lower === 'meu saldo' || lower === 'saldo') {
+      const totalBalance = wallets.reduce((acc, w) => acc + w.balance, 0);
+      await sendMessage(`Seu saldo total somando todas as carteiras é de **${formatCurrency(totalBalance)}**. 🏦`, 'ai');
+      return true;
+    }
+
+    // RESUMO
+    if (lower === 'resumo' || lower === 'resumo hoje' || lower === 'como estou' || lower === 'resumo do mes') {
+      const summary = calculateMonthlySummary(transactions);
+      await sendMessage(`Aqui está seu resumo de **${now.toLocaleString('pt-BR', { month: 'long' })}/${now.getFullYear()}**:\n\n` + 
+        `• **Receitas:** ${formatCurrency(summary.income)}\n` +
+        `• **Despesas:** ${formatCurrency(summary.expense)}\n` +
+        `• **Balanço:** ${formatCurrency(summary.balance)}\n\n` +
+        `O que mais você gostaria de saber? 💡`, 'ai');
+      return true;
+    }
+
+    return false;
+  };
+
   const handleSend = async (text: string) => {
     // 1. Bloqueio de clique duplo
     if (!text.trim() || isLoading || isProcessingRef.current) {
@@ -552,6 +605,16 @@ const ChatInterface: React.FC<ChatProps> = ({
       // Tenta entender comandos financeiros simples antes da IA para garantir robustez absoluta
       const localResult = parseFinancialMessage(trimmedText);
       console.log("[chat] local parser result:", localResult);
+
+      // NOVO: Fast Path para Consultas Básicas (Saldo, Gasto Hoje, Resumo)
+      // Isso libera a IA de tarefas simples e garante resposta mesmo se a IA oscilar
+      const handledByFastPath = await handleFastPathQuery(trimmedText);
+      if (handledByFastPath) {
+        setIsLoading(false);
+        isProcessingRef.current = false;
+        clearTimeout(safetyTimeout);
+        return;
+      }
 
       // Interceptadores de confirmação (agora protegidos pelo isPureConfirmation)
       if (isPureConfirmation) {
