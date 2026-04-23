@@ -19,19 +19,29 @@ export const createCheckoutSession = async (uid: string, email: string, plan: st
 };
 
 export const handleKiwifyRedirect = async (uid: string, checkoutId: string, email: string = '', plan: string = 'mensal') => {
-  try {
-    // 1. Criar session antes do redirect
-    const sessionId = await createCheckoutSession(uid, email, plan);
-    console.log(`[CHECKOUT] session_id enviado para Kiwify: ${sessionId}`);
+  // 1. Abrir janela imediatamente para evitar bloqueio de popup
+  const checkoutWindow = window.open('about:blank', '_blank');
 
+  try {
+    // 2. Criar session no Firestore (async)
+    const sessionId = await createCheckoutSession(uid, email, plan);
+    
     // Redireciona para a Kiwify conforme solicitado pelo usuário
     const targetCheckoutId = checkoutId || 'j0VhQzs';
-    // Enviando sessionId via parâmetro session_id que a Kiwify deve processar e retornar como custom_parameters.session_id
-    const checkoutUrl = `https://pay.kiwify.com.br/${targetCheckoutId}?uid=${uid}&session_id=${sessionId}`;
     
-    window.open(checkoutUrl, '_blank');
+    // 3. Montar a URL com o parâmetro correto para o webhook
+    const checkoutUrl = `https://pay.kiwify.com.br/${targetCheckoutId}?uid=${uid}&custom_parameters[session_id]=${sessionId}`;
+    
+    // 4. Redirecionar a janela aberta ou usar fallback
+    if (checkoutWindow) {
+      checkoutWindow.location.href = checkoutUrl;
+    } else {
+      // Fallback para mobile/navegadores restritos ou se o pop-up foi bloqueado
+      window.location.href = checkoutUrl;
+    }
   } catch (error) {
     console.error("GB Checkout error:", error);
+    if (checkoutWindow) checkoutWindow.close();
     alert("Erro ao iniciar checkout. Tente novamente.");
   }
 };

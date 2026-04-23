@@ -167,6 +167,11 @@ service cloud.firestore {
       allow update, delete: if false; // Only system/admin can update
     }
 
+    match /adminLogs/{logId} {
+      allow read: if isAdmin();
+      allow write: if false; // Webhook uses backend admin SDK
+    }
+
     // Default deny
     match /{document=**} {
       allow read, write: if false;
