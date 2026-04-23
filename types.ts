@@ -125,6 +125,7 @@ export type EventType =
   | 'ADMIN_DELETE_USER'
   | 'ADMIN_SEND_BROADCAST'
   | 'ADMIN_UPDATE_CONFIG'
+  | 'ADMIN_MANAGE_SUBSCRIPTION'
   | 'CREATE_WALLET'
   | 'UPDATE_WALLET'
   | 'DELETE_WALLET'
@@ -230,7 +231,17 @@ export interface UserOnboarding {
   [key: string]: boolean | undefined;
 }
 
-export type SubscriptionStatus = 'trial' | 'active' | 'inactive';
+export interface AdminLogEntry {
+  id?: string;
+  type: string;
+  userId: string;
+  userName?: string;
+  action: string;
+  details: string;
+  createdAt: any;
+}
+
+export type SubscriptionStatus = 'trial' | 'active' | 'inactive' | 'canceled';
 export type SubscriptionPlan = 'mensal' | 'anual' | 'premium';
 
 export interface OnboardingStatus {

@@ -25,13 +25,14 @@ async function startServer() {
 
   // Kiwify Webhook
   app.post("/api/webhooks/kiwify", async (req, res) => {
+    console.log("[WEBHOOK] recebido:", JSON.stringify(req.body));
     const { order_status, customer, custom_parameters, plan, product_id, order_id } = req.body;
     
     // O usuário quer que usemos checkoutSessions para maior segurança
     const sessionId = custom_parameters?.session_id;
 
     if (!sessionId) {
-      console.error("Webhook Error: session_id not found in custom_parameters");
+      console.error("[WEBHOOK] Error: session_id not found in custom_parameters");
       return res.status(400).json({ error: "session_id not found" });
     }
 
@@ -40,18 +41,41 @@ async function startServer() {
       const sessionDoc = await sessionRef.get();
 
       if (!sessionDoc.exists) {
-        console.error(`Webhook Error: Checkout session ${sessionId} not found`);
+        console.error(`[WEBHOOK] Error: Checkout session ${sessionId} not found`);
+        await db.collection("adminLogs").add({
+          type: "subscription_update",
+          userId: "unknown",
+          action: "session_not_found",
+          details: `Webhook received with session_id ${sessionId} but it does not exist. Order: ${order_id}`,
+          createdAt: admin.firestore.FieldValue.serverTimestamp()
+        });
         return res.status(404).json({ error: "Session not found" });
       }
 
+      console.log(`[WEBHOOK] session encontrada: ${sessionId}`);
       const { uid } = sessionDoc.data()!;
       const userRef = db.collection("users").doc(uid);
       const userDoc = await userRef.get();
 
       if (!userDoc.exists) {
-        console.error(`Webhook Error: User ${uid} not found in Firestore`);
+        console.error(`[WEBHOOK] Error: User ${uid} not found in Firestore`);
+        await db.collection("adminLogs").add({
+          type: "subscription_update",
+          userId: uid,
+          action: "user_not_found",
+          details: `Webhook received for user ${uid} but user not found. Order: ${order_id}`,
+          createdAt: admin.firestore.FieldValue.serverTimestamp()
+        });
         return res.status(404).json({ error: "User not found" });
       }
+
+      await db.collection("adminLogs").add({
+        type: "subscription_update",
+        userId: uid,
+        action: "webhook_received",
+        details: `Webhook Kiwify recebido para usuário ${uid}. Session: ${sessionId}. Status: ${order_status}`,
+        createdAt: admin.firestore.FieldValue.serverTimestamp()
+      });
 
       let subscriptionStatus = "inactive";
       let subscriptionEndsAt = null;
@@ -66,6 +90,14 @@ async function startServer() {
           const days = plan?.name?.toLowerCase().includes("anual") ? 365 : 30;
           now.setDate(now.getDate() + days);
           subscriptionEndsAt = now.toISOString();
+
+          await db.collection("adminLogs").add({
+            type: "subscription_update",
+            userId: uid,
+            action: "payment_approved",
+            details: `Pagamento aprovado. Plano: ${plan?.name}. Expira em: ${subscriptionEndsAt}`,
+            createdAt: admin.firestore.FieldValue.serverTimestamp()
+          });
           
           // Atualiza a sessão para 'completed'
           await sessionRef.update({ 
@@ -80,6 +112,14 @@ async function startServer() {
         case "chargedback":
           subscriptionStatus = "inactive";
           subscriptionEndsAt = null;
+
+          await db.collection("adminLogs").add({
+            type: "subscription_update",
+            userId: uid,
+            action: "failed",
+            details: `Assinatura cancelada/estornada via Kiwify. Status: ${order_status}`,
+            createdAt: admin.firestore.FieldValue.serverTimestamp()
+          });
           
           await sessionRef.update({ 
             status: "failed", 
@@ -94,7 +134,7 @@ async function startServer() {
           return res.json({ success: true, message: "Waiting payment" });
 
         default:
-          console.log(`Webhook: Unhandled status ${order_status}`);
+          console.log(`[WEBHOOK] Unhandled status ${order_status}`);
           return res.json({ success: true, message: "Status ignored" });
       }
 
@@ -107,10 +147,11 @@ async function startServer() {
         updatedAt: admin.firestore.FieldValue.serverTimestamp()
       });
 
-      console.log(`Webhook Success: Updated user ${uid} to ${subscriptionStatus} via session ${sessionId}`);
+      console.log(`[WEBHOOK] usuário atualizado: ${uid} -> ${subscriptionStatus}`);
+      console.log(`[WEBHOOK] concluído para session: ${sessionId}`);
       res.json({ success: true });
     } catch (error) {
-      console.error("Kiwify Webhook Error:", error);
+      console.error("[WEBHOOK] Kiwify Webhook Error:", error);
       res.status(500).json({ error: "Internal server error" });
     }
   });

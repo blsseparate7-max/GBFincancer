@@ -14,7 +14,7 @@ const Paywall: React.FC<PaywallProps> = ({ user, onLogout }) => {
   const checkoutId = OAUTH_CONFIG.KIWIFY_CHECKOUT_ID;
 
   const handleSubscribe = () => {
-    handleKiwifyRedirect(user.uid, checkoutId);
+    handleKiwifyRedirect(user.uid, checkoutId, user.email, user.plan || 'mensal');
   };
 
   if (isDismissed) {

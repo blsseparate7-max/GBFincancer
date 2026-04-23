@@ -1522,12 +1522,95 @@ const executeDispatch = async (uid: string, event: FinanceEvent) => {
           localUpdatedAt: new Date().toISOString()
         });
         
-        // Log de Auditoria
+        // Log de Auditoria Clássico
         await addDoc(collection(db, "admin", "auditLogs", "entries"), {
           adminId,
           action: 'UPDATE_USER',
           targetUserId: targetUid,
           details: `Atualizou campos: ${Object.keys(safeUpdates).join(', ')}`,
+          createdAt: serverTimestamp()
+        });
+
+        // Log de Assinatura se campos específicos foram alterados
+        if (safeUpdates.subscriptionStatus || safeUpdates.subscriptionEndsAt || safeUpdates.plan) {
+          await addDoc(collection(db, "adminLogs"), {
+            type: "subscription_update",
+            userId: targetUid,
+            adminId,
+            action: safeUpdates.subscriptionStatus === 'active' ? 'activated_manual' : 'manual_update',
+            details: `Admin ${adminId} alterou assinatura. Status: ${safeUpdates.subscriptionStatus}, Expira em: ${safeUpdates.subscriptionEndsAt}`,
+            createdAt: serverTimestamp()
+          });
+        }
+        break;
+      }
+
+      case 'ADMIN_MANAGE_SUBSCRIPTION': {
+        const { targetUid, adminId, action, daysToAdd, newPlan, manualEmail } = payload;
+        const targetRef = doc(db, "users", targetUid);
+        const userSnap = await getDoc(targetRef);
+        
+        if (!userSnap.exists()) throw new Error("User not found");
+        const userData = userSnap.data();
+        
+        const updates: any = {
+          updatedAt: serverTimestamp()
+        };
+
+        let logAction = "manual_update";
+        let logDetails = "";
+
+        if (action === 'ACTIVATE') {
+          updates.subscriptionStatus = 'active';
+          const now = new Date();
+          now.setDate(now.getDate() + (newPlan === 'anual' ? 365 : 30));
+          updates.subscriptionEndsAt = now.toISOString();
+          updates.plan = newPlan || 'mensal';
+          updates.paymentProvider = 'manual';
+          logAction = "activated_manual";
+          logDetails = `Ativação manual. Plano: ${updates.plan}`;
+        } else if (action === 'RENEW') {
+          const currentEnd = userData.subscriptionEndsAt ? new Date(userData.subscriptionEndsAt) : new Date();
+          currentEnd.setDate(currentEnd.getDate() + (daysToAdd || 30));
+          updates.subscriptionEndsAt = currentEnd.toISOString();
+          updates.subscriptionStatus = 'active';
+          logAction = "renewed_manual";
+          logDetails = `Renovação manual. Adicionado ${daysToAdd || 30} dias. Nova expiração: ${updates.subscriptionEndsAt}`;
+        } else if (action === 'CANCEL') {
+          updates.subscriptionStatus = 'canceled';
+          logAction = "canceled_manual";
+          logDetails = "Cancelamento manual por admin";
+        } else if (action === 'BLOCK') {
+          updates.status = 'blocked';
+          logAction = "blocked_manual";
+          logDetails = "Bloqueio manual de acesso";
+        } else if (action === 'UNBLOCK') {
+          updates.status = 'active';
+          logAction = "unblocked_manual";
+          logDetails = "Desbloqueio manual de acesso";
+        } else if (action === 'LINK_PURCHASE') {
+          updates.purchaseEmail = manualEmail;
+          logAction = "linked_manual";
+          logDetails = `Vinculou email de compra: ${manualEmail}`;
+        }
+
+        await updateDoc(targetRef, updates);
+
+        await addDoc(collection(db, "adminLogs"), {
+          type: "subscription_update",
+          userId: targetUid,
+          userName: userData.name,
+          adminId,
+          action: logAction,
+          details: logDetails || `Ação: ${action}`,
+          createdAt: serverTimestamp()
+        });
+
+        await addDoc(collection(db, "admin", "auditLogs", "entries"), {
+          adminId,
+          action: 'MANAGE_SUBSCRIPTION',
+          targetUserId: targetUid,
+          details: logDetails,
           createdAt: serverTimestamp()
         });
         break;

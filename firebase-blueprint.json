@@ -59,6 +59,8 @@
       "type": "object",
       "properties": {
         "uid": { "type": "string" },
+        "email": { "type": "string" },
+        "plan": { "type": "string", "enum": ["mensal", "anual"] },
         "status": { "type": "string", "enum": ["pending", "completed", "failed"] },
         "orderId": { "type": "string" },
         "reason": { "type": "string" },
