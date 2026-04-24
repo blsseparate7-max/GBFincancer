@@ -92,7 +92,10 @@ const GuidedOnboarding: React.FC<GuidedOnboardingProps> = ({
       // Validação Obrigatória Passo 1: Salário e Carteira
       const mainSource = incomeSources[0];
       if (!mainSource || !mainSource.amountExpected || mainSource.amountExpected <= 0 || !mainSource.targetWalletName) {
-        setNotification({ message: "Por favor, informe seu salário e a carteira onde recebe.", type: 'error' });
+        setNotification({ 
+          message: "⚠️ Antes de continuar, adicione sua renda e selecione a carteira onde você recebe.", 
+          type: 'error' 
+        });
         return;
       }
 
@@ -221,7 +224,7 @@ const GuidedOnboarding: React.FC<GuidedOnboardingProps> = ({
               </div>
               <h3 className="text-2xl font-black text-[#E9EDEF] uppercase tracking-tighter italic">Suas Entradas</h3>
               <p className="text-sm text-[#8696A0] leading-relaxed">
-                Vamos começar entendendo como seu dinheiro entra. Isso permite organizar seu mês e prever recebimentos com precisão.
+                Adicione sua renda mensal abaixo e <span className="text-[#00A884] font-bold">clique em Adicionar</span> para salvar.
               </p>
             </div>
 
@@ -374,7 +377,10 @@ const GuidedOnboarding: React.FC<GuidedOnboardingProps> = ({
                   <div className="flex gap-2">
                     <button 
                       onClick={() => {
-                        if (!newIncome.description || newIncome.amount <= 0) return;
+                        if (!newIncome.description || newIncome.amount <= 0) {
+                          setNotification({ message: "Informe descrição e valor da renda", type: 'error' });
+                          return;
+                        }
                         
                         const incomeData = {
                           id: editingIncomeId || Math.random().toString(36).substr(2, 9),
@@ -394,17 +400,18 @@ const GuidedOnboarding: React.FC<GuidedOnboardingProps> = ({
                         setNewIncome({ description: '', amount: 0, frequency: 'MONTHLY', wallet: '', dueDay: 5 });
                         setShowIncomeForm(false);
                         setEditingIncomeId(null);
+                        setNotification({ message: "Renda salva com sucesso! Pode prosseguir.", type: 'success' });
                       }} 
-                      className="flex-1 bg-[#00A884] text-white py-3 rounded-xl font-black text-[10px] uppercase"
+                      className="flex-[2] bg-[#00A884] text-white py-4 rounded-xl font-black text-[11px] uppercase shadow-lg shadow-[#00A884]/20 animate-bounce-subtle"
                     >
-                      {editingIncomeId ? 'Salvar Alterações' : 'Adicionar'}
+                      {editingIncomeId ? 'Salvar Alterações' : 'Salvar Renda e Carteira ✓'}
                     </button>
                     <button 
                       onClick={() => {
                         setShowIncomeForm(false);
                         setEditingIncomeId(null);
                       }} 
-                      className="flex-1 bg-[#111B21] text-[#8696A0] py-3 rounded-xl font-black text-[10px] uppercase"
+                      className="flex-1 bg-[#111B21] text-[#8696A0] py-4 rounded-xl font-black text-[10px] uppercase border border-[#2A3942]"
                     >
                       Cancelar
                     </button>

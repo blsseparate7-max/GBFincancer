@@ -28,6 +28,7 @@ const Reminders: React.FC<RemindersProps> = ({ bills, wallets, uid, loading, isE
   const [day, setDay] = useState('10');
   const [cat, setCat] = useState('Contas Fixas');
   const [type, setType] = useState<'PAY' | 'RECEIVE'>('PAY');
+  const [walletName, setWalletName] = useState('');
 
   const format = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v);
 
@@ -38,6 +39,7 @@ const Reminders: React.FC<RemindersProps> = ({ bills, wallets, uid, loading, isE
     setDay(bill.dueDay.toString());
     setCat(bill.category || (bill.type === 'RECEIVE' ? 'Recebimento' : 'Contas Fixas'));
     setType(bill.type || 'PAY');
+    setWalletName(bill.targetWalletName || '');
     setShowAddForm(true);
   };
 
@@ -102,12 +104,13 @@ const Reminders: React.FC<RemindersProps> = ({ bills, wallets, uid, loading, isE
         dueDay: parseInt(day), 
         category: cat,
         type: type,
+        targetWalletName: walletName || null,
         recurring: true 
       },
       source: 'ui',
       createdAt: new Date()
     });
-    setDesc(''); setVal(''); setType('PAY'); setShowAddForm(false); setEditingBill(null);
+    setDesc(''); setVal(''); setWalletName(''); setType('PAY'); setShowAddForm(false); setEditingBill(null);
     setIsLoading(false);
   };
 
@@ -353,6 +356,19 @@ const Reminders: React.FC<RemindersProps> = ({ bills, wallets, uid, loading, isE
               <div className="space-y-1">
                 <label className="text-[9px] font-black text-[var(--text-muted)] uppercase ml-2 tracking-widest">Categoria</label>
                 <input className="w-full bg-[var(--bg-body)] rounded-2xl p-4 text-sm font-bold outline-none text-[var(--text-primary)]" value={cat} onChange={e => setCat(e.target.value)} />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[9px] font-black text-[var(--text-muted)] uppercase ml-2 tracking-widest">Carteira Padrão (Opcional)</label>
+                <select 
+                  className="w-full bg-[var(--bg-body)] rounded-2xl p-4 text-sm font-bold outline-none text-[var(--text-primary)]" 
+                  value={walletName} 
+                  onChange={e => setWalletName(e.target.value)}
+                >
+                  <option value="">Nenhuma selecionada</option>
+                  {wallets.map(w => (
+                    <option key={w.id} value={w.name}>{w.name}</option>
+                  ))}
+                </select>
               </div>
               <button 
                 onClick={handleAddBill} 

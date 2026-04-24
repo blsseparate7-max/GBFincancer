@@ -813,6 +813,17 @@ const executeDispatch = async (uid: string, event: FinanceEvent) => {
               }
             }
 
+            // Fallback: Se ainda não houver walletId, usa a primeira do usuário
+            if (!finalWalletId) {
+              const walletsSnap = await getDocs(collection(userRef, "wallets"));
+              if (!walletsSnap.empty) {
+                const d = walletsSnap.docs[0];
+                finalWalletId = d.id;
+                finalWalletName = d.data().name;
+                console.log(`GB Dispatch: Fallback de carteira para lembrete: ${finalWalletName}`);
+              }
+            }
+
             // A data da transação DEVE ser 'now' (hoje) para refletir o fluxo de caixa real noDashboard e ser pega pelo listener do App.tsx
             const transactionDate = now.toISOString();
 

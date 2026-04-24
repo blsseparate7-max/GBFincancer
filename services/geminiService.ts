@@ -38,7 +38,7 @@ const FINANCE_PARSER_SCHEMA = {
               'PAY_CARD', 'TRANSFER_WALLET', 'CREATE_CATEGORY', 
               'UPDATE_CATEGORY', 'DELETE_CATEGORY', 'MOVE_TRANSACTION_CATEGORY',
               'CREATE_DEBT', 'UPDATE_DEBT', 'DELETE_DEBT', 'REGISTER_DEBT_PAYMENT',
-              'ESCALATE_SUPPORT'
+              'ESCALATE_SUPPORT', 'PAY_REMINDER'
             ] 
           },
           payload: { 
@@ -66,6 +66,7 @@ const FINANCE_PARSER_SCHEMA = {
               note: { type: Type.STRING },
               type: { type: Type.STRING, enum: ['PAY', 'RECEIVE'] },
               id: { type: Type.STRING },
+              billId: { type: Type.STRING, description: "ID do lembrete/conta a pagar/receber" },
               newName: { type: Type.STRING },
               oldName: { type: Type.STRING },
               transactionId: { type: Type.STRING },
@@ -137,11 +138,13 @@ export const parseMessage = async (text: string, userName: string, context?: { u
         tipo: t.type, 
         cat: t.category, 
         data: t.date,
+        metodo: t.paymentMethod,
+        pago: t.isPaid,
         carteira: t.walletName || t.sourceWalletName || t.targetWalletName
       })))}` :
       'Sem transações registradas.';
 
-    // Resumo por Categoria (Mês Atual) - Mantido para facilitar a vida da IA
+    // Resumo por Categoria (MÊS ATUAL APENAS)
     const categorySummary = context?.transactions ? 
       (() => {
         const summary: Record<string, { total: number, count: number }> = {};
@@ -152,6 +155,7 @@ export const parseMessage = async (text: string, userName: string, context?: { u
         
         context.transactions.forEach(t => {
           const tDate = new Date(t.date);
+          // IMPORTANTE: Resumo considera apenas mês atual para economia de tokens
           if (tDate.getMonth() === currentMonth && tDate.getFullYear() === currentYear && t.type === 'EXPENSE') {
             const cat = t.category || 'Outros';
             if (!summary[cat]) summary[cat] = { total: 0, count: 0 };
@@ -160,7 +164,7 @@ export const parseMessage = async (text: string, userName: string, context?: { u
             totalMonth += t.amount;
           }
         });
-        return `RESUMO GASTOS MÊS ATUAL (Total: R$ ${totalMonth.toFixed(2)}): ${JSON.stringify(summary)}`;
+        return `RESUMO GASTOS MÊS ATUAL (${now.toLocaleString('pt-BR', { month: 'long' })}): Total R$ ${totalMonth.toFixed(2)}. ${JSON.stringify(summary)}`;
       })() : '';
 
     const remindersContext = context?.reminders ? 
@@ -248,13 +252,14 @@ export const parseMessage = async (text: string, userName: string, context?: { u
       MOTOR DE CONSULTAS FINANCEIRAS (OBRIGATÓRIO):
       Você deve atuar como um motor de busca sobre os dados reais acima.
       1. GASTOS: Calcule somas de 'valor' onde 'tipo' é 'EXPENSE' para o período solicitado (hoje, ontem, semana, mês, ano).
-      2. ENTRADAS: Calcule somas de 'valor' onde 'tipo' é 'INCOME' para o período solicitado.
-      3. SALDO: O saldo atual é a soma de todos os 'saldo' na lista de CARTEIRAS.
-      4. CATEGORIAS: Identifique em qual categoria o usuário mais gastou somando os valores por 'cat'.
-      5. LIMITES: Compare os gastos reais com os LIMITES DE GASTOS e o TETO GLOBAL.
-      6. LEMBRETES: Verifique os LEMBRETES para saber o que vence hoje ou o que está pendente (pago: false).
-      7. COMPARAÇÃO: Compare somas de períodos (ex: este mês vs mês passado).
-      8. NUNCA INVENTE DADOS. Se não houver dados para o período, diga que não encontrou registros.
+      2. REGRA DO CARTÃO (CRÍTICO): Compras no cartão (paymentMethod 'CARD') NÃO entram como saída real no saldo ou dashboard até que a fatura seja paga. Ao dar resumos de "gastos", explique esta distinção se houver gastos no cartão não pagos.
+      3. ENTRADAS: Calcule somas de 'valor' onde 'tipo' é 'INCOME' para o período solicitado.
+      4. SALDO: O saldo atual é a soma de todos os 'saldo' na lista de CARTEIRAS. Não inclua limite de cartão no saldo.
+      5. CATEGORIAS: Identifique em qual categoria o usuário mais gastou somando os valores por 'cat'.
+      6. LIMITES: Compare os gastos reais com os LIMITES DE GASTOS e o TETO GLOBAL.
+      7. LEMBRETES: Verifique os LEMBRETES para saber o que vence hoje ou o que está pendente (pago: false). Use PAY_REMINDER se o usuário confirmar que pagou uma dessas contas.
+      8. COMPARAÇÃO: Compare somas de períodos (ex: este mês vs mês passado).
+      9. NUNCA INVENTE DADOS. Se não houver dados para o período solicitado (ex: mês passado), diga explicitamente que não tem acesso a esses dados no momento ou que não há registros.
       
       REGRAS DE OURO (FONTE DA VERDADE):
       1. Você deve SEMPRE priorizar os dados acima sobre qualquer conversa anterior.
