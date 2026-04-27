@@ -39,7 +39,7 @@ const Reminders: React.FC<RemindersProps> = ({ bills, wallets, uid, loading, isE
     setDay(bill.dueDay.toString());
     setCat(bill.category || (bill.type === 'RECEIVE' ? 'Recebimento' : 'Contas Fixas'));
     setType(bill.type || 'PAY');
-    setWalletName(bill.targetWalletName || '');
+    setWalletName((bill as any).targetWalletName || '');
     setShowAddForm(true);
   };
 

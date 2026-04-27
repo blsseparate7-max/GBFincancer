@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { UserSession, Message, Transaction, CategoryLimit, Bill, CreditCardInfo, Wallet, UserCategory, SavingGoal, Debt, CategoryPattern } from '../types';
 import { parseMessage } from '../services/geminiService';
-import { parseFinancialMessage } from '../services/financialMessageParser';
+import { parseFinancialMessage, parseMultipleTransactions } from '../services/financialMessageParser';
 import { parseStatementFile } from '../services/statementService';
 import { dispatchEvent } from '../services/eventDispatcher';
 import { learnCategoryPattern, getCategoryId } from '../services/categoryService';
@@ -603,8 +603,9 @@ const ChatInterface: React.FC<ChatProps> = ({
 
       // 4.1 Parser Local Determinístico (Fast Path / Fallback)
       // Tenta entender comandos financeiros simples antes da IA para garantir robustez absoluta
-      const localResult = parseFinancialMessage(trimmedText);
-      console.log("[chat] local parser result:", localResult);
+      const localResults = parseMultipleTransactions(trimmedText);
+      const localResult = localResults[0]; // Manter para compatibilidade legada se necessário
+      console.log("[chat] local parser results:", localResults);
 
       // NOVO: Fast Path para Consultas Básicas (Saldo, Gasto Hoje, Resumo)
       // Isso libera a IA de tarefas simples e garante resposta mesmo se a IA oscilar
@@ -662,33 +663,37 @@ const ChatInterface: React.FC<ChatProps> = ({
 
       // 4.3 Reconciliação entre Local Parser e IA
       // Se a IA não retornar eventos mas o parser local tiver alta confiança, usamos o parser local
-      if ((!aiResult.events || aiResult.events.length === 0) && localResult.confidence >= 0.8 && localResult.type !== 'unknown') {
-        console.log("[chat] AI didn't catch, using local parser result as fallback");
+      if ((!aiResult.events || aiResult.events.length === 0) && localResults.length > 0 && localResults.some(r => r.confidence >= 0.7 && r.type !== 'unknown')) {
+        console.log("[chat] AI didn't catch, using local parser results as fallback");
         
-        let eventType = 'ADD_EXPENSE';
-        if (localResult.type === 'income') eventType = 'ADD_INCOME';
-        if (localResult.type === 'transfer') eventType = 'TRANSFER_WALLET';
-        if (localResult.type === 'pay_card') eventType = 'PAY_CARD';
-        if (localResult.type === 'expense' && localResult.paymentMethod === 'CARD') eventType = 'ADD_CARD_CHARGE';
+        const fallbackEvents = localResults.map(p => {
+          let eventType = 'ADD_EXPENSE';
+          if (p.type === 'income') eventType = 'ADD_INCOME';
+          if (p.type === 'transfer') eventType = 'TRANSFER_WALLET';
+          if (p.type === 'pay_card') eventType = 'PAY_CARD';
+          if (p.type === 'expense' && p.paymentMethod === 'CARD') eventType = 'ADD_CARD_CHARGE';
 
-        const fallbackEvent = {
-          type: eventType,
-          payload: {
-            amount: localResult.amount,
-            description: localResult.description,
-            category: localResult.categoryHint || 'Outros',
-            sourceWalletName: localResult.fromWallet,
-            targetWalletName: localResult.toWallet,
-            paymentMethod: localResult.paymentMethod,
-            installments: localResult.installments,
-            isQA: user.isQA
-          }
-        };
+          return {
+            type: eventType,
+            payload: {
+              amount: p.amount,
+              description: p.description,
+              category: p.categoryHint || 'Outros',
+              sourceWalletName: p.fromWallet,
+              targetWalletName: p.toWallet,
+              paymentMethod: p.paymentMethod,
+              installments: p.installments,
+              isQA: user.isQA
+            }
+          };
+        });
         
         aiResult = {
           ...aiResult,
-          events: [fallbackEvent],
-          reply: aiResult.reply || `Anotado! Preparei o registro de ${formatCurrency(localResult.amount || 0)} para você conferir abaixo. 👇`
+          events: fallbackEvents,
+          reply: aiResult.reply || (fallbackEvents.length > 1 
+            ? `Preparei ${fallbackEvents.length} lançamentos para você conferir. 👇` 
+            : `Anotado! Preparei o registro de ${formatCurrency(fallbackEvents[0]?.payload?.amount || 0)} para você conferir abaixo. 👇`)
         };
       }
       

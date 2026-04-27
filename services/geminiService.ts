@@ -1,7 +1,7 @@
 
 import { GoogleGenAI, Type } from "@google/genai";
 import { getCategoryMappingPrompt, suggestCategory } from "./categoryService";
-import { parseFinancialMessage } from "./financialMessageParser";
+import { parseFinancialMessage, parseMultipleTransactions } from "./financialMessageParser";
 
 const getAI = () => {
   const v1 = (import.meta as any).env?.VITE_GEMINI_API_KEY;
@@ -192,9 +192,10 @@ export const parseMessage = async (text: string, userName: string, context?: { u
       '';
 
     // Parser Determinístico (Dica para a IA)
-    const parserHint = parseFinancialMessage(text);
-    const parserHintContext = parserHint.confidence > 0.4 ? 
-      `DICA DO SISTEMA (CONFIÁVEL): Esta mensagem parece ser um(a) ${parserHint.type.toUpperCase()} de valor R$ ${parserHint.amount} com descrição "${parserHint.description}". ${parserHint.fromWallet ? 'Origem: ' + parserHint.fromWallet : ''} ${parserHint.toWallet ? 'Destino: ' + parserHint.toWallet : ''}. ${parserHint.missingFields.length > 0 ? 'CAMPOS FALTANTES: ' + parserHint.missingFields.join(', ') : ''}` : 
+    const parserHints = parseMultipleTransactions(text);
+    const parserHintContext = parserHints.length > 0 ? 
+      `DICA DO SISTEMA (CONFIÁVEL - ${parserHints.length} detecções):
+      ${parserHints.map((p, i) => `[${i+1}] Tipo: ${p.type.toUpperCase()}, Valor: R$ ${p.amount}, Desc: "${p.description}"`).join('\n')}` : 
       '';
 
     // Contexto de Médias por Categoria (para detecção de gastos suspeitos)
@@ -263,8 +264,10 @@ export const parseMessage = async (text: string, userName: string, context?: { u
       
       REGRAS DE OURO (FONTE DA VERDADE):
       1. Você deve SEMPRE priorizar os dados acima sobre qualquer conversa anterior.
-      2. Se houver uma "DICA DO SISTEMA" acima, considere-a como prova de que a mensagem É um comando financeiro. Se a confiança for alta, você DEVE gerar o evento correspondente, mesmo que precise adivinhar campos secundários usando o contexto (ex: se o usuário diz "gastei 50 no mercado", adivinhe que a categoria é mercado ou 'Alimentação' baseado no seu conhecimento e padrões do usuário).
-      3. NUNCA diga "Não entendi" para mensagens que contenham claramente valores monetários ou intenções financeiras listadas na "DICA DO SISTEMA". Se faltar informação, gere o evento com o que tem e peça o restante no 'reply'.
+      2. MÚLTIPLOS LANÇAMENTOS: Se o usuário enviar uma mensagem com várias despesas ou receitas (ex: "30 pipoca, 50 mercado"), você DEVE gerar um evento para CADA item no array 'events'.
+      3. FORMATO CURTO: Se o usuário enviar apenas "[valor] [descrição]" (ex: "30 sorvete"), interprete como ADD_EXPENSE por padrão.
+      4. Se houver uma "DICA DO SISTEMA" acima, considere-a como prova de que a mensagem É um comando financeiro. Se a confiança for alta, você DEVE gerar o evento correspondente, mesmo que precise adivinhar campos secundários usando o contexto.
+      5. NUNCA diga "Não entendi" para mensagens que contenham claramente valores monetários ou intenções financeiras. Se faltar informação, gere o evento com o que tem e peça o restante no 'reply'.
       4. Se o usuário perguntar sobre pendências, verifique os LEMBRETES onde "pago" é false.
       5. MAPEAMENTO DE CARTEIRAS: Sempre que o usuário mencionar uma carteira pelo nome (ex: 'Nubank', 'Carteira'), procure o 'id' correspondente na lista de CARTEIRAS e use-o em 'sourceWalletId' ou 'targetWalletId'.
       6. CONFIRMAÇÕES (ONBOARDING): Se o usuário confirmar um recebimento (ex: 'Sim', 'Já recebi', 'Confirmado') e estiver no Passo 3 do Onboarding, você DEVE OBRIGATORIAMENTE gerar o evento ADD_INCOME correspondente. 
