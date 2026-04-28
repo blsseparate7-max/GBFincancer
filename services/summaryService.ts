@@ -141,6 +141,24 @@ export const calculateForecast = (transactions: Transaction[], reminders: any[],
   };
 };
 
+export const calculateBillsSummary = (reminders: any[]) => {
+  const pending = reminders.filter(r => !r.isPaid && r.type === 'PAY');
+  const paid = reminders.filter(r => r.isPaid && r.type === 'PAY');
+  const income = reminders.filter(r => !r.isPaid && r.type === 'RECEIVE');
+  const received = reminders.filter(r => r.isPaid && r.type === 'RECEIVE');
+
+  return {
+    pendingCount: pending.length,
+    pendingTotal: pending.reduce((sum, r) => sum + (Number(r.amount) || 0), 0),
+    paidCount: paid.length,
+    paidTotal: paid.reduce((sum, r) => sum + (Number(r.amount) || 0), 0),
+    incomeCount: income.length,
+    incomeTotal: income.reduce((sum, r) => sum + (Number(r.amount) || 0), 0),
+    receivedCount: received.length,
+    receivedTotal: received.reduce((sum, r) => sum + (Number(r.amount) || 0), 0)
+  };
+};
+
 export const formatCurrency = (value: number) => {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
 };

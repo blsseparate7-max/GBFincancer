@@ -79,6 +79,33 @@ const Reminders: React.FC<RemindersProps> = ({ bills, wallets, uid, loading, isE
     ).sort((a, b) => new Date(b.paidAt || b.dueDate).getTime() - new Date(a.paidAt || a.dueDate).getTime());
   }, [bills, activeTab]);
 
+  const summary = useMemo(() => {
+    const now = new Date();
+    const currentMonth = now.getMonth();
+    const currentYear = now.getFullYear();
+    const active = bills.filter(b => b.isActive !== false && b.type === 'PAY');
+
+    const pending = active.filter(b => {
+      const d = new Date(b.dueDate);
+      return !b.isPaid && (
+        d.getFullYear() < currentYear || 
+        (d.getFullYear() === currentYear && d.getMonth() <= currentMonth)
+      );
+    });
+
+    const paid = active.filter(b => 
+      b.isPaid && 
+      b.paidAt && new Date(b.paidAt).getMonth() === currentMonth && new Date(b.paidAt).getFullYear() === currentYear
+    );
+
+    return {
+      pendingCount: pending.length,
+      pendingTotal: pending.reduce((s, b) => s + (Number(b.amount) || 0), 0),
+      paidCount: paid.length,
+      paidTotal: paid.reduce((s, b) => s + (Number(b.amount) || 0), 0)
+    };
+  }, [bills]);
+
   const handleAddBill = async () => {
     if (isExpired) {
       setNotification({ message: "Seu período de teste expirou. Assine para gerenciar lembretes.", type: 'error' });
@@ -189,6 +216,26 @@ const Reminders: React.FC<RemindersProps> = ({ bills, wallets, uid, loading, isE
           + Nova Conta
         </button>
       </header>
+      
+      {/* Summary Stats */}
+      <div className="grid grid-cols-2 gap-4">
+        <div className="bg-[var(--surface)] p-5 rounded-3xl border border-[var(--border)] shadow-sm">
+          <p className="text-[9px] font-black text-red-500 uppercase mb-1">Pendentes</p>
+          <div className="flex items-baseline gap-1">
+            <h4 className="text-xl font-black text-[var(--text-primary)]">{summary.pendingCount}</h4>
+            <span className="text-[10px] text-[var(--text-muted)] font-black uppercase italic">Contas</span>
+          </div>
+          <p className="text-[11px] font-bold text-red-500 mt-1">{format(summary.pendingTotal)}</p>
+        </div>
+        <div className="bg-[var(--surface)] p-5 rounded-3xl border border-[var(--border)] shadow-sm">
+          <p className="text-[9px] font-black text-[var(--green-whatsapp)] uppercase mb-1">Concluídas</p>
+          <div className="flex items-baseline gap-1">
+            <h4 className="text-xl font-black text-[var(--text-primary)]">{summary.paidCount}</h4>
+            <span className="text-[10px] text-[var(--text-muted)] font-black uppercase italic">Pagas</span>
+          </div>
+          <p className="text-[11px] font-bold text-[var(--green-whatsapp)] mt-1">{format(summary.paidTotal)}</p>
+        </div>
+      </div>
 
       {/* Tabs */}
       <div className="flex bg-[var(--surface)] p-1 rounded-2xl border border-[var(--border)]">

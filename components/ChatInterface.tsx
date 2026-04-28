@@ -7,7 +7,7 @@ import { dispatchEvent } from '../services/eventDispatcher';
 import { learnCategoryPattern, getCategoryId } from '../services/categoryService';
 import { sendMessageToFirestore } from '../services/chatService';
 import { fetchChatContext } from '../services/databaseService';
-import { formatCurrency, calculateMonthlySummary } from '../services/summaryService';
+import { formatCurrency, calculateMonthlySummary, calculateBillsSummary } from '../services/summaryService';
 import ChatComposer from './ChatComposer';
 import { X, Check, Trash2, CreditCard, Tag, Plus, ArrowRight, AlertCircle } from 'lucide-react';
 
@@ -515,13 +515,85 @@ const ChatInterface: React.FC<ChatProps> = ({
       return true;
     }
 
+    // LEMBRETES / CONTAS A PAGAR (Fast Path)
+    const isReminderQuery = 
+      lower.includes('para pagar') || 
+      lower.includes('falta pagar') || 
+      lower.includes('contas hoje') || 
+      lower.includes('vencem hoje') ||
+      lower.includes('contas atrasadas') ||
+      lower.includes('pendentes') ||
+      lower.includes('meus lembretes') ||
+      lower.includes('o que vence') ||
+      lower === 'contas';
+
+    if (isReminderQuery) {
+      const today = now.getDate();
+      
+      const billStats = calculateBillsSummary(reminders);
+      let filteredBills = reminders.filter(r => !r.isPaid && r.type === 'PAY');
+      let title = "Suas contas pendentes";
+
+      if (lower.includes('hoje')) {
+        filteredBills = filteredBills.filter(r => r.dueDay === today);
+        title = "Contas que vencem hoje";
+      } else if (lower.includes('atrasada')) {
+        filteredBills = filteredBills.filter(r => r.dueDay < today);
+        title = "Suas contas atrasadas";
+      } else if (lower.includes('semana')) {
+        filteredBills = filteredBills.filter(r => r.dueDay >= today && r.dueDay <= today + 7);
+        title = "Contas que vencem nesta semana";
+      } else if (lower.includes('quantas contas') || lower.includes('resumo de contas')) {
+        await sendMessage(`Neste mês você tem:\n\n` +
+          `• **${billStats.pendingCount} pendentes** (${formatCurrency(billStats.pendingTotal)})\n` +
+          `• **${billStats.paidCount} já pagas** (${formatCurrency(billStats.paidTotal)})\n\n` +
+          (billStats.pendingCount > 0 ? `Você ainda tem ${billStats.pendingCount} contas para pagar este mês. 💸` : `Parabéns! Você não tem contas pendentes! ✅`), 
+          'ai'
+        );
+        return true;
+      }
+
+      if (filteredBills.length === 0) {
+        await sendMessage("Você não tem contas pendentes para esse critério. Está tudo em dia! ✅", 'ai');
+        return true;
+      }
+
+      if (filteredBills.length === 1) {
+        const b = filteredBills[0];
+        let status = `vence dia ${b.dueDay}`;
+        if (b.dueDay === today) status = "vence hoje ⚠️";
+        if (b.dueDay < today) status = "atrasada 🚨";
+        
+        await sendMessage(`${title}:\n\n• ${b.description} — **${formatCurrency(b.amount)}** (${status})\n\nVocê já pagou essa conta?`, 'ai', undefined, 'BILL_REMINDER', { billId: b.id, description: b.description });
+        return true;
+      }
+
+      const billList = filteredBills.map(r => {
+        let status = `vence dia ${r.dueDay}`;
+        if (r.dueDay === today) status = "vence hoje ⚠️";
+        if (r.dueDay < today) status = "atrasada 🚨";
+        return `• ${r.description} — **${formatCurrency(r.amount)}** (${status})`;
+      }).join('\n');
+
+      const totalPending = filteredBills.reduce((acc, r) => acc + r.amount, 0);
+      
+      await sendMessage(`${title} (${filteredBills.length}):\n\n${billList}\n\n**Total pendente: ${formatCurrency(totalPending)}**\n\nDeseja marcar alguma como paga?`, 'ai');
+      return true;
+    }
+
     // RESUMO
     if (lower === 'resumo' || lower === 'resumo hoje' || lower === 'como estou' || lower === 'resumo do mes') {
       const summary = calculateMonthlySummary(transactions);
+      const billStats = calculateBillsSummary(reminders);
+
       await sendMessage(`Aqui está seu resumo de **${now.toLocaleString('pt-BR', { month: 'long' })}/${now.getFullYear()}**:\n\n` + 
+        `💰 **Financeiro:**\n` +
         `• **Receitas:** ${formatCurrency(summary.income)}\n` +
         `• **Despesas:** ${formatCurrency(summary.expense)}\n` +
         `• **Balanço:** ${formatCurrency(summary.balance)}\n\n` +
+        `🗓️ **Contas do Mês:**\n` +
+        `• **Faltam pagar:** ${billStats.pendingCount} (${formatCurrency(billStats.pendingTotal)})\n` +
+        `• **Já pagas:** ${billStats.paidCount} (${formatCurrency(billStats.paidTotal)})\n\n` +
         `O que mais você gostaria de saber? 💡`, 'ai');
       return true;
     }

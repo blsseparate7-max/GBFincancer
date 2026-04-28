@@ -168,7 +168,24 @@ export const parseMessage = async (text: string, userName: string, context?: { u
       })() : '';
 
     const remindersContext = context?.reminders ? 
-      `CONTEXTO DE LEMBRETES (Contas a Pagar/Receber): ${JSON.stringify(context.reminders.map(r => ({ desc: r.description, valor: r.amount, dia: r.dueDay, pago: r.isPaid, tipo: r.type, categoria: r.category })))}` : 
+      `CONTEXTO DE LEMBRETES (Contas a Pagar/Receber): ${JSON.stringify(context.reminders.map(r => {
+        const now = new Date();
+        const today = now.getDate();
+        let status = r.isPaid ? 'Pago' : 'Pendente';
+        if (!r.isPaid && r.dueDay < today) status = 'Atrasado';
+        if (!r.isPaid && r.dueDay === today) status = 'Vence Hoje';
+        
+        return { 
+          id: r.id,
+          desc: r.description, 
+          valor: r.amount, 
+          dia: r.dueDay, 
+          status: status,
+          pago: r.isPaid, 
+          tipo: r.type, 
+          categoria: r.category 
+        };
+      }))}` : 
       'Sem lembretes.';
     
     const cardsContext = context?.cards && context.cards.length > 0 ?
@@ -252,15 +269,22 @@ export const parseMessage = async (text: string, userName: string, context?: { u
       
       MOTOR DE CONSULTAS FINANCEIRAS (OBRIGATÓRIO):
       Você deve atuar como um motor de busca sobre os dados reais acima.
-      1. GASTOS: Calcule somas de 'valor' onde 'tipo' é 'EXPENSE' para o período solicitado (hoje, ontem, semana, mês, ano).
-      2. REGRA DO CARTÃO (CRÍTICO): Compras no cartão (paymentMethod 'CARD') NÃO entram como saída real no saldo ou dashboard até que a fatura seja paga. Ao dar resumos de "gastos", explique esta distinção se houver gastos no cartão não pagos.
-      3. ENTRADAS: Calcule somas de 'valor' onde 'tipo' é 'INCOME' para o período solicitado.
-      4. SALDO: O saldo atual é a soma de todos os 'saldo' na lista de CARTEIRAS. Não inclua limite de cartão no saldo.
-      5. CATEGORIAS: Identifique em qual categoria o usuário mais gastou somando os valores por 'cat'.
-      6. LIMITES: Compare os gastos reais com os LIMITES DE GASTOS e o TETO GLOBAL.
-      7. LEMBRETES: Verifique os LEMBRETES para saber o que vence hoje ou o que está pendente (pago: false). Use PAY_REMINDER se o usuário confirmar que pagou uma dessas contas.
-      8. COMPARAÇÃO: Compare somas de períodos (ex: este mês vs mês passado).
-      9. NUNCA INVENTE DADOS. Se não houver dados para o período solicitado (ex: mês passado), diga explicitamente que não tem acesso a esses dados no momento ou que não há registros.
+      1. SEPARAÇÃO TOTAL (REGRA DE OURO): Nunca misture contas já pagas com contas pendentes em resumos ou contagens.
+      2. LEMBRETES / CONTAS DO MÊS: 
+         - Quando o usuário perguntar "o que falta pagar" ou "o que tenho para pagar", considere APENAS os lembretes com status 'Pendente', 'Atrasado' ou 'Vence Hoje' (pago: false).
+         - Quando fizer um resumo de contas, separe claramente: "Você já pagou X contas (R$ Valor) e ainda faltam Y contas (R$ Valor)".
+         - Se o usuário perguntar "quantas contas faltam", diga APENAS o número de contas com (pago: false).
+      3. GASTOS: Calcule somas de 'valor' onde 'tipo' é 'EXPENSE' para o período solicitado (hoje, ontem, semana, mês, ano).
+      4. REGRA DO CARTÃO (CRÍTICO): Compras no cartão (paymentMethod 'CARD') NÃO entram como saída real no saldo ou dashboard até que a fatura seja paga. Ao dar resumos de "gastos", explique esta distinção se houver gastos no cartão não pagos.
+      5. ENTRADAS: Calcule somas de 'valor' onde 'tipo' é 'INCOME' para o período solicitado.
+      6. SALDO: O saldo atual é a soma de todos os 'saldo' na lista de CARTEIRAS. Não inclua limite de cartão no saldo.
+      7. CATEGORIAS: Identifique em qual categoria o usuário mais gastou somando os valores por 'cat'.
+      8. LIMITES: Compare os gastos reais com os LIMITES DE GASTOS e o TETO GLOBAL.
+      9. LEMBRETES (DETALHES): 
+         - Se o usuário confirmar o pagamento ("Paguei a luz"), use PAY_REMINDER com o 'billId' correspondente.
+         - Formate a resposta como uma lista clara com valores e vencimentos.
+      10. COMPARAÇÃO: Compare somas de períodos (ex: este mês vs mês passado).
+      11. NUNCA INVENTE DADOS. Se não houver dados para o período solicitado (ex: mês passado), diga explicitamente que não tem acesso a esses dados no momento ou que não há registros.
       
       REGRAS DE OURO (FONTE DA VERDADE):
       1. Você deve SEMPRE priorizar os dados acima sobre qualquer conversa anterior.
