@@ -197,7 +197,58 @@ const ChatInterface: React.FC<ChatProps> = ({
         }
       }
 
-      // 2. Alerta de Risco (80% da renda)
+      // 2. Contas que vencem HOJE ou estão ATRASADAS
+      const unpaidBills = reminders.filter(r => r.type === 'PAY' && !r.isPaid);
+      
+      for (const bill of unpaidBills) {
+        const due = new Date(bill.dueDate);
+        const isSameDay = due.getDate() === now.getDate() && 
+                         due.getMonth() === now.getMonth() && 
+                         due.getFullYear() === now.getFullYear();
+        
+        let dedupeKey = '';
+        let message = '';
+        let type: any = 'ai';
+        let action: any = undefined;
+        let metadata: any = undefined;
+
+        if (isSameDay) {
+          dedupeKey = `bill-due-today-${bill.id}-${cycleKey}`;
+          message = `Sua conta de **${bill.description}** no valor de **${formatCurrency(bill.amount)}** vence hoje. Deseja pagar agora? 💳`;
+          action = 'BILL_REMINDER';
+          metadata = { billId: bill.id, description: bill.description, amount: bill.amount };
+        } else if (due < now) {
+          // Repetição a cada 3 dias para atrasadas
+          const threeDayCycle = Math.floor(now.getTime() / (1000 * 60 * 60 * 24 * 3));
+          dedupeKey = `bill-overdue-${bill.id}-${threeDayCycle}`;
+          
+          const advice = [
+            "Contas atrasadas podem gerar juros e impactar seu controle financeiro.",
+            "Tente resolver isso o quanto antes para evitar multas desnecessárias.",
+            "Organizar suas pendências ajuda a manter o score de crédito saudável.",
+            "Lembre-se: juros de atraso são dinheiro jogado fora!"
+          ][Math.floor(Math.random() * 4)];
+
+          message = `Você tem uma conta atrasada: **${bill.description}** — **${formatCurrency(bill.amount)}**. Já conseguiu resolver isso? 🚨\n\n*Dica: ${advice}*`;
+          action = 'BILL_REMINDER';
+          metadata = { billId: bill.id, description: bill.description, amount: bill.amount, isOverdue: true };
+        }
+
+        if (dedupeKey) {
+          const q = query(
+            collection(db, "users", user.uid, "chat_messages"),
+            where("dedupeKey", "==", dedupeKey),
+            limit(1)
+          );
+          const snap = await getDocs(q);
+          
+          if (snap.empty) {
+            await sendMessage(message, type, dedupeKey, action, metadata);
+          }
+        }
+      }
+
+      // 3. Alerta de Risco (80% da renda)
       const totalIncome = reminders
         .filter(r => r.type === 'RECEIVE')
         .reduce((acc, r) => acc + r.amount, 0);
@@ -296,16 +347,20 @@ const ChatInterface: React.FC<ChatProps> = ({
 
     const checkOverdueIncome = async () => {
       const now = new Date();
-      const today = now.getDate();
       
-      // Encontra recebimentos pendentes que já deveriam ter caído (dueDay <= hoje)
-      const overdueIncome = reminders.find(r => 
-        r.type === 'RECEIVE' && 
-        !r.isPaid && 
-        !r.resolved &&
-        r.dueDay <= today &&
-        (!r.lastPromptedAt || (now.getTime() - (r.lastPromptedAt as any).toDate().getTime() > 24 * 60 * 60 * 1000))
-      );
+      // Encontra recebimentos pendentes que já deveriam ter caído (dueDate <= hoje)
+      const overdueIncome = reminders.find(r => {
+        const due = new Date(r.dueDate);
+        const isSameDay = due.getDate() === now.getDate() && 
+                         due.getMonth() === now.getMonth() && 
+                         due.getFullYear() === now.getFullYear();
+
+        return r.type === 'RECEIVE' && 
+          !r.isPaid && 
+          !r.resolved &&
+          (due < now || isSameDay) &&
+          (!r.lastPromptedAt || (now.getTime() - (r.lastPromptedAt as any).toDate().getTime() > 24 * 60 * 60 * 1000));
+      });
 
       if (overdueIncome) {
         const dedupeKey = `overdue-income-${overdueIncome.id}-${new Date().toISOString().split('T')[0]}`;
@@ -321,7 +376,7 @@ const ChatInterface: React.FC<ChatProps> = ({
         if (snap.empty) {
           setPendingSalaryReminder(overdueIncome);
           await sendMessage(
-            `Oi! Notei que o recebimento **${overdueIncome.description}** (${formatCurrency(overdueIncome.amount)}) estava previsto para o dia ${overdueIncome.dueDay}. Já recebeu esse valor? 💸`,
+            `Oi! Notei que o recebimento **${overdueIncome.description}** (${formatCurrency(overdueIncome.amount)}) estava previsto para o dia ${new Date(overdueIncome.dueDate).toLocaleDateString('pt-BR')}. Já recebeu esse valor? 💸`,
             'ai',
             dedupeKey
           );
@@ -525,23 +580,50 @@ const ChatInterface: React.FC<ChatProps> = ({
       lower.includes('pendentes') ||
       lower.includes('meus lembretes') ||
       lower.includes('o que vence') ||
+      lower.includes('já foi pago') ||
+      lower.includes('já paguei') ||
+      lower.includes('contas pagas') ||
       lower === 'contas';
 
     if (isReminderQuery) {
-      const today = now.getDate();
-      
       const billStats = calculateBillsSummary(reminders);
+      
+      // Consultas específicas para PAGOS
+      if (lower.includes('paguei') || lower.includes('paga')) {
+        const paidBills = reminders.filter(r => r.isPaid && r.type === 'PAY');
+        if (paidBills.length === 0) {
+          await sendMessage("Você ainda não registrou pagamentos de contas este mês. 💸", 'ai');
+          return true;
+        }
+
+        const paidList = paidBills.map(r => `• ${r.description} — **${formatCurrency(r.amount)}** (pago em ${r.paidAt ? new Date(r.paidAt).toLocaleDateString('pt-BR') : 'não informado'})`).join('\n');
+        await sendMessage(`Você já pagou **${paidBills.length} contas** este mês (${formatCurrency(billStats.paidTotal)}):\n\n${paidList}\n\nBom trabalho mantendo suas contas em dia! 🚀`, 'ai');
+        return true;
+      }
+
       let filteredBills = reminders.filter(r => !r.isPaid && r.type === 'PAY');
       let title = "Suas contas pendentes";
 
       if (lower.includes('hoje')) {
-        filteredBills = filteredBills.filter(r => r.dueDay === today);
+        filteredBills = filteredBills.filter(r => {
+          const d = new Date(r.dueDate);
+          return d.getDate() === now.getDate() && d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+        });
         title = "Contas que vencem hoje";
       } else if (lower.includes('atrasada')) {
-        filteredBills = filteredBills.filter(r => r.dueDay < today);
+        filteredBills = filteredBills.filter(r => {
+          const d = new Date(r.dueDate);
+          const isToday = d.getDate() === now.getDate() && d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+          return d < now && !isToday;
+        });
         title = "Suas contas atrasadas";
       } else if (lower.includes('semana')) {
-        filteredBills = filteredBills.filter(r => r.dueDay >= today && r.dueDay <= today + 7);
+        const nextWeek = new Date(now);
+        nextWeek.setDate(now.getDate() + 7);
+        filteredBills = filteredBills.filter(r => {
+          const d = new Date(r.dueDate);
+          return d >= now && d <= nextWeek;
+        });
         title = "Contas que vencem nesta semana";
       } else if (lower.includes('quantas contas') || lower.includes('resumo de contas')) {
         await sendMessage(`Neste mês você tem:\n\n` +
@@ -558,20 +640,24 @@ const ChatInterface: React.FC<ChatProps> = ({
         return true;
       }
 
+      const getStatus = (dueDate: string) => {
+        const d = new Date(dueDate);
+        const isToday = d.getDate() === now.getDate() && d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+        if (isToday) return "vence hoje ⚠️";
+        if (d < now) return "atrasada 🚨";
+        return `vence dia ${d.getDate()}`;
+      };
+
       if (filteredBills.length === 1) {
         const b = filteredBills[0];
-        let status = `vence dia ${b.dueDay}`;
-        if (b.dueDay === today) status = "vence hoje ⚠️";
-        if (b.dueDay < today) status = "atrasada 🚨";
+        const status = getStatus(b.dueDate);
         
         await sendMessage(`${title}:\n\n• ${b.description} — **${formatCurrency(b.amount)}** (${status})\n\nVocê já pagou essa conta?`, 'ai', undefined, 'BILL_REMINDER', { billId: b.id, description: b.description });
         return true;
       }
 
       const billList = filteredBills.map(r => {
-        let status = `vence dia ${r.dueDay}`;
-        if (r.dueDay === today) status = "vence hoje ⚠️";
-        if (r.dueDay < today) status = "atrasada 🚨";
+        const status = getStatus(r.dueDate);
         return `• ${r.description} — **${formatCurrency(r.amount)}** (${status})`;
       }).join('\n');
 
@@ -1191,7 +1277,7 @@ const ChatInterface: React.FC<ChatProps> = ({
                         }}
                         className="flex-1 bg-[var(--green-whatsapp)] text-white px-4 py-2 rounded-xl font-black text-[10px] uppercase transition-all active:scale-95 whitespace-nowrap"
                       >
-                        Sim, já paguei
+                        {msg.actionPayload.isOverdue ? "Sim, já paguei" : "Pagar agora"}
                       </button>
                       <button 
                         onClick={() => {
@@ -1200,7 +1286,7 @@ const ChatInterface: React.FC<ChatProps> = ({
                         }}
                         className="flex-1 bg-[var(--bg-body)] text-[var(--text-muted)] border border-[var(--border)] px-4 py-2 rounded-xl font-black text-[10px] uppercase transition-all active:scale-95 whitespace-nowrap"
                       >
-                        Ainda não
+                        {msg.actionPayload.isOverdue ? "Ainda não" : "Pagar depois"}
                       </button>
                     </div>
                   </div>

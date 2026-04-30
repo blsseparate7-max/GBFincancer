@@ -170,16 +170,23 @@ export const parseMessage = async (text: string, userName: string, context?: { u
     const remindersContext = context?.reminders ? 
       `CONTEXTO DE LEMBRETES (Contas a Pagar/Receber): ${JSON.stringify(context.reminders.map(r => {
         const now = new Date();
-        const today = now.getDate();
+        const due = new Date(r.dueDate);
+        
+        const isSameDay = due.getDate() === now.getDate() && 
+                         due.getMonth() === now.getMonth() && 
+                         due.getFullYear() === now.getFullYear();
+        
         let status = r.isPaid ? 'Pago' : 'Pendente';
-        if (!r.isPaid && r.dueDay < today) status = 'Atrasado';
-        if (!r.isPaid && r.dueDay === today) status = 'Vence Hoje';
+        if (!r.isPaid) {
+          if (due < now && !isSameDay) status = 'Atrasado';
+          else if (isSameDay) status = 'Vence Hoje';
+        }
         
         return { 
           id: r.id,
           desc: r.description, 
           valor: r.amount, 
-          dia: r.dueDay, 
+          dataVenc: r.dueDate, 
           status: status,
           pago: r.isPaid, 
           tipo: r.type, 
@@ -271,7 +278,8 @@ export const parseMessage = async (text: string, userName: string, context?: { u
       Você deve atuar como um motor de busca sobre os dados reais acima.
       1. SEPARAÇÃO TOTAL (REGRA DE OURO): Nunca misture contas já pagas com contas pendentes em resumos ou contagens.
       2. LEMBRETES / CONTAS DO MÊS: 
-         - Quando o usuário perguntar "o que falta pagar" ou "o que tenho para pagar", considere APENAS os lembretes com status 'Pendente', 'Atrasado' ou 'Vence Hoje' (pago: false).
+         - Quando o usuário perguntar "o que falta pagar", "o que tenho para pagar" ou "contas pendentes", considere APENAS os lembretes com status 'Pendente', 'Atrasado' ou 'Vence Hoje' (pago: false).
+         - Quando o usuário perguntar "o que já foi pago" ou "contas pagas", considere APENAS os lembretes com (pago: true).
          - Quando fizer um resumo de contas, separe claramente: "Você já pagou X contas (R$ Valor) e ainda faltam Y contas (R$ Valor)".
          - Se o usuário perguntar "quantas contas faltam", diga APENAS o número de contas com (pago: false).
       3. GASTOS: Calcule somas de 'valor' onde 'tipo' é 'EXPENSE' para o período solicitado (hoje, ontem, semana, mês, ano).
@@ -282,7 +290,8 @@ export const parseMessage = async (text: string, userName: string, context?: { u
       8. LIMITES: Compare os gastos reais com os LIMITES DE GASTOS e o TETO GLOBAL.
       9. LEMBRETES (DETALHES): 
          - Se o usuário confirmar o pagamento ("Paguei a luz"), use PAY_REMINDER com o 'billId' correspondente.
-         - Formate a resposta como uma lista clara com valores e vencimentos.
+         - Se listar contas atrasadas, adicione um breve conselho financeiro sobre juros.
+         - Formate a resposta como uma lista organizada com o nome da conta em Negrito.
       10. COMPARAÇÃO: Compare somas de períodos (ex: este mês vs mês passado).
       11. NUNCA INVENTE DADOS. Se não houver dados para o período solicitado (ex: mês passado), diga explicitamente que não tem acesso a esses dados no momento ou que não há registros.
       

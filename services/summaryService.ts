@@ -142,10 +142,45 @@ export const calculateForecast = (transactions: Transaction[], reminders: any[],
 };
 
 export const calculateBillsSummary = (reminders: any[]) => {
-  const pending = reminders.filter(r => !r.isPaid && r.type === 'PAY');
-  const paid = reminders.filter(r => r.isPaid && r.type === 'PAY');
-  const income = reminders.filter(r => !r.isPaid && r.type === 'RECEIVE');
-  const received = reminders.filter(r => r.isPaid && r.type === 'RECEIVE');
+  const now = new Date();
+  const currentMonth = now.getMonth();
+  const currentYear = now.getFullYear();
+
+  // Pendentes: Todas as não pagas vencidas (atrasadas) ou que vencem no mês atual
+  const pending = reminders.filter(r => {
+    if (r.isPaid || r.type !== 'PAY') return false;
+    const due = new Date(r.dueDate);
+    return due.getFullYear() < currentYear || (due.getFullYear() === currentYear && due.getMonth() <= currentMonth);
+  });
+
+  // Pagas: Apenas as pagas no mês atual ou que o vencimento era no mês atual
+  const paid = reminders.filter(r => {
+    if (!r.isPaid || r.type !== 'PAY') return false;
+    // Se tiver data de pagamento, filtrar pela data de pagamento (mês atual)
+    if (r.paidAt) {
+      const p = new Date(r.paidAt);
+      return p.getMonth() === currentMonth && p.getFullYear() === currentYear;
+    }
+    // Fallback: se não tiver data de pagamento, olha pro vencimento (mas geralmente pagar_reminder seta paidAt)
+    const due = new Date(r.dueDate);
+    return due.getMonth() === currentMonth && due.getFullYear() === currentYear;
+  });
+
+  const income = reminders.filter(r => {
+    if (r.isPaid || r.type !== 'RECEIVE') return false;
+    const due = new Date(r.dueDate);
+    return due.getFullYear() < currentYear || (due.getFullYear() === currentYear && due.getMonth() <= currentMonth);
+  });
+
+  const received = reminders.filter(r => {
+    if (!r.isPaid || r.type !== 'RECEIVE') return false;
+    if (r.paidAt) {
+      const p = new Date(r.paidAt);
+      return p.getMonth() === currentMonth && p.getFullYear() === currentYear;
+    }
+    const due = new Date(r.dueDate);
+    return due.getMonth() === currentMonth && due.getFullYear() === currentYear;
+  });
 
   return {
     pendingCount: pending.length,
