@@ -254,7 +254,10 @@ const ChatInterface: React.FC<ChatProps> = ({
         .reduce((acc, r) => acc + r.amount, 0);
       
       const totalSpent = transactions
-        .filter(t => t.type === 'EXPENSE')
+        .filter(t => {
+          const d = new Date(t.date);
+          return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear() && t.type === 'EXPENSE';
+        })
         .reduce((acc, t) => acc + t.amount, 0);
 
       if (totalIncome > 0 && totalSpent > totalIncome * 0.8) {

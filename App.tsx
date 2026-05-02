@@ -173,7 +173,7 @@ const App: React.FC = () => {
 
     // Listeners Real-time Centralizados
     const now = new Date();
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+    const startOfYear = new Date(now.getFullYear(), 0, 1).toISOString();
 
     const handleError = (err: any, name: string) => {
       console.error(`GB: Erro no listener ${name}:`, err);
@@ -182,9 +182,9 @@ const App: React.FC = () => {
 
     const unsubTrans = onSnapshot(query(
       collection(userRef, "transactions"), 
-      where("date", ">=", startOfMonth),
+      where("date", ">=", startOfYear),
       orderBy("date", "desc"), 
-      limit(500)
+      limit(1000)
     ), (snap) => {
       const normalized = snap.docs.map(d => normalizeTransaction(d));
       setTransactions(normalized);
@@ -508,11 +508,21 @@ const App: React.FC = () => {
       case 'privacy': return <LegalModal type="privacy" onClose={() => setActiveTab('chat')} />;
       case 'wallets': {
         if (!session) return null;
+        const now = new Date();
+        const currentMonth = now.getMonth();
+        const currentYear = now.getFullYear();
+
         const income = transactions
-          .filter(t => t.type === 'INCOME')
+          .filter(t => {
+            const d = new Date(t.date);
+            return d.getMonth() === currentMonth && d.getFullYear() === currentYear && t.type === 'INCOME';
+          })
           .reduce((s, t) => s + (Number(t.amount) || 0), 0);
         const expense = transactions
-          .filter(t => t.type === 'EXPENSE' && t.paymentMethod !== 'CARD')
+          .filter(t => {
+            const d = new Date(t.date);
+            return d.getMonth() === currentMonth && d.getFullYear() === currentYear && t.type === 'EXPENSE' && t.paymentMethod !== 'CARD';
+          })
           .reduce((s, t) => s + (Number(t.amount) || 0), 0);
         const totalSaved = goals.reduce((s, g) => s + (Number(g.currentAmount) || 0), 0);
         const freeBalance = income - expense - totalSaved;
