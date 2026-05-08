@@ -1,6 +1,7 @@
 
 import React from 'react';
 import { Transaction } from '../types';
+import { parseSafeDate } from '../services/dateUtils';
 
 interface ListProps {
   transactions: Transaction[];
@@ -22,7 +23,7 @@ const TransactionList: React.FC<ListProps> = ({ transactions, onDelete }) => {
               </div>
               <div>
                 <p className="font-bold text-sm text-[var(--text-primary)]">{t.description}</p>
-                <p className="text-[10px] text-[var(--text-muted)] uppercase font-black">{t.category} • {new Date(t.date).toLocaleDateString()}</p>
+                <p className="text-[10px] text-[var(--text-muted)] uppercase font-black">{t.category} • {parseSafeDate(t.date).toLocaleDateString()}</p>
               </div>
             </div>
             <div className="text-right">

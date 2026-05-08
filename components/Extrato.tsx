@@ -4,6 +4,7 @@ import { collection, query, orderBy, limit, onSnapshot, doc, startAfter, getDocs
 import { Transaction, CreditCardInfo, UserCategory, PaymentMethod } from '../types';
 import { dispatchEvent } from '../services/eventDispatcher';
 import { normalizeTransaction } from '../services/normalizationService';
+import { parseSafeDate } from '../services/dateUtils';
 import MoneyInput from './MoneyInput';
 import ImportData from './ImportData';
 import { Calendar, Tag, FileText, Trash2, Edit2, CreditCard, Wallet, ArrowUpCircle, ArrowDownCircle, Search, Filter, X, ChevronDown, Upload } from 'lucide-react';
@@ -18,12 +19,16 @@ interface ExtratoProps {
   loading?: boolean;
   initialFilters?: any;
   onClearInitialFilters?: () => void;
+  onLoadMore?: () => void;
+  hasMore?: boolean;
+  loadingMore?: boolean;
 }
 
 const Extrato: React.FC<ExtratoProps> = ({ 
   uid, cards, categories: userCategories, wallets, 
   transactions: propsTransactions, loading: propsLoading,
-  initialFilters, onClearInitialFilters
+  initialFilters, onClearInitialFilters,
+  onLoadMore: parentOnLoadMore, hasMore: parentHasMore, loadingMore: parentLoadingMore
 }) => {
   const [localTransactions, setLocalTransactions] = useState<Transaction[]>([]);
   const [localLoading, setLocalLoading] = useState(true);
@@ -97,10 +102,10 @@ const Extrato: React.FC<ExtratoProps> = ({
     );
 
     if (startDate) {
-      q = query(q, where("date", ">=", new Date(startDate).toISOString()));
+      q = query(q, where("date", ">=", parseSafeDate(startDate).toISOString()));
     }
     if (endDate) {
-      const end = new Date(endDate);
+      const end = parseSafeDate(endDate);
       end.setHours(23, 59, 59, 999);
       q = query(q, where("date", "<=", end.toISOString()));
     }
@@ -136,10 +141,10 @@ const Extrato: React.FC<ExtratoProps> = ({
     );
 
     if (startDate) {
-      q = query(q, where("date", ">=", new Date(startDate).toISOString()));
+      q = query(q, where("date", ">=", parseSafeDate(startDate).toISOString()));
     }
     if (endDate) {
-      const end = new Date(endDate);
+      const end = parseSafeDate(endDate);
       end.setHours(23, 59, 59, 999);
       q = query(q, where("date", "<=", end.toISOString()));
     }
@@ -183,7 +188,7 @@ const Extrato: React.FC<ExtratoProps> = ({
           updates: {
             description: editDesc,
             amount: editAmount,
-            date: new Date(editDate).toISOString(),
+            date: parseSafeDate(editDate).toISOString(),
             category: editCategory,
             type: editType,
             paymentMethod: editPaymentMethod,
@@ -460,7 +465,7 @@ const Extrato: React.FC<ExtratoProps> = ({
                         <Tag size={10} /> {t.category}
                       </span>
                       <span className="text-[9px] font-black uppercase text-[var(--text-muted)] flex items-center gap-1">
-                        <Calendar size={10} /> {new Date(t.date).toLocaleDateString('pt-BR')}
+                        <Calendar size={10} /> {parseSafeDate(t.date).toLocaleDateString('pt-BR')}
                       </span>
                       <span className="text-[9px] font-black uppercase text-[var(--text-muted)] flex items-center gap-1">
                         {getMethodIcon(t.paymentMethod)} {t.paymentMethod === 'CARD' ? getCardName(t.cardId) : t.paymentMethod}

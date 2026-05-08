@@ -2,6 +2,7 @@ import React, { useMemo, useState, useEffect, useRef } from 'react';
 import { Transaction, SavingGoal, CategoryLimit, Wallet, Bill, UserCategory } from '../types';
 import { dispatchEvent, migrateTransactions } from '../services/eventDispatcher';
 import { normalizeCategoryName } from '../services/normalizationService';
+import { parseSafeDate } from '../services/dateUtils';
 import OnboardingChecklist from './OnboardingChecklist';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
@@ -11,7 +12,7 @@ import {
   TrendingUp, TrendingDown, Wallet as WalletIcon, PiggyBank, 
   AlertCircle, Calendar, Lightbulb, ArrowRight, Target,
   ChevronLeft, ChevronRight, Info, DollarSign, ArrowUpRight, ArrowDownLeft,
-  CheckCircle2, Sparkles, Loader2, Plus, Trophy
+  CheckCircle2, Sparkles, Loader2, Plus, Trophy, ChevronDown
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import MoneyInput from './MoneyInput';
@@ -34,7 +35,11 @@ import {
 } from './DashboardComponents';
 
 interface DashProps {
-  transactions: Transaction[];
+  transactions: Transaction[]; // For stats (YearlyTransactions)
+  paginatedTransactions?: Transaction[]; // For recent lists if needed
+  onLoadMoreTransactions?: () => void;
+  hasMoreTransactions?: boolean;
+  loadingMoreTransactions?: boolean;
   goals: SavingGoal[];
   limits: CategoryLimit[];
   wallets: Wallet[];
@@ -48,7 +53,10 @@ interface DashProps {
   isExpired?: boolean;
 }
 
-const Dashboard: React.FC<DashProps> = ({ transactions, goals, limits, wallets, reminders, categories, uid, user, loading, onNavigateToExtrato, onNavigateToTab, isExpired = false }) => {
+const Dashboard: React.FC<DashProps> = ({ 
+  transactions, paginatedTransactions, onLoadMoreTransactions, hasMoreTransactions, loadingMoreTransactions,
+  goals, limits, wallets, reminders, categories, uid, user, loading, onNavigateToExtrato, onNavigateToTab, isExpired = false 
+}) => {
   const [showLimitModal, setShowLimitModal] = useState(false);
   const [editingLimit, setEditingLimit] = useState<CategoryLimit | null>(null);
   const [showGlobalLimitModal, setShowGlobalLimitModal] = useState(false);
@@ -278,7 +286,7 @@ const Dashboard: React.FC<DashProps> = ({ transactions, goals, limits, wallets, 
     const upcomingBills = reminders
       .filter(b => !b.isPaid && b.type === 'PAY')
       .map(b => {
-        const dueDate = new Date(b.dueDate);
+        const dueDate = parseSafeDate(b.dueDate);
         const diff = Math.ceil((dueDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
         return { ...b, daysLeft: diff };
       })
@@ -628,7 +636,10 @@ const Dashboard: React.FC<DashProps> = ({ transactions, goals, limits, wallets, 
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         {/* 6️⃣ Sugestão Financeira Automática */}
-        <SuggestionCard suggestion={stats.suggestion} />
+        <SuggestionCard 
+          suggestion={stats.suggestion} 
+          onCategoryClick={(cat) => setSelectedCategory(cat)}
+        />
 
         {/* 8️⃣ Sugestão de Aporte para Metas */}
         {stats.goalSuggestion && (
@@ -644,6 +655,72 @@ const Dashboard: React.FC<DashProps> = ({ transactions, goals, limits, wallets, 
         bills={stats.upcomingBills} 
         onBillClick={() => onNavigateToTab?.('reminders')}
       />
+
+      {/* 📊 Atividade Recente com Paginação */}
+      <section className="bg-[var(--surface)] p-10 rounded-[3rem] border border-[var(--border)] shadow-sm space-y-8 animate-fade-up">
+        <div className="flex justify-between items-center">
+          <div>
+            <h3 className="text-xs font-black text-[var(--text-primary)] uppercase tracking-[0.2em] mb-1">Atividade Recente</h3>
+            <p className="text-[9px] font-bold text-[var(--text-muted)] uppercase italic">Últimos lançamentos registrados</p>
+          </div>
+          <button 
+            onClick={() => onNavigateToTab?.('extrato')}
+            className="text-[9px] font-black text-[var(--green-whatsapp)] uppercase tracking-widest hover:underline"
+          >
+            Ver Extrato Completo →
+          </button>
+        </div>
+
+        <div className="space-y-4">
+          {paginatedTransactions && paginatedTransactions.length > 0 ? (
+            <>
+              {paginatedTransactions.map(t => (
+                <div key={t.id} className="p-5 bg-[var(--bg-body)]/50 rounded-3xl border border-[var(--border)] flex justify-between items-center group hover:border-[var(--green-whatsapp)] transition-all">
+                  <div className="flex items-center gap-4">
+                    <div className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-transform group-hover:scale-110 ${t.type === 'INCOME' ? 'bg-[var(--green-whatsapp)]/10 text-[var(--green-whatsapp)]' : 'bg-rose-500/10 text-rose-500'}`}>
+                      {t.type === 'INCOME' ? <ArrowUpRight size={20} /> : <ArrowDownLeft size={20} />}
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-black text-[var(--text-primary)] uppercase italic tracking-tight">{t.description}</h4>
+                      <p className="text-[9px] font-bold text-[var(--text-muted)] uppercase italic">{t.category} • {parseSafeDate(t.date).toLocaleDateString('pt-BR')}</p>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <p className={`text-base font-black italic ${t.type === 'INCOME' ? 'text-[var(--green-whatsapp)]' : 'text-rose-500'}`}>
+                      {t.type === 'INCOME' ? '+' : '-'}{format(t.amount)}
+                    </p>
+                    <p className="text-[8px] font-black text-[var(--text-muted)] uppercase tracking-widest">{t.walletName || 'Carteira'}</p>
+                  </div>
+                </div>
+              ))}
+              
+              {hasMoreTransactions && (
+                <div className="pt-6 flex justify-center">
+                  <button 
+                    onClick={onLoadMoreTransactions}
+                    disabled={loadingMoreTransactions}
+                    className="flex items-center gap-2 px-8 py-4 bg-[var(--surface)] border-2 border-[var(--border)] rounded-2xl text-[10px] font-black text-[var(--text-primary)] uppercase tracking-widest hover:border-[var(--green-whatsapp)] hover:text-[var(--green-whatsapp)] transition-all active:scale-95 disabled:opacity-50"
+                  >
+                    {loadingMoreTransactions ? (
+                      <>
+                        <Loader2 className="animate-spin" size={14} /> Carregando...
+                      </>
+                    ) : (
+                      <>
+                        Carregar Mais <ChevronDown size={14} />
+                      </>
+                    )}
+                  </button>
+                </div>
+              )}
+            </>
+          ) : (
+            <div className="py-12 text-center opacity-20">
+              <p className="text-[10px] font-black uppercase italic">Nenhuma transação encontrada</p>
+            </div>
+          )}
+        </div>
+      </section>
 
       {/* Modal Limite Global */}
       <AnimatePresence>
@@ -858,22 +935,22 @@ const Dashboard: React.FC<DashProps> = ({ transactions, goals, limits, wallets, 
                 <div className="bg-[var(--bg-body)] p-4 rounded-2xl border border-[var(--border)]">
                   <p className="text-[9px] font-black text-[var(--text-muted)] uppercase tracking-widest mb-1">Lançamentos</p>
                   <p className="text-xl font-black text-white">
-                    {transactions.filter(t => t.type === 'EXPENSE' && normalizeCategoryName(t.category) === selectedCategory && new Date(t.date).getMonth() === stats.currentMonth).length}
+                    {transactions.filter(t => t.type === 'EXPENSE' && normalizeCategoryName(t.category) === selectedCategory && parseSafeDate(t.date).getMonth() === stats.currentMonth).length}
                   </p>
                 </div>
               </div>
 
               <div className="flex-1 overflow-y-auto pr-2 space-y-3 custom-scrollbar">
                 {transactions
-                  .filter(t => t.type === 'EXPENSE' && normalizeCategoryName(t.category) === selectedCategory && new Date(t.date).getMonth() === stats.currentMonth)
-                  .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+                  .filter(t => t.type === 'EXPENSE' && normalizeCategoryName(t.category) === selectedCategory && parseSafeDate(t.date).getMonth() === stats.currentMonth)
+                  .sort((a, b) => parseSafeDate(b.date).getTime() - parseSafeDate(a.date).getTime())
                   .map(t => (
                     <div key={t.id} className="bg-[var(--bg-body)] p-4 rounded-2xl border border-[var(--border)] flex justify-between items-center group">
                       <div>
                         <h4 className="text-xs font-black text-white uppercase tracking-tight">{t.description}</h4>
                         <div className="flex items-center gap-3 mt-1">
                           <span className="text-[9px] font-bold text-[var(--text-muted)] flex items-center gap-1">
-                            <Calendar size={10} /> {new Date(t.date).toLocaleDateString('pt-BR')}
+                            <Calendar size={10} /> {parseSafeDate(t.date).toLocaleDateString('pt-BR')}
                           </span>
                           <span className="text-[9px] font-bold text-[var(--text-muted)] flex items-center gap-1">
                             <WalletIcon size={10} /> {t.walletName || 'Carteira'}

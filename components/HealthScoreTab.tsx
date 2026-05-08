@@ -3,6 +3,7 @@ import React, { useMemo } from 'react';
 import { Transaction, CategoryLimit, SavingGoal } from '../types';
 import { motion } from 'motion/react';
 import { ShieldCheck, AlertTriangle, TrendingUp, Target, Activity, CheckCircle2, ArrowUpRight, ArrowDownRight } from 'lucide-react';
+import { parseSafeDate } from '../services/dateUtils';
 
 interface HealthScoreTabProps {
   transactions: Transaction[];
@@ -18,7 +19,7 @@ const HealthScoreTab: React.FC<HealthScoreTabProps> = ({ transactions = [], limi
     const currentYear = now.getFullYear();
 
     const monthlyTransactions = transactions.filter(t => {
-      const d = new Date(t.date);
+      const d = parseSafeDate(t.date);
       return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
     });
 
@@ -35,7 +36,7 @@ const HealthScoreTab: React.FC<HealthScoreTabProps> = ({ transactions = [], limi
     // 3. Consistência de Registro (Últimos 7 dias)
     const sevenDaysAgo = new Date();
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-    const recentTransactions = transactions.filter(t => new Date(t.date) >= sevenDaysAgo);
+    const recentTransactions = transactions.filter(t => parseSafeDate(t.date) >= sevenDaysAgo);
     const consistencyScore = Math.min(100, (recentTransactions.length / 5) * 100); // 5 registros por semana é o ideal
 
     // 4. Progresso de Metas
@@ -45,7 +46,7 @@ const HealthScoreTab: React.FC<HealthScoreTabProps> = ({ transactions = [], limi
       : 0;
     const goalActivity = goals.some(g => {
         if (!g.updatedAt) return false;
-        const dateValue = g.updatedAt?.toDate ? g.updatedAt.toDate() : new Date(g.updatedAt);
+        const dateValue = g.updatedAt?.toDate ? g.updatedAt.toDate() : parseSafeDate(g.updatedAt);
         if (isNaN(dateValue.getTime())) return false;
         return dateValue >= sevenDaysAgo;
     }) ? 100 : 50;

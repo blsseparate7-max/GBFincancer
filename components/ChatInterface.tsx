@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { UserSession, Message, Transaction, CategoryLimit, Bill, CreditCardInfo, Wallet, UserCategory, SavingGoal, Debt, CategoryPattern } from '../types';
 import { parseMessage } from '../services/geminiService';
+import { parseSafeDate } from '../services/dateUtils';
 import { parseFinancialMessage, parseMultipleTransactions } from '../services/financialMessageParser';
 import { parseStatementFile } from '../services/statementService';
 import { dispatchEvent } from '../services/eventDispatcher';
@@ -201,7 +202,7 @@ const ChatInterface: React.FC<ChatProps> = ({
       const unpaidBills = reminders.filter(r => r.type === 'PAY' && !r.isPaid);
       
       for (const bill of unpaidBills) {
-        const due = new Date(bill.dueDate);
+        const due = parseSafeDate(bill.dueDate);
         const isSameDay = due.getDate() === now.getDate() && 
                          due.getMonth() === now.getMonth() && 
                          due.getFullYear() === now.getFullYear();
@@ -255,7 +256,7 @@ const ChatInterface: React.FC<ChatProps> = ({
       
       const totalSpent = transactions
         .filter(t => {
-          const d = new Date(t.date);
+          const d = parseSafeDate(t.date);
           return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear() && t.type === 'EXPENSE';
         })
         .reduce((acc, t) => acc + t.amount, 0);
@@ -353,7 +354,7 @@ const ChatInterface: React.FC<ChatProps> = ({
       
       // Encontra recebimentos pendentes que já deveriam ter caído (dueDate <= hoje)
       const overdueIncome = reminders.find(r => {
-        const due = new Date(r.dueDate);
+        const due = parseSafeDate(r.dueDate);
         const isSameDay = due.getDate() === now.getDate() && 
                          due.getMonth() === now.getMonth() && 
                          due.getFullYear() === now.getFullYear();
@@ -379,7 +380,7 @@ const ChatInterface: React.FC<ChatProps> = ({
         if (snap.empty) {
           setPendingSalaryReminder(overdueIncome);
           await sendMessage(
-            `Oi! Notei que o recebimento **${overdueIncome.description}** (${formatCurrency(overdueIncome.amount)}) estava previsto para o dia ${new Date(overdueIncome.dueDate).toLocaleDateString('pt-BR')}. Já recebeu esse valor? 💸`,
+            `Oi! Notei que o recebimento **${overdueIncome.description}** (${formatCurrency(overdueIncome.amount)}) estava previsto para o dia ${parseSafeDate(overdueIncome.dueDate).toLocaleDateString('pt-BR')}. Já recebeu esse valor? 💸`,
             'ai',
             dedupeKey
           );
@@ -551,7 +552,7 @@ const ChatInterface: React.FC<ChatProps> = ({
     // RECEBI ESSE MÊS
     if (lower.includes('recebi esse mês') || lower.includes('quanto recebi esse mes') || lower.includes('quanto recebi este mes')) {
       const monthIncome = transactions
-        .filter(t => t.type === 'INCOME' && new Date(t.date).getMonth() === now.getMonth() && new Date(t.date).getFullYear() === now.getFullYear())
+        .filter(t => t.type === 'INCOME' && parseSafeDate(t.date).getMonth() === now.getMonth() && parseSafeDate(t.date).getFullYear() === now.getFullYear())
         .reduce((acc, t) => acc + t.amount, 0);
       await sendMessage(`Este mês você recebeu um total de **${formatCurrency(monthIncome)}**. 💰`, 'ai');
       return true;
@@ -560,7 +561,7 @@ const ChatInterface: React.FC<ChatProps> = ({
     // GASTEI ESSE MÊS
     if (lower.includes('gastei esse mês') || lower.includes('quanto gastei esse mes') || lower.includes('quanto gastei este mes')) {
       const monthExpenses = transactions
-        .filter(t => t.type === 'EXPENSE' && t.paymentMethod !== 'CARD' && new Date(t.date).getMonth() === now.getMonth() && new Date(t.date).getFullYear() === now.getFullYear())
+        .filter(t => t.type === 'EXPENSE' && t.paymentMethod !== 'CARD' && parseSafeDate(t.date).getMonth() === now.getMonth() && parseSafeDate(t.date).getFullYear() === now.getFullYear())
         .reduce((acc, t) => acc + t.amount, 0);
       await sendMessage(`Suas despesas confirmadas este mês totalizam **${formatCurrency(monthExpenses)}**. 📉`, 'ai');
       return true;
@@ -599,7 +600,7 @@ const ChatInterface: React.FC<ChatProps> = ({
           return true;
         }
 
-        const paidList = paidBills.map(r => `• ${r.description} — **${formatCurrency(r.amount)}** (pago em ${r.paidAt ? new Date(r.paidAt).toLocaleDateString('pt-BR') : 'não informado'})`).join('\n');
+        const paidList = paidBills.map(r => `• ${r.description} — **${formatCurrency(r.amount)}** (pago em ${r.paidAt ? parseSafeDate(r.paidAt).toLocaleDateString('pt-BR') : 'não informado'})`).join('\n');
         await sendMessage(`Você já pagou **${paidBills.length} contas** este mês (${formatCurrency(billStats.paidTotal)}):\n\n${paidList}\n\nBom trabalho mantendo suas contas em dia! 🚀`, 'ai');
         return true;
       }
@@ -609,13 +610,13 @@ const ChatInterface: React.FC<ChatProps> = ({
 
       if (lower.includes('hoje')) {
         filteredBills = filteredBills.filter(r => {
-          const d = new Date(r.dueDate);
+          const d = parseSafeDate(r.dueDate);
           return d.getDate() === now.getDate() && d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
         });
         title = "Contas que vencem hoje";
       } else if (lower.includes('atrasada')) {
         filteredBills = filteredBills.filter(r => {
-          const d = new Date(r.dueDate);
+          const d = parseSafeDate(r.dueDate);
           const isToday = d.getDate() === now.getDate() && d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
           return d < now && !isToday;
         });
@@ -624,7 +625,7 @@ const ChatInterface: React.FC<ChatProps> = ({
         const nextWeek = new Date(now);
         nextWeek.setDate(now.getDate() + 7);
         filteredBills = filteredBills.filter(r => {
-          const d = new Date(r.dueDate);
+          const d = parseSafeDate(r.dueDate);
           return d >= now && d <= nextWeek;
         });
         title = "Contas que vencem nesta semana";
@@ -644,7 +645,7 @@ const ChatInterface: React.FC<ChatProps> = ({
       }
 
       const getStatus = (dueDate: string) => {
-        const d = new Date(dueDate);
+        const d = parseSafeDate(dueDate);
         const isToday = d.getDate() === now.getDate() && d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
         if (isToday) return "vence hoje ⚠️";
         if (d < now) return "atrasada 🚨";
@@ -1262,7 +1263,7 @@ const ChatInterface: React.FC<ChatProps> = ({
                     <div className="text-[9px] text-[var(--text-muted)] text-right absolute bottom-1 right-2 font-medium opacity-70">
                       {(() => {
                         if (!msg.createdAt) return '';
-                        const d = msg.createdAt.toDate ? msg.createdAt.toDate() : new Date(msg.createdAt);
+                        const d = msg.createdAt.toDate ? msg.createdAt.toDate() : parseSafeDate(msg.createdAt);
                         return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
                       })()}
                     </div>

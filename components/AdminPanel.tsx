@@ -2,6 +2,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { CustomerData, SubscriptionPlan, AdminConfig, AuditLog, AdminLogEntry, SubscriptionStatus } from '../types';
 import { db } from '../services/firebaseConfig';
+import { parseSafeDate } from '../services/dateUtils';
 import { collection, onSnapshot, query, orderBy, limit, doc, getDoc, where } from 'firebase/firestore';
 import { dispatchEvent } from '../services/eventDispatcher';
 import { Notification, ConfirmModal } from './UI';
@@ -68,7 +69,7 @@ const AdminPanel: React.FC<{ currentAdminId: string }> = ({ currentAdminId }) =>
 
   const calculateDaysRemaining = (expiryDate?: string) => {
     if (!expiryDate) return 0;
-    const expiry = new Date(expiryDate);
+    const expiry = parseSafeDate(expiryDate);
     if (isNaN(expiry.getTime())) return 0;
     const expiryMidnight = new Date(expiry.getFullYear(), expiry.getMonth(), expiry.getDate());
     const now = new Date();
@@ -453,7 +454,7 @@ const AdminPanel: React.FC<{ currentAdminId: string }> = ({ currentAdminId }) =>
                                     {daysLeft} dias
                                   </span>
                                   <span className="text-[9px] text-[var(--text-muted)] uppercase font-bold">
-                                    Até {user.subscriptionEndsAt ? new Date(user.subscriptionEndsAt).toLocaleDateString() : 'N/A'}
+                                    Até {user.subscriptionEndsAt ? parseSafeDate(user.subscriptionEndsAt).toLocaleDateString() : 'N/A'}
                                   </span>
                                 </div>
                               </td>

@@ -2,6 +2,7 @@
 import React, { useMemo } from 'react';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import { Transaction, SavingGoal, Wallet } from '../types';
+import { parseSafeDate } from '../services/dateUtils';
 
 interface ChartNetWorthProps {
   transactions: Transaction[];
@@ -30,11 +31,11 @@ const ChartNetWorth: React.FC<ChartNetWorthProps> = ({ transactions, goals, wall
       const endOfMonth = new Date(m.year, m.month + 1, 0, 23, 59, 59);
       
       const income = transactions
-        .filter(t => t.type === 'INCOME' && new Date(t.date) <= endOfMonth)
+        .filter(t => t.type === 'INCOME' && parseSafeDate(t.date) <= endOfMonth)
         .reduce((s, t) => s + (Number(t.amount) || 0), 0);
       
       const expense = transactions
-        .filter(t => t.type === 'EXPENSE' && t.paymentMethod !== 'CARD' && new Date(t.date) <= endOfMonth)
+        .filter(t => t.type === 'EXPENSE' && t.paymentMethod !== 'CARD' && parseSafeDate(t.date) <= endOfMonth)
         .reduce((s, t) => s + (Number(t.amount) || 0), 0);
       
       const liquidBalance = income - expense;
@@ -44,7 +45,7 @@ const ChartNetWorth: React.FC<ChartNetWorthProps> = ({ transactions, goals, wall
       goals.forEach(goal => {
         if (goal.contributions) {
           goalsBalance += goal.contributions
-            .filter(c => new Date(c.date) <= endOfMonth)
+            .filter(c => parseSafeDate(c.date) <= endOfMonth)
             .reduce((s, c) => s + (Number(c.amount) || 0), 0);
         }
       });

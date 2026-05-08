@@ -2,6 +2,7 @@
 import React, { useState, useMemo } from 'react';
 import { Bill, PaymentMethod, Wallet } from '../types';
 import { dispatchEvent } from '../services/eventDispatcher';
+import { parseSafeDate } from '../services/dateUtils';
 import MoneyInput from './MoneyInput';
 import { Notification, ConfirmModal } from './UI';
 
@@ -53,30 +54,30 @@ const Reminders: React.FC<RemindersProps> = ({ bills, wallets, uid, loading, isE
     if (activeTab === 'pending') {
       // Pendentes: Não pagas e do mês atual ou anterior
       return active.filter(b => {
-        const d = new Date(b.dueDate);
+        const d = parseSafeDate(b.dueDate);
         return !b.isPaid && (
           d.getFullYear() < currentYear || 
           (d.getFullYear() === currentYear && d.getMonth() <= currentMonth)
         );
-      }).sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
+      }).sort((a, b) => parseSafeDate(a.dueDate).getTime() - parseSafeDate(b.dueDate).getTime());
     }
     
     if (activeTab === 'next') {
       // Próximo Ciclo: Não pagas e do mês seguinte (ou além)
       return active.filter(b => {
-        const d = new Date(b.dueDate);
+        const d = parseSafeDate(b.dueDate);
         return !b.isPaid && (
           d.getFullYear() > currentYear || 
           (d.getFullYear() === currentYear && d.getMonth() > currentMonth)
         );
-      }).sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime());
+      }).sort((a, b) => parseSafeDate(a.dueDate).getTime() - parseSafeDate(b.dueDate).getTime());
     }
 
     // Pagas: Pagas no mês atual
     return active.filter(b => 
       b.isPaid && 
-      b.paidAt && new Date(b.paidAt).getMonth() === currentMonth && new Date(b.paidAt).getFullYear() === currentYear
-    ).sort((a, b) => new Date(b.paidAt || b.dueDate).getTime() - new Date(a.paidAt || a.dueDate).getTime());
+      b.paidAt && parseSafeDate(b.paidAt).getMonth() === currentMonth && parseSafeDate(b.paidAt).getFullYear() === currentYear
+    ).sort((a, b) => parseSafeDate(b.paidAt || b.dueDate).getTime() - parseSafeDate(a.paidAt || a.dueDate).getTime());
   }, [bills, activeTab]);
 
   const summary = useMemo(() => {
@@ -86,7 +87,7 @@ const Reminders: React.FC<RemindersProps> = ({ bills, wallets, uid, loading, isE
     const active = bills.filter(b => b.isActive !== false && b.type === 'PAY');
 
     const pending = active.filter(b => {
-      const d = new Date(b.dueDate);
+      const d = parseSafeDate(b.dueDate);
       return !b.isPaid && (
         d.getFullYear() < currentYear || 
         (d.getFullYear() === currentYear && d.getMonth() <= currentMonth)
@@ -95,7 +96,7 @@ const Reminders: React.FC<RemindersProps> = ({ bills, wallets, uid, loading, isE
 
     const paid = active.filter(b => 
       b.isPaid && 
-      b.paidAt && new Date(b.paidAt).getMonth() === currentMonth && new Date(b.paidAt).getFullYear() === currentYear
+      b.paidAt && parseSafeDate(b.paidAt).getMonth() === currentMonth && parseSafeDate(b.paidAt).getFullYear() === currentYear
     );
 
     return {
@@ -261,7 +262,7 @@ const Reminders: React.FC<RemindersProps> = ({ bills, wallets, uid, loading, isE
 
       <div className="space-y-3">
         {filteredBills.length > 0 ? filteredBills.map(bill => {
-          const isLate = !bill.isPaid && new Date(bill.dueDate) < new Date();
+          const isLate = !bill.isPaid && parseSafeDate(bill.dueDate) < new Date();
           const isReceive = bill.type === 'RECEIVE';
           
           return (
@@ -278,7 +279,7 @@ const Reminders: React.FC<RemindersProps> = ({ bills, wallets, uid, loading, isE
                     {bill.isPaid ? (isReceive ? 'Recebido' : 'Pago') : isLate ? 'Atrasado' : 'Pendente'}
                   </span>
                   <span className="text-[10px] text-[var(--text-muted)] font-bold">
-                    {isReceive ? 'Receber dia' : 'Vence'}: {new Date(bill.dueDate).toLocaleDateString()}
+                    {isReceive ? 'Receber dia' : 'Vence'}: {parseSafeDate(bill.dueDate).toLocaleDateString()}
                   </span>
                   {bill.recurring && <span className="text-[14px]" title="Recorrente">🔁</span>}
                 </div>

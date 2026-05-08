@@ -1,6 +1,7 @@
 
 import React, { useMemo } from 'react';
 import { Transaction, SavingGoal, Wallet } from '../types';
+import { parseSafeDate } from '../services/dateUtils';
 import ChartNetWorth from './ChartNetWorth';
 
 interface YearlySummaryProps {
@@ -19,7 +20,7 @@ const YearlySummary: React.FC<YearlySummaryProps> = ({ transactions, goals, wall
     const currentYear = new Date().getFullYear();
     const data = months.map((monthName, index) => {
       const monthTrans = transactions.filter(t => {
-        const d = new Date(t.date || t.createdAt?.seconds * 1000);
+        const d = parseSafeDate(t.date || (t.createdAt?.seconds ? new Date(t.createdAt.seconds * 1000).toISOString() : null));
         return d.getMonth() === index && d.getFullYear() === currentYear;
       });
 

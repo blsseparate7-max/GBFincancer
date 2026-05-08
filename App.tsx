@@ -39,6 +39,7 @@ import LandingPage from './components/LandingPage';
 import PWAInstallPrompt from './components/PWAInstallPrompt';
 import { normalizeCard, normalizeGoal, normalizeReminder, normalizeLimit, normalizeWallet, normalizeUserCategory, normalizeTransaction, normalizeDebt, assertSchema } from './services/normalizationService';
 
+import { parseSafeDate } from './services/dateUtils';
 import { motion, AnimatePresence } from 'motion/react';
 import { Zap } from 'lucide-react';
 
@@ -182,15 +183,26 @@ const App: React.FC = () => {
 
     const unsubTrans = onSnapshot(query(
       collection(userRef, "transactions"), 
-      where("date", ">=", startOfYear),
       orderBy("date", "desc"), 
-      limit(1000)
+      limit(50)
     ), (snap) => {
       const normalized = snap.docs.map(d => normalizeTransaction(d));
       setTransactions(normalized);
+      setLastTransactionDoc(snap.docs[snap.docs.length - 1]);
+      setHasMoreTransactions(snap.docs.length === 50);
       setLoadingTransactions(false);
       assertSchema(session.uid, { transactions: normalized, goals, cards });
     }, (err) => handleError(err, "Transactions"));
+
+    // Listener para transações do ano atual (usado apenas para resumos e dashboard)
+    const unsubYearlyTrans = onSnapshot(query(
+      collection(userRef, "transactions"),
+      where("date", ">=", startOfYear),
+      orderBy("date", "desc")
+    ), (snap) => {
+      const normalized = snap.docs.map(d => normalizeTransaction(d));
+      setYearlyTransactions(normalized);
+    }, (err) => handleError(err, "Yearly Transactions"));
 
     const unsubGoals = onSnapshot(collection(userRef, "goals"), (snap) => {
       setGoals(snap.docs.map(d => normalizeGoal(d, session.uid)));
@@ -273,7 +285,7 @@ const App: React.FC = () => {
     });
 
     return () => { 
-      unsubTrans(); unsubGoals(); unsubReminders(); 
+      unsubTrans(); unsubYearlyTrans(); unsubGoals(); unsubReminders(); 
       unsubLimits(); unsubCards(); unsubWallets(); unsubNotifs(); unsubCats(); unsubDebts(); unsubPatterns();
       unsubOnboarding(); unsubMessages(); unsubUser();
     };
@@ -286,6 +298,10 @@ const App: React.FC = () => {
   }, [activeTab]);
 
   const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [yearlyTransactions, setYearlyTransactions] = useState<Transaction[]>([]);
+  const [lastTransactionDoc, setLastTransactionDoc] = useState<any>(null);
+  const [hasMoreTransactions, setHasMoreTransactions] = useState(true);
+  const [loadingMoreTransactions, setLoadingMoreTransactions] = useState(false);
   const [loadingTransactions, setLoadingTransactions] = useState(true);
   const [goals, setGoals] = useState<SavingGoal[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
@@ -323,6 +339,35 @@ const App: React.FC = () => {
     });
     setSession(prev => prev ? { ...prev, lgpdAccepted: true } : null);
     setOnboardingStep('guided');
+  };
+
+  const loadMoreTransactions = async () => {
+    if (!session?.uid || !lastTransactionDoc || !hasMoreTransactions || loadingMoreTransactions) return;
+    
+    setLoadingMoreTransactions(true);
+    try {
+      const { getDocs, query, collection, orderBy, limit, startAfter } = await import('firebase/firestore');
+      const q = query(
+        collection(db, "users", session.uid, "transactions"),
+        orderBy("date", "desc"),
+        startAfter(lastTransactionDoc),
+        limit(50)
+      );
+      
+      const snap = await getDocs(q);
+      if (snap.empty) {
+        setHasMoreTransactions(false);
+      } else {
+        const more = snap.docs.map(d => normalizeTransaction(d));
+        setTransactions(prev => [...prev, ...more]);
+        setLastTransactionDoc(snap.docs[snap.docs.length - 1]);
+        setHasMoreTransactions(snap.docs.length === 50);
+      }
+    } catch (err) {
+      console.error("GB: Erro ao carregar mais transações:", err);
+    } finally {
+      setLoadingMoreTransactions(false);
+    }
   };
 
   // Monitor de Re-abertura do Wizard (Passo 4 do Onboarding)
@@ -374,11 +419,11 @@ const App: React.FC = () => {
 
     if (session.subscriptionStatus === 'active') {
       if (!session.subscriptionEndsAt) return true;
-      return new Date(session.subscriptionEndsAt) > now;
+      return parseSafeDate(session.subscriptionEndsAt) > now;
     }
 
     if (session.subscriptionStatus === 'trial' && session.trialEndsAt) {
-      return new Date(session.trialEndsAt) > now;
+      return parseSafeDate(session.trialEndsAt) > now;
     }
 
     return false;
@@ -386,7 +431,7 @@ const App: React.FC = () => {
 
   const trialWarning = (() => {
     if (!session || session.subscriptionStatus !== 'trial' || !session.trialEndsAt) return null;
-    const trialEnd = new Date(session.trialEndsAt);
+    const trialEnd = parseSafeDate(session.trialEndsAt);
     const now = new Date();
     const diffTime = trialEnd.getTime() - now.getTime();
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
@@ -464,12 +509,19 @@ const App: React.FC = () => {
           wallets={wallets} 
           initialFilters={extratoFilters}
           onClearInitialFilters={() => setExtratoFilters(null)}
+          onLoadMore={loadMoreTransactions}
+          hasMore={hasMoreTransactions}
+          loadingMore={loadingMoreTransactions}
         />
       ) : null;
-      case 'categories': return session ? <CategoriesTab uid={session.uid} categories={categories} transactions={transactions} loading={loadingCategories || loadingTransactions} /> : null;
+      case 'categories': return session ? <CategoriesTab uid={session.uid} categories={categories} transactions={yearlyTransactions} loading={loadingCategories || loadingTransactions} /> : null;
       case 'dash': return session ? (
         <Dashboard 
-          transactions={transactions} 
+          transactions={yearlyTransactions} 
+          paginatedTransactions={transactions}
+          onLoadMoreTransactions={loadMoreTransactions}
+          hasMoreTransactions={hasMoreTransactions}
+          loadingMoreTransactions={loadingMoreTransactions}
           goals={goals} 
           limits={limits} 
           wallets={wallets} 
@@ -486,16 +538,16 @@ const App: React.FC = () => {
           isExpired={!hasAccess()}
         />
       ) : null;
-      case 'calendar': return session ? <CalendarTab transactions={transactions} reminders={reminders} loading={loadingReminders || loadingTransactions} /> : null;
-      case 'goals': return session ? <Goals goals={goals} transactions={transactions} wallets={wallets} uid={session.uid} user={session} loading={loadingGoals || loadingTransactions} isExpired={!hasAccess()} /> : null;
-      case 'cc': return session ? <CreditCard transactions={transactions} uid={session.uid} cards={cards} wallets={wallets} loading={loadingCards} isExpired={!hasAccess()} /> : null;
+      case 'calendar': return session ? <CalendarTab transactions={yearlyTransactions} reminders={reminders} loading={loadingReminders || loadingTransactions} /> : null;
+      case 'goals': return session ? <Goals goals={goals} transactions={yearlyTransactions} wallets={wallets} uid={session.uid} user={session} loading={loadingGoals || loadingTransactions} isExpired={!hasAccess()} /> : null;
+      case 'cc': return session ? <CreditCard transactions={yearlyTransactions} uid={session.uid} cards={cards} wallets={wallets} loading={loadingCards} isExpired={!hasAccess()} /> : null;
       case 'reminders': return session ? <Reminders bills={reminders} wallets={wallets} uid={session.uid} loading={loadingReminders} isExpired={!hasAccess()} /> : null;
       case 'messages': return session ? <Messages notifications={notifications} /> : null;
-      case 'resumo': return session ? <YearlySummary transactions={transactions} goals={goals} wallets={wallets} /> : null;
-      case 'insights': return session ? <Insights transactions={transactions} limits={limits} /> : null;
-      case 'score': return session ? <HealthScoreTab transactions={transactions} limits={limits} goals={goals} /> : null;
-      case 'stress': return session ? <ImpactSimulator transactions={transactions} /> : null;
-      case 'debts': return session ? <DebtAssistant uid={session.uid} transactions={transactions} wallets={wallets} user={session} goals={goals} cards={cards} debts={debts} isExpired={!hasAccess()} /> : null;
+      case 'resumo': return session ? <YearlySummary transactions={yearlyTransactions} goals={goals} wallets={wallets} /> : null;
+      case 'insights': return session ? <Insights transactions={yearlyTransactions} limits={limits} /> : null;
+      case 'score': return session ? <HealthScoreTab transactions={yearlyTransactions} limits={limits} goals={goals} /> : null;
+      case 'stress': return session ? <ImpactSimulator transactions={yearlyTransactions} /> : null;
+      case 'debts': return session ? <DebtAssistant uid={session.uid} transactions={yearlyTransactions} wallets={wallets} user={session} goals={goals} cards={cards} debts={debts} isExpired={!hasAccess()} /> : null;
       case 'profile': return session ? <ProfileEdit user={session} onUpdate={(d) => setSession(p => p ? {...p, ...d} : null)} onLogout={() => signOut(auth)} setActiveTab={setActiveTab} /> : null;
       case 'support': return <SupportTab user={session} onBackToAuth={() => setActiveTab('chat')} initialContext={supportContext} />;
       case 'admin_support': return session?.role === 'admin' ? <AdminSupport admin={session} /> : null;
@@ -512,15 +564,15 @@ const App: React.FC = () => {
         const currentMonth = now.getMonth();
         const currentYear = now.getFullYear();
 
-        const income = transactions
+        const income = yearlyTransactions
           .filter(t => {
-            const d = new Date(t.date);
+            const d = parseSafeDate(t.date);
             return d.getMonth() === currentMonth && d.getFullYear() === currentYear && t.type === 'INCOME';
           })
           .reduce((s, t) => s + (Number(t.amount) || 0), 0);
-        const expense = transactions
+        const expense = yearlyTransactions
           .filter(t => {
-            const d = new Date(t.date);
+            const d = parseSafeDate(t.date);
             return d.getMonth() === currentMonth && d.getFullYear() === currentYear && t.type === 'EXPENSE' && t.paymentMethod !== 'CARD';
           })
           .reduce((s, t) => s + (Number(t.amount) || 0), 0);
@@ -533,7 +585,7 @@ const App: React.FC = () => {
             freeBalance={freeBalance} 
             goals={goals} 
             wallets={wallets} 
-            transactions={transactions}
+            transactions={yearlyTransactions}
             loading={loadingWallets || loadingGoals} 
             onNavigateToExtrato={(filters) => {
               setExtratoFilters(filters);
@@ -548,7 +600,7 @@ const App: React.FC = () => {
           user={session} 
           messages={messages} 
           setMessages={setMessages}
-          transactions={transactions} 
+          transactions={yearlyTransactions} 
           limits={limits} 
           reminders={reminders} 
           goals={goals} 

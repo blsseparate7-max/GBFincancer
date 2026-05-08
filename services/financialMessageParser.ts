@@ -54,14 +54,13 @@ const extractInstallments = (text: string): number | undefined => {
   return undefined;
 };
 
+const GLOBAL_AMOUNT_REGEX = /(?:r\$|brl|\$)?\s*(\d{1,3}(?:\.\d{3})*,\d{2}|\d+,\d{2}|\d{1,3}(?:,\d{3})*\.\d{2}|\d+\.\d{2}|\d+)\s*(?:r\$|brl|\$)?/i;
+
 /**
  * Extrai o valor numérico de uma string, tratando formatos brasileiros e internacionais
  */
 const extractAmount = (text: string): number | null => {
-  // Regex que busca um numeral com possíveis prefixos/sufixos monetários
-  // Captura formatos como: 355,06 | R$ 355,06 | 355,06$ | 1.200,50 | 1200.50 | 30
-  const amountRegex = /(?:r\$|brl|\$)?\s*(\d{1,3}(?:\.\d{3})*,\d{2}|\d+,\d{2}|\d{1,3}(?:,\d{3})*\.\d{2}|\d+\.\d{2}|\d+)\s*(?:r\$|brl|\$)?/i;
-  const match = text.match(amountRegex);
+  const match = text.match(GLOBAL_AMOUNT_REGEX);
 
   if (!match) return null;
 
@@ -156,8 +155,10 @@ const extractDescription = (text: string, rawAmountStr: string | null): string =
  * Divide uma mensagem em múltiplas partes se houver separadores
  */
 const splitMessage = (text: string): string[] => {
-  // Ignora centavos (ex: 30,50) para não quebrar a mensagem no separador de milhar/decimal
-  const parts = text.split(/\s*[,;e/]\s*(?!\d{2}\b)/i)
+  // Regex inteligente para separar transações múltiplas
+  // Consideramos separadores: vírgula, ponto e vírgula, "e" (rodeado de espaços) ou barra
+  // Só quebramos na vírgula se houver um espaço depois ou antes, para não quebrar 30,50
+  const parts = text.split(/\s*[,;]\s+|\s+[,;]\s*|\s+e\s+|\s*\/\s*/i)
     .filter(p => p.trim().length > 0);
   
   return parts.length > 0 ? parts : [text];
@@ -174,8 +175,7 @@ export const parseFinancialMessage = (message: string): ParsedFinancialMessage =
   const installments = extractInstallments(normalized);
   
   // Mesma regex do extractAmount para identificar o que remover da descrição
-  const amountRegex = /(?:r\$|brl|\$)?\s*(\d{1,3}(?:\.\d{3})*,\d{2}|\d+,\d{2}|\d{1,3}(?:,\d{3})*\.\d{2}|\d+\.\d{2}|\d+)\s*(?:r\$|brl|\$)?/i;
-  const amountMatch = normalized.match(amountRegex);
+  const amountMatch = normalized.match(GLOBAL_AMOUNT_REGEX);
   const rawAmountStr = amountMatch ? amountMatch[1] : null;
   
   const description = extractDescription(normalized, rawAmountStr);

@@ -1,4 +1,5 @@
 
+import { parseSafeDate } from "./dateUtils";
 import { db, auth } from "./firebaseConfig";
 import { 
   collection, addDoc, doc, setDoc, deleteDoc, updateDoc, 
@@ -166,12 +167,6 @@ export const migrateTransactions = async (uid: string) => {
     console.error("GB: Erro na migração:", error);
     return 0;
   }
-};
-
-const parseSafeDate = (dateStr?: string | null): Date => {
-  if (!dateStr || dateStr === 'null' || dateStr === 'undefined') return new Date();
-  const d = new Date(dateStr);
-  return isNaN(d.getTime()) ? new Date() : d;
 };
 
 const getCycleKey = (dateStr?: string) => {
@@ -664,7 +659,8 @@ const executeDispatch = async (uid: string, event: FinanceEvent) => {
 
       case 'UPDATE_LIMIT': {
         const { category, amount, id } = event.payload;
-        const limitId = id || getCategoryId(normalizeCategoryName(category));
+        // Sempre sanitiza o ID para evitar slashes que quebram o Firestore
+        const limitId = id ? getCategoryId(id) : getCategoryId(normalizeCategoryName(category));
         const limitData: any = {
           limit: amount,
           isActive: true,
@@ -681,7 +677,8 @@ const executeDispatch = async (uid: string, event: FinanceEvent) => {
       case 'DELETE_LIMIT': {
         const { id } = event.payload;
         if (id) {
-          await deleteDoc(doc(userRef, "limits", id));
+          const limitId = getCategoryId(id);
+          await deleteDoc(doc(userRef, "limits", limitId));
         }
         break;
       }
@@ -1221,8 +1218,8 @@ const executeDispatch = async (uid: string, event: FinanceEvent) => {
           if (newTargetWalletId && newTargetWalletId !== oldTargetWalletId && newTargetWalletId !== oldSourceWalletId) refsToRead.push(doc(userRef, "wallets", newTargetWalletId));
           if (newSourceWalletId && newSourceWalletId !== oldTargetWalletId && newSourceWalletId !== oldSourceWalletId && newSourceWalletId !== newTargetWalletId) refsToRead.push(doc(userRef, "wallets", newSourceWalletId));
           
-          const oldLimitId = (oldCat || "").toLowerCase().trim().replace(/\s+/g, '_');
-          const newLimitId = (newCat || "").toLowerCase().trim().replace(/\s+/g, '_');
+          const oldLimitId = getCategoryId(oldCat);
+          const newLimitId = getCategoryId(newCat);
           if (oldLimitId) refsToRead.push(doc(userRef, "limits", oldLimitId));
           if (newLimitId && newLimitId !== oldLimitId) refsToRead.push(doc(userRef, "limits", newLimitId));
 
@@ -1420,7 +1417,7 @@ const executeDispatch = async (uid: string, event: FinanceEvent) => {
 
             const amount = Number(data.amount || 0);
             const normalizedCat = normalizeCategoryName(data.category);
-            const limitId = (normalizedCat || "").toLowerCase().trim().replace(/\s+/g, '_');
+            const limitId = getCategoryId(normalizedCat);
             const cardId = data.cardId;
             const walletId = data.walletId || data.sourceWalletId || data.targetWalletId || data.fromWalletId;
             const targetWalletId = data.targetWalletId || data.toWalletId;
@@ -2016,7 +2013,7 @@ const executeDispatch = async (uid: string, event: FinanceEvent) => {
 };
 
 async function updateLimitConsumption(uid: string, category: string, amount: number) {
-  const limitId = (category || "").toLowerCase().trim().replace(/\s+/g, '_');
+  const limitId = getCategoryId(category);
   const limitRef = doc(db, "users", uid, "limits", limitId);
   const snap = await getDoc(limitRef);
   if (snap.exists()) {

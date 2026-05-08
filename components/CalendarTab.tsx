@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { Transaction, Bill } from '../types';
+import { parseSafeDate } from '../services/dateUtils';
 import { 
   Calendar as CalendarIcon, 
   ChevronLeft, ChevronRight, 
@@ -33,7 +34,7 @@ const CalendarTab: React.FC<CalendarTabProps> = ({ transactions, reminders, load
 
     // Filter transactions for current month
     const monthTransactions = transactions.filter(t => {
-      const d = new Date(t.date);
+      const d = parseSafeDate(t.date);
       return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
     });
 
@@ -44,7 +45,7 @@ const CalendarTab: React.FC<CalendarTabProps> = ({ transactions, reminders, load
     }
 
     monthTransactions.forEach(t => {
-      const dateObj = new Date(t.date);
+      const dateObj = parseSafeDate(t.date);
       const d = dateObj.getDate();
       
       if (dailyStats[d]) {

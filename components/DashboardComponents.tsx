@@ -534,7 +534,7 @@ export const UpcomingBillsCard: React.FC<{ bills: any[], onBillClick?: (bill: an
   </section>
 ));
 
-export const SuggestionCard: React.FC<{ suggestion: any }> = React.memo(({ suggestion }) => (
+export const SuggestionCard: React.FC<{ suggestion: any, onCategoryClick?: (cat: string) => void }> = React.memo(({ suggestion, onCategoryClick }) => (
   <motion.div 
     whileHover={{ y: -5 }}
     className="bg-[var(--green-whatsapp)]/5 p-10 rounded-[3rem] border border-[var(--green-whatsapp)]/20 shadow-xl shadow-[var(--green-whatsapp)]/5 flex flex-col sm:flex-row items-start gap-8 relative overflow-hidden"
@@ -545,13 +545,21 @@ export const SuggestionCard: React.FC<{ suggestion: any }> = React.memo(({ sugge
     <div className="w-16 h-16 bg-[var(--green-whatsapp)] rounded-[1.5rem] flex items-center justify-center shrink-0 shadow-2xl shadow-[var(--green-whatsapp)]/40 relative z-10">
       <Lightbulb className="text-white" size={32} />
     </div>
-    <div className="space-y-4 relative z-10">
+    <div className="space-y-4 relative z-10 flex-1">
       <h3 className="text-xs font-black text-[var(--green-whatsapp)] uppercase tracking-[0.3em]">Insights de Inteligência</h3>
       {suggestion ? (
-        <p className="text-base font-medium text-[var(--text-primary)] leading-relaxed italic">
-          Sua categoria <span className="font-black text-[var(--green-whatsapp)] underline decoration-dotted underline-offset-4">{suggestion.category}</span> está consumindo <span className="font-black">{suggestion.percentage}%</span> do orçamento. 
-          Uma otimização de apenas 10% aqui liberaria <span className="font-black text-[var(--green-whatsapp)] bg-[var(--green-whatsapp)]/10 px-2 py-0.5 rounded-lg">{format(suggestion.saving)}</span> extras por mês.
-        </p>
+        <div className="space-y-6">
+          <p className="text-base font-medium text-[var(--text-primary)] leading-relaxed italic">
+            Sua categoria <span className="font-black text-[var(--green-whatsapp)] underline decoration-dotted underline-offset-4">{suggestion.category}</span> está consumindo <span className="font-black">{suggestion.percentage}%</span> do orçamento. 
+            Uma otimização de apenas 10% aqui liberaria <span className="font-black text-[var(--green-whatsapp)] bg-[var(--green-whatsapp)]/10 px-2 py-0.5 rounded-lg">{format(suggestion.saving)}</span> extras por mês.
+          </p>
+          <button 
+            onClick={() => onCategoryClick?.(suggestion.category)}
+            className="flex items-center gap-2 px-6 py-3 bg-[var(--green-whatsapp)] text-white text-[10px] font-black uppercase tracking-widest rounded-2xl shadow-lg shadow-[var(--green-whatsapp)]/20 hover:scale-105 transition-all active:scale-95"
+          >
+            Analisar Categoria <ArrowRight size={14} />
+          </button>
+        </div>
       ) : (
         <p className="text-base font-medium text-[var(--text-primary)] leading-relaxed italic">
           Continue alimentando o sistema com suas transações. Em breve, gerarei estratégias personalizadas para otimizar sua saúde financeira.

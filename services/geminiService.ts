@@ -297,7 +297,7 @@ export const parseMessage = async (text: string, userName: string, context?: { u
       
       REGRAS DE OURO (FONTE DA VERDADE):
       1. Você deve SEMPRE priorizar os dados acima sobre qualquer conversa anterior.
-      2. MÚLTIPLOS LANÇAMENTOS: Se o usuário enviar uma mensagem com várias despesas ou receitas (ex: "30 pipoca, 50 mercado"), você DEVE gerar um evento para CADA item no array 'events'.
+      2. MÚLTIPLOS LANÇAMENTOS (CRÍTICO): Se o usuário enviar uma mensagem com várias despesas ou receitas (ex: "30 pipoca, 50 mercado"), você DEVE gerar um evento para CADA item no array 'events'. Garanta que a 'description' de cada evento seja única e reflita exatamente aquele item (separe o que é de um item do que é do outro). NUNCA repita ou misture descrições entre os eventos.
       3. FORMATO CURTO: Se o usuário enviar apenas "[valor] [descrição]" (ex: "30 sorvete"), interprete como ADD_EXPENSE por padrão.
       4. Se houver uma "DICA DO SISTEMA" acima, considere-a como prova de que a mensagem É um comando financeiro. Se a confiança for alta, você DEVE gerar o evento correspondente, mesmo que precise adivinhar campos secundários usando o contexto.
       5. NUNCA diga "Não entendi" para mensagens que contenham claramente valores monetários ou intenções financeiras. Se faltar informação, gere o evento com o que tem e peça o restante no 'reply'.

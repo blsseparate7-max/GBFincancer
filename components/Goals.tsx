@@ -2,6 +2,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { SavingGoal, Transaction, Contribution, UserSession, Wallet } from '../types';
 import { dispatchEvent } from '../services/eventDispatcher';
+import { parseSafeDate } from '../services/dateUtils';
 import MoneyInput from './MoneyInput';
 import { syncUserData } from '../services/databaseService';
 import { Notification } from './UI';
@@ -168,7 +169,7 @@ const Goals: React.FC<GoalsProps> = ({ goals, transactions, wallets, uid, user, 
 
     // Média de aportes mensais (simplificado)
     const totalAportes = goal.contributions.reduce((s, c) => s + (Number(c.amount) || 0), 0);
-    const firstDate = new Date(goal.contributions[0].date);
+    const firstDate = parseSafeDate(goal.contributions[0].date);
     const lastDate = new Date();
     const monthsDiff = Math.max(1, (lastDate.getFullYear() - firstDate.getFullYear()) * 12 + (lastDate.getMonth() - firstDate.getMonth()));
     
@@ -550,7 +551,7 @@ const Goals: React.FC<GoalsProps> = ({ goals, transactions, wallets, uid, user, 
                       <div key={c.id} className="flex justify-between items-center bg-[var(--bg-body)] p-4 rounded-2xl border border-[var(--border)]/30">
                         <div>
                           <p className="text-xs font-black text-[var(--text-primary)]">{format(c.amount)}</p>
-                          <p className="text-[8px] text-[var(--text-muted)] uppercase font-bold">{new Date(c.date).toLocaleDateString()} {c.note && `• ${c.note}`}</p>
+                          <p className="text-[8px] text-[var(--text-muted)] uppercase font-bold">{parseSafeDate(c.date).toLocaleDateString()} {c.note && `• ${c.note}`}</p>
                         </div>
                         <span className="text-[8px] bg-white px-2 py-1 rounded-lg text-[var(--green-whatsapp)] font-black uppercase shadow-sm">Confirmado</span>
                       </div>

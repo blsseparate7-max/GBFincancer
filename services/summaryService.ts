@@ -1,4 +1,5 @@
 import { Transaction, WeeklySummary } from '../types';
+import { parseSafeDate } from './dateUtils';
 
 export const calculateWeeklySummary = (transactions: Transaction[]): WeeklySummary => {
   const now = new Date();
@@ -7,7 +8,7 @@ export const calculateWeeklySummary = (transactions: Transaction[]): WeeklySumma
   sevenDaysAgo.setDate(now.getDate() - 7);
 
   const weekTransactions = transactions.filter(t => {
-    const tDate = new Date(t.date);
+    const tDate = parseSafeDate(t.date);
     return tDate >= sevenDaysAgo && tDate <= now;
   });
 
@@ -51,7 +52,7 @@ export const calculateMonthlySummary = (transactions: Transaction[]) => {
   const currentYear = now.getFullYear();
 
   const monthTransactions = transactions.filter(t => {
-    const tDate = new Date(t.date);
+    const tDate = parseSafeDate(t.date);
     return tDate.getMonth() === currentMonth && tDate.getFullYear() === currentYear;
   });
 
@@ -106,7 +107,7 @@ export const calculateForecast = (transactions: Transaction[], reminders: any[],
   // Gastos do mês até agora (saída real de dinheiro)
   const monthExpenses = transactions
     .filter(t => {
-      const d = new Date(t.date);
+      const d = parseSafeDate(t.date);
       return d.getMonth() === currentMonth && d.getFullYear() === currentYear && t.type === 'EXPENSE' && t.paymentMethod !== 'CARD';
     })
     .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
@@ -149,7 +150,7 @@ export const calculateBillsSummary = (reminders: any[]) => {
   // Pendentes: Todas as não pagas vencidas (atrasadas) ou que vencem no mês atual
   const pending = reminders.filter(r => {
     if (r.isPaid || r.type !== 'PAY') return false;
-    const due = new Date(r.dueDate);
+    const due = parseSafeDate(r.dueDate);
     return due.getFullYear() < currentYear || (due.getFullYear() === currentYear && due.getMonth() <= currentMonth);
   });
 
@@ -158,27 +159,27 @@ export const calculateBillsSummary = (reminders: any[]) => {
     if (!r.isPaid || r.type !== 'PAY') return false;
     // Se tiver data de pagamento, filtrar pela data de pagamento (mês atual)
     if (r.paidAt) {
-      const p = new Date(r.paidAt);
+      const p = parseSafeDate(r.paidAt);
       return p.getMonth() === currentMonth && p.getFullYear() === currentYear;
     }
     // Fallback: se não tiver data de pagamento, olha pro vencimento (mas geralmente pagar_reminder seta paidAt)
-    const due = new Date(r.dueDate);
+    const due = parseSafeDate(r.dueDate);
     return due.getMonth() === currentMonth && due.getFullYear() === currentYear;
   });
 
   const income = reminders.filter(r => {
     if (r.isPaid || r.type !== 'RECEIVE') return false;
-    const due = new Date(r.dueDate);
+    const due = parseSafeDate(r.dueDate);
     return due.getFullYear() < currentYear || (due.getFullYear() === currentYear && due.getMonth() <= currentMonth);
   });
 
   const received = reminders.filter(r => {
     if (!r.isPaid || r.type !== 'RECEIVE') return false;
     if (r.paidAt) {
-      const p = new Date(r.paidAt);
+      const p = parseSafeDate(r.paidAt);
       return p.getMonth() === currentMonth && p.getFullYear() === currentYear;
     }
-    const due = new Date(r.dueDate);
+    const due = parseSafeDate(r.dueDate);
     return due.getMonth() === currentMonth && due.getFullYear() === currentYear;
   });
 

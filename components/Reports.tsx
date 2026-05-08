@@ -1,6 +1,7 @@
 
 import React, { useMemo, useState } from 'react';
 import { Transaction, SavingGoal } from '../types';
+import { parseSafeDate } from '../services/dateUtils';
 import { jsPDF } from 'jspdf';
 import { FileDown, Loader2 } from 'lucide-react';
 
@@ -27,7 +28,7 @@ const Reports: React.FC<ReportsProps> = ({ transactions }) => {
     const monthNames = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
     
     transactions.forEach(t => {
-      const date = new Date(t.date);
+      const date = parseSafeDate(t.date);
       const key = `${monthNames[date.getMonth()]} ${date.getFullYear()}`;
       if (!monthlyGroups[key]) monthlyGroups[key] = { income: 0, expense: 0 };
       
