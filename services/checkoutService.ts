@@ -60,7 +60,7 @@ export const handleAsaasRedirect = async (uid: string, email: string, plan: stri
   }
   
   try {
-    console.log("[ASAAS] Chamando API de checkout...");
+    console.log(`[ASAAS] Chamando API de checkout em: ${window.location.origin}/api/checkout/asaas`);
     const response = await fetch('/api/checkout/asaas', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

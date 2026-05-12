@@ -39,6 +39,12 @@ if (!admin.apps.length) {
 const app = express();
 app.use(express.json());
 
+// Log incoming requests for debugging on Vercel
+app.use((req, res, next) => {
+  console.log(`[Vercel Server] ${req.method} ${req.url}`);
+  next();
+});
+
 // Asaas Config
 const ASAAS_API_KEY = process.env.ASAAS_API_KEY || '';
 const ASAAS_WEBHOOK_TOKEN = process.env.ASAAS_WEBHOOK_TOKEN || '';
@@ -66,15 +72,30 @@ async function asaasFetch(endpoint: string, options: any = {}) {
 }
 
 // Health check and diagnostic
-app.get("/api/health", (req, res) => {
-  res.json({ status: "ok", environment: isProd ? 'production' : 'sandbox', time: new Date().toISOString() });
-});
+const healthHandler = (req: any, res: any) => {
+  res.json({ 
+    status: "ok", 
+    environment: isProd ? 'production' : 'sandbox', 
+    time: new Date().toISOString(),
+    node_version: process.version,
+    env_keys_found: {
+      asaas: !!ASAAS_API_KEY,
+      webhook: !!ASAAS_WEBHOOK_TOKEN,
+      firebase: !!firebaseConfig?.projectId
+    }
+  });
+};
 
-// Endpoint to create Asaas Checkout
-app.post("/api/checkout/asaas", async (req, res) => {
+app.get("/api/health", healthHandler);
+app.get("/health", healthHandler);
+
+// Endpoint to create Asaas Checkout (handled with and without /api prefix)
+const checkoutAsaasHandler = async (req: any, res: any) => {
   let { uid, email, plan, name, cpfCnpj } = req.body;
+  console.log(`[ASAAS] Checkout requested for ${email} (${plan})`);
 
   if (!uid || !email) {
+    console.error("[ASAAS] Error: Missing uid or email");
     return res.status(400).json({ error: "Missing required fields" });
   }
 
@@ -82,6 +103,7 @@ app.post("/api/checkout/asaas", async (req, res) => {
     if (cpfCnpj) cpfCnpj = cpfCnpj.replace(/\D/g, '');
 
     if (!cpfCnpj) {
+      console.log(`[ASAAS] Fetching CPF from Firestore for ${uid}`);
       const userDoc = await getDoc(doc(db, "users", uid));
       if (userDoc.exists()) {
         const userData = userDoc.data();
@@ -91,13 +113,16 @@ app.post("/api/checkout/asaas", async (req, res) => {
     }
 
     if (!cpfCnpj) {
+      console.error(`[ASAAS] Error: CPF/CNPJ missing for user ${uid}`);
       throw new Error("CPF ou CNPJ é obrigatório para realizar o pagamento.");
     }
 
+    console.log(`[ASAAS] Identifying customer for ${email}`);
     const customers = await asaasFetch(`/customers?email=${email}`);
     let customerId = customers.data?.[0]?.id;
 
     if (!customerId) {
+      console.log(`[ASAAS] Creating new customer for ${email}`);
       const customer = await asaasFetch('/customers', {
         method: 'POST',
         body: JSON.stringify({ name: name || email, email, cpfCnpj })
@@ -105,11 +130,13 @@ app.post("/api/checkout/asaas", async (req, res) => {
       customerId = customer.id;
     }
 
+    console.log(`[ASAAS] Creating session for ${uid}`);
     const sessionRef = await addDoc(collection(db, "checkoutSessions"), {
       uid, email, plan, provider: 'asaas', status: 'pending',
       createdAt: serverTimestamp(), ...AUTH_BYPASS
     });
 
+    console.log(`[ASAAS] Creating subscription for customer ${customerId}`);
     const subscription = await asaasFetch('/subscriptions', {
       method: 'POST',
       body: JSON.stringify({
@@ -120,6 +147,7 @@ app.post("/api/checkout/asaas", async (req, res) => {
       })
     });
 
+    console.log(`[ASAAS] Fetching payment for subscription ${subscription.id}`);
     const payments = await asaasFetch(`/payments?subscription=${subscription.id}&limit=1`);
     const firstPayment = payments.data?.[0];
 
@@ -128,11 +156,16 @@ app.post("/api/checkout/asaas", async (req, res) => {
     }
 
     const checkoutUrl = firstPayment.invoiceUrl || firstPayment.bankSlipUrl || firstPayment.checkoutUrl;
+    console.log(`[ASAAS] Success! Checkout URL: ${checkoutUrl}`);
     res.json({ checkoutUrl });
   } catch (error: any) {
+    console.error("[ASAAS ERROR]:", error.message);
     res.status(500).json({ error: error.message });
   }
-});
+};
+
+app.post("/api/checkout/asaas", checkoutAsaasHandler);
+app.post("/checkout/asaas", checkoutAsaasHandler);
 
 // Asaas Webhook
 app.post("/api/webhooks/asaas", async (req, res) => {
