@@ -16,11 +16,22 @@ import {
 // Load Firebase Config
 let firebaseConfig: any;
 try {
-  const firebaseConfigPath = path.join(process.cwd(), "firebase-applet-config.json");
-  firebaseConfig = JSON.parse(fs.readFileSync(firebaseConfigPath, "utf8"));
+  // Use relative path for Vercel function environment
+  const configPath = path.resolve(process.cwd(), "firebase-applet-config.json");
+  if (fs.existsSync(configPath)) {
+    firebaseConfig = JSON.parse(fs.readFileSync(configPath, "utf8"));
+  } else {
+    // Attempt to load from parent if inside /api
+    const parentConfigPath = path.resolve(process.cwd(), "..", "firebase-applet-config.json");
+    if (fs.existsSync(parentConfigPath)) {
+      firebaseConfig = JSON.parse(fs.readFileSync(parentConfigPath, "utf8"));
+    } else {
+      console.warn("Firebase config not found at", configPath, "or", parentConfigPath);
+      firebaseConfig = {};
+    }
+  }
 } catch (e) {
-  console.error("CRITICAL: Failed to load firebase-applet-config.json from", process.cwd(), e);
-  // Fallback to empty to avoid immediate crash but fail later with meaningful error
+  console.error("CRITICAL: Failed to load firebase-applet-config.json", e);
   firebaseConfig = {};
 }
 
@@ -220,7 +231,7 @@ app.post("/api/webhooks/asaas", async (req, res) => {
 });
 
 // Kiwify Webhook
-app.post("/api/webhooks/kiwify", async (req, res) => {
+app.post("/api/webhooks/kiwify", async (req: any, res: any) => {
   const { order_status, custom_parameters, plan, order_id } = req.body;
   const sessionId = custom_parameters?.session_id;
   if (!sessionId) return res.status(400).json({ error: "session_id missing" });
@@ -257,6 +268,12 @@ app.post("/api/webhooks/kiwify", async (req, res) => {
   } catch (error) {
     res.status(500).json({ error: "Internal error" });
   }
+});
+
+// Handle unknown routes within the API function
+app.use((req, res) => {
+  console.warn(`[Vercel Server] Route not found: ${req.method} ${req.url}`);
+  res.status(404).json({ error: "Route not found or unhandled", path: req.url });
 });
 
 export default app;
