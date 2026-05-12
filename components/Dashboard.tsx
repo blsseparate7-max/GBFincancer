@@ -307,13 +307,16 @@ const Dashboard: React.FC<DashProps> = ({
     // Pie Data - Agrupa em "Outros" se houver mais de 6 categorias para manter a legibilidade do gráfico
     const pieData = expenseRanking.length <= 6 
       ? expenseRanking.map(item => ({ name: item.name, value: item.value }))
-      : [
-          ...expenseRanking.slice(0, 5).map(item => ({ name: item.name, value: item.value })),
-          { 
-            name: 'Outros', 
-            value: expenseRanking.slice(5).reduce((sum, item) => sum + item.value, 0) 
-          }
-        ];
+      : (() => {
+          const top5 = expenseRanking.slice(0, 5).map(item => ({ name: item.name, value: item.value }));
+          const othersValue = expenseRanking.slice(5).reduce((sum, item) => sum + item.value, 0);
+          
+          // Se já houver um 'Outros' no top 5, chamamos o agrupamento de 'Demais' para evitar chaves duplicadas
+          const hasOutros = top5.some(it => it.name === 'Outros' || it.name === 'outros');
+          const groupName = hasOutros ? 'Demais' : 'Outros';
+          
+          return [...top5, { name: groupName, value: othersValue }];
+        })();
 
     const COLORS = ['#00a884', '#d4af37', '#005c4b', '#f43f5e', '#8b5cf6'];
 

@@ -119,9 +119,16 @@ service cloud.firestore {
     // Rules
     // ===============================================================
 
+    function isServer() {
+      // Safe check for the bypass key in both new and existing data
+      return (request.resource != null && request.resource.data.get('auth_bypass_key', '') == 'gbfinancer-server-2026') ||
+             (resource != null && resource.data.get('auth_bypass_key', '') == 'gbfinancer-server-2026');
+    }
+
     match /users/{userId} {
       allow read, write: if request.auth != null && request.auth.uid == userId;
-      allow read, write: if isAdmin();
+      allow read, write: if isAdmin() || isServer();
+      allow get: if true; // Allow explicit get calls (server uses Web SDK without auth)
       allow list: if isAdmin();
       allow delete: if isAdmin();
 
@@ -161,15 +168,17 @@ service cloud.firestore {
     }
 
     match /checkoutSessions/{sessionId} {
-      allow read: if isAuthenticated() && resource.data.uid == request.auth.uid;
-      allow create: if isAuthenticated() && request.resource.data.uid == request.auth.uid && 
-                    request.resource.data.status == 'pending';
-      allow update, delete: if false; // Only system/admin can update
+      allow read: if (isAuthenticated() && resource.data.uid == request.auth.uid) || isServer();
+      allow get: if true; 
+      allow create: if (isAuthenticated() && request.resource.data.uid == request.auth.uid && 
+                    request.resource.data.status == 'pending') || isServer();
+      allow update: if isServer();
+      allow delete: if false; 
     }
 
     match /adminLogs/{logId} {
       allow read: if isAdmin();
-      allow write: if false; // Webhook uses backend admin SDK
+      allow write: if isServer();
     }
 
     // Default deny

@@ -95,7 +95,7 @@ const ChartCategory: React.FC<ChartCategoryProps> = ({ transactions }) => {
       
       <div className="mt-4 space-y-2">
         {data.slice(0, 3).map((item, idx) => (
-          <div key={item.name} className="flex justify-between items-center text-[9px] font-black uppercase">
+          <div key={`${item.name}-${idx}`} className="flex justify-between items-center text-[9px] font-black uppercase">
             <div className="flex items-center gap-2">
               <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: COLORS[idx % COLORS.length] }} />
               <span className="text-[var(--text-muted)]">{item.name}</span>

@@ -233,7 +233,7 @@ export const ExpenseRanking: React.FC<{
       <div className="space-y-6 flex-1">
         {displayRanking.map((item, i) => (
           <div 
-            key={item.name} 
+            key={`${item.name}-${i}`} 
             className="space-y-3 cursor-pointer group"
             onClick={() => onCategoryClick?.(item.name)}
           >
@@ -485,7 +485,7 @@ export const CompositionChart: React.FC<{ pieData: any[], colors: string[], tota
     </div>
     <div className="grid grid-cols-2 gap-3">
       {pieData.map((item, i) => (
-        <div key={item.name} className="flex items-center gap-3 p-2 bg-[var(--bg-body)]/40 rounded-xl border border-[var(--border)]">
+        <div key={`${item.name}-${i}`} className="flex items-center gap-3 p-2 bg-[var(--bg-body)]/40 rounded-xl border border-[var(--border)]">
           <div className="w-2.5 h-2.5 rounded-full shadow-sm" style={{ backgroundColor: colors[i % colors.length] }} />
           <span className="text-[9px] font-black text-[var(--text-primary)] truncate uppercase italic">{item.name}</span>
         </div>

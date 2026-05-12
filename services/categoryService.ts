@@ -44,9 +44,9 @@ export const getCategoryId = (name: string): string => {
     .trim()
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '') // Remove acentos
-    .replace(/[^a-z0-9]/g, '_') // Substitui não-alfanuméricos por _
-    .replace(/_+/g, '_') // Remove múltiplos underscores
-    .replace(/^_+|_+$/g, ''); // Remove underscores no início/fim
+    .replace(/[^a-z0-9]/g, '-') // Substitui não-alfanuméricos por -
+    .replace(/-+/g, '-') // Remove múltiplos hifens
+    .replace(/^-+|-+$/g, ''); // Remove hifens no início/fim
 };
 
 /**

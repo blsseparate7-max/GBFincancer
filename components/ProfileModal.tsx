@@ -19,6 +19,7 @@ const ProfileModal: React.FC<ProfileModalProps> = ({
   user, onClose, onUpdate, onLogout, onSyncForce, onManageCategories, onExportBackup, onImportBackup, setActiveTab 
 }) => {
   const [name, setName] = useState(user.name || '');
+  const [cpfCnpj, setCpfCnpj] = useState(user.cpfCnpj || '');
   const [password, setPassword] = useState(user.password || '');
   const [photoURL, setPhotoURL] = useState(user.photoURL || '');
   const [isEditing, setIsEditing] = useState(false);
@@ -27,7 +28,7 @@ const ProfileModal: React.FC<ProfileModalProps> = ({
   const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 
   const handleSave = () => {
-    onUpdate({ name, password, photoURL });
+    onUpdate({ name, password, photoURL, cpfCnpj });
     setIsEditing(false);
   };
 
@@ -90,6 +91,7 @@ const ProfileModal: React.FC<ProfileModalProps> = ({
           {isEditing ? (
             <div className="space-y-3">
               <input className="w-full bg-[var(--bg-body)] border border-[var(--border)] text-[var(--text-primary)] rounded-2xl p-4 text-sm font-bold" value={name} onChange={e => setName(e.target.value)} placeholder="Nome" />
+              <input className="w-full bg-[var(--bg-body)] border border-[var(--border)] text-[var(--text-primary)] rounded-2xl p-4 text-sm font-bold" value={cpfCnpj} onChange={e => setCpfCnpj(e.target.value)} placeholder="CPF ou CNPJ" />
               <input className="w-full bg-[var(--bg-body)] border border-[var(--border)] text-[var(--text-primary)] rounded-2xl p-4 text-sm font-bold" value={photoURL} onChange={e => setPhotoURL(e.target.value)} placeholder="URL da Foto" />
               <button onClick={handleSave} className="w-full bg-[var(--green-whatsapp)] text-white font-black py-4 rounded-2xl text-[10px] uppercase shadow-lg shadow-[var(--green-whatsapp)]/20">Salvar Alterações</button>
               <button onClick={() => setIsEditing(false)} className="w-full text-[var(--text-muted)] font-black text-[9px] uppercase">Cancelar</button>

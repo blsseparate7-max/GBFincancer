@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { UserSession } from '../types';
-import { handleKiwifyRedirect } from '../services/checkoutService';
+import { subscribeWithAsaas } from '../services/checkoutService';
 import { OAUTH_CONFIG } from '../constants';
 
 interface PaywallProps {
@@ -11,11 +11,74 @@ interface PaywallProps {
 
 const Paywall: React.FC<PaywallProps> = ({ user, onLogout }) => {
   const [isDismissed, setIsDismissed] = useState(false);
-  const checkoutId = OAUTH_CONFIG.KIWIFY_CHECKOUT_ID;
+  const [showCpfInput, setShowCpfInput] = useState(false);
+  const [cpf, setCpf] = useState(user.cpfCnpj || '');
+  const [error, setError] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
 
-  const handleSubscribe = () => {
-    handleKiwifyRedirect(user.uid, checkoutId, user.email, user.plan || 'mensal');
+  const cleanCpfCnpj = (val: string) => val.replace(/\D/g, '');
+
+  const validateCpf = (val: string) => {
+    const clean = cleanCpfCnpj(val);
+    return clean.length === 11 || clean.length === 14;
   };
+
+  const handleSubscribe = async () => {
+    setIsLoading(true);
+    setError('');
+
+    try {
+      await subscribeWithAsaas(
+        { ...user, cpfCnpj: cleanCpfCnpj(cpf || user.cpfCnpj || '') }, 
+        'mensal',
+        () => setShowCpfInput(true)
+      );
+    } catch (err: any) {
+      setError(err.message || 'Erro ao processar checkout');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  if (showCpfInput) {
+    return (
+      <div className="fixed inset-0 z-[2000] flex items-center justify-center p-6 bg-[var(--bg-body)]/90 backdrop-blur-md">
+        <div className="w-full max-w-[420px] bg-[var(--surface)] p-8 rounded-[2.5rem] shadow-2xl border border-[var(--border)] text-center animate-in zoom-in">
+          <h2 className="text-xl font-black text-[var(--text-primary)] uppercase mb-4">Dados Necessários</h2>
+          <p className="text-sm text-[var(--text-muted)] mb-6">Pelo Banco Central do Brasil, o Asaas exige o seu CPF ou CNPJ para gerar a cobrança segura.</p>
+          
+          <input 
+            type="text" 
+            placeholder="CPF ou CNPJ"
+            value={cpf}
+            onChange={(e) => {
+              setCpf(e.target.value);
+              setError('');
+            }}
+            className={`w-full bg-[var(--bg-body)] border ${error ? 'border-rose-500' : 'border-[var(--border)]'} rounded-2xl p-4 text-center font-bold text-lg mb-2 focus:border-[var(--green-whatsapp)] outline-none transition-all`}
+          />
+          {error && <p className="text-rose-500 text-xs font-bold mb-4">{error}</p>}
+          
+          <div className="space-y-3 mt-6">
+            <button 
+              onClick={handleSubscribe}
+              disabled={isLoading}
+              className={`w-full bg-[var(--green-whatsapp)] text-white font-black py-4 rounded-2xl text-[12px] uppercase tracking-[0.2em] shadow-xl ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
+            >
+              {isLoading ? 'Processando...' : 'Continuar para Pagamento'}
+            </button>
+            <button 
+              onClick={() => setShowCpfInput(false)}
+              disabled={isLoading}
+              className="w-full text-[var(--text-muted)] font-bold py-2 text-[10px] uppercase tracking-[0.1em] disabled:opacity-30"
+            >
+              Voltar
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (isDismissed) {
     return (
@@ -57,10 +120,12 @@ const Paywall: React.FC<PaywallProps> = ({ user, onLogout }) => {
           <div className="space-y-4">
             <button 
               onClick={handleSubscribe}
-              className="w-full bg-[var(--green-whatsapp)] text-white font-black py-4 rounded-2xl text-[12px] uppercase tracking-[0.2em] shadow-xl shadow-[var(--green-whatsapp)]/10 active:scale-95 transition-all flex items-center justify-center gap-3"
+              disabled={isLoading}
+              className="w-full bg-[var(--green-whatsapp)] text-white font-black py-4 rounded-2xl text-[12px] uppercase tracking-[0.2em] shadow-xl shadow-[var(--green-whatsapp)]/10 active:scale-95 transition-all flex items-center justify-center gap-3 disabled:opacity-50"
             >
-              Assinar agora
+              {isLoading ? 'Carregando...' : 'Assinar agora'}
             </button>
+            {error && <p className="text-rose-500 text-[10px] font-black uppercase mt-2">{error}</p>}
 
             <button 
               onClick={() => setIsDismissed(true)}

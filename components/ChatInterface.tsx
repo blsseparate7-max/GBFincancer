@@ -409,8 +409,9 @@ const ChatInterface: React.FC<ChatProps> = ({
     return () => clearTimeout(timer);
   }, [user, reminders]);
 
-  const handleSalaryConfirm = async (confirmed: boolean) => {
-    if (!pendingSalaryReminder || isLoading || isProcessingRef.current) return;
+  const handleSalaryConfirm = async (confirmed: boolean, billOverride?: Bill) => {
+    const salaryReminder = billOverride || pendingSalaryReminder;
+    if (!salaryReminder || isLoading || isProcessingRef.current) return;
 
     if (confirmed) {
       console.log("[REMINDER] user clicked paid: Salário");
@@ -426,14 +427,14 @@ const ChatInterface: React.FC<ChatProps> = ({
       if (confirmed) {
         const { dispatchEvent } = await import('../services/eventDispatcher');
         const incomePayload = {
-          amount: pendingSalaryReminder.amount,
-          category: pendingSalaryReminder.category || 'Recebimento',
-          description: pendingSalaryReminder.description,
+          amount: salaryReminder.amount,
+          category: salaryReminder.category || 'Recebimento',
+          description: salaryReminder.description,
           date: new Date().toISOString(),
           // Se for onboarding e não tiver ID real, passamos null
-          reminderId: pendingSalaryReminder.id === 'onboarding-income' ? null : pendingSalaryReminder.id,
+          reminderId: salaryReminder.id === 'onboarding-income' ? null : salaryReminder.id,
           cycleKey,
-          targetWalletName: (pendingSalaryReminder as any).targetWalletName,
+          targetWalletName: (salaryReminder as any).targetWalletName,
           source: 'onboarding'
         };
 
@@ -446,7 +447,7 @@ const ChatInterface: React.FC<ChatProps> = ({
 
         if (result.success) {
           console.log("[REMINDER] completed successfully: Salário");
-          await sendMessage(`Excelente! Registrei o recebimento de **${formatCurrency(pendingSalaryReminder.amount)}** na sua carteira **${(pendingSalaryReminder as any).targetWalletName || 'Principal'}**. Seu saldo e dashboard já foram atualizados! 🚀`, 'ai');
+          await sendMessage(`Excelente! Registrei o recebimento de **${formatCurrency(salaryReminder.amount)}** na sua carteira **${(salaryReminder as any).targetWalletName || 'Principal'}**. Seu saldo e dashboard já foram atualizados! 🚀`, 'ai');
         } else {
           console.error("[REMINDER] error in salary confirm:", result.error);
           await sendMessage("Houve um probleminha ao registrar seu salário. Mas não se preocupe, você pode tentar novamente ou registrar manualmente no Dashboard.", 'ai');
@@ -455,8 +456,8 @@ const ChatInterface: React.FC<ChatProps> = ({
         await sendMessage("Entendido. Vou manter esse recebimento como pendente e te pergunto novamente em breve! 👍", 'ai');
         
         // Se for um lembrete real, atualiza o lastPromptedAt para não perguntar de novo imediatamente
-        if (pendingSalaryReminder.id !== 'onboarding-income') {
-          const reminderRef = doc(db, "users", user.uid, "reminders", pendingSalaryReminder.id);
+        if (salaryReminder.id !== 'onboarding-income') {
+          const reminderRef = doc(db, "users", user.uid, "reminders", salaryReminder.id);
           await updateDoc(reminderRef, { lastPromptedAt: serverTimestamp() });
         }
       }
@@ -825,15 +826,15 @@ const ChatInterface: React.FC<ChatProps> = ({
 
       // 4.3 Reconciliação entre Local Parser e IA
       // Se a IA não retornar eventos mas o parser local tiver alta confiança, usamos o parser local
-      if ((!aiResult.events || aiResult.events.length === 0) && localResults.length > 0 && localResults.some(r => r.confidence >= 0.7 && r.type !== 'unknown')) {
+      if ((!aiResult.events || aiResult.events.length === 0) && localResults.length > 0 && localResults.some(r => r.confidence >= 0.7 && r.type !== 'UNKNOWN')) {
         console.log("[chat] AI didn't catch, using local parser results as fallback");
         
         const fallbackEvents = localResults.map(p => {
           let eventType = 'ADD_EXPENSE';
-          if (p.type === 'income') eventType = 'ADD_INCOME';
-          if (p.type === 'transfer') eventType = 'TRANSFER_WALLET';
-          if (p.type === 'pay_card') eventType = 'PAY_CARD';
-          if (p.type === 'expense' && p.paymentMethod === 'CARD') eventType = 'ADD_CARD_CHARGE';
+          if (p.type === 'INCOME') eventType = 'ADD_INCOME';
+          if (p.type === 'TRANSFER') eventType = 'TRANSFER_WALLET';
+          if (p.type === 'PAY_CARD') eventType = 'PAY_CARD';
+          if (p.type === 'EXPENSE' && p.paymentMethod === 'CARD') eventType = 'ADD_CARD_CHARGE';
 
           return {
             type: eventType,
@@ -1271,26 +1272,34 @@ const ChatInterface: React.FC<ChatProps> = ({
                 </div>
 
                 {/* Botões para Lembretes de Contas */}
-                {msg.sender === 'ai' && msg.actionType === 'BILL_REMINDER' && msg.actionPayload?.billId && (
+                {msg.sender === 'ai' && (msg.actionType === 'BILL_REMINDER' || msg.actionType === 'SALARY_REMINDER') && msg.actionPayload?.billId && (
                   <div className="flex justify-start animate-fade-in-up ml-2">
                     <div className="bg-[var(--surface)] border border-[var(--border)] rounded-2xl p-3 shadow-md flex gap-2 max-w-[80%]">
                       <button 
                         onClick={() => {
-                          const bill = reminders.find(r => r.id === msg.actionPayload.billId) || { id: msg.actionPayload.billId, description: msg.actionPayload.description } as any;
-                          handleBillConfirm(true, bill);
+                          const bill = reminders.find(r => r.id === msg.actionPayload.billId) || { id: msg.actionPayload.billId, description: msg.actionPayload.description, amount: msg.actionPayload.amount } as any;
+                          if (msg.actionType === 'SALARY_REMINDER') {
+                            handleSalaryConfirm(true, bill);
+                          } else {
+                            handleBillConfirm(true, bill);
+                          }
                         }}
                         className="flex-1 bg-[var(--green-whatsapp)] text-white px-4 py-2 rounded-xl font-black text-[10px] uppercase transition-all active:scale-95 whitespace-nowrap"
                       >
-                        {msg.actionPayload.isOverdue ? "Sim, já paguei" : "Pagar agora"}
+                        {msg.actionType === 'SALARY_REMINDER' ? "Sim, recebi" : (msg.actionPayload.isOverdue ? "Sim, já paguei" : "Pagar agora")}
                       </button>
                       <button 
                         onClick={() => {
-                          const bill = reminders.find(r => r.id === msg.actionPayload.billId) || { id: msg.actionPayload.billId, description: msg.actionPayload.description } as any;
-                          handleBillConfirm(false, bill);
+                          const bill = reminders.find(r => r.id === msg.actionPayload.billId) || { id: msg.actionPayload.billId, description: msg.actionPayload.description, amount: msg.actionPayload.amount } as any;
+                          if (msg.actionType === 'SALARY_REMINDER') {
+                            handleSalaryConfirm(false, bill);
+                          } else {
+                            handleBillConfirm(false, bill);
+                          }
                         }}
                         className="flex-1 bg-[var(--bg-body)] text-[var(--text-muted)] border border-[var(--border)] px-4 py-2 rounded-xl font-black text-[10px] uppercase transition-all active:scale-95 whitespace-nowrap"
                       >
-                        {msg.actionPayload.isOverdue ? "Ainda não" : "Pagar depois"}
+                        Ainda não
                       </button>
                     </div>
                   </div>

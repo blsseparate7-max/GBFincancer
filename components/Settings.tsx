@@ -1,7 +1,7 @@
 
 import React from 'react';
 import { UserSession } from '../types';
-import { handleKiwifyRedirect } from '../services/checkoutService';
+import { subscribeWithAsaas } from '../services/checkoutService';
 import { OAUTH_CONFIG } from '../constants';
 
 interface SettingsProps {
@@ -10,7 +10,20 @@ interface SettingsProps {
 }
 
 const Settings: React.FC<SettingsProps> = ({ user, onLogout }) => {
-  const checkoutId = OAUTH_CONFIG.KIWIFY_CHECKOUT_ID;
+  const [loading, setLoading] = React.useState(false);
+  const [error, setError] = React.useState('');
+
+  const handleSubscribe = async () => {
+    setLoading(true);
+    setError('');
+    try {
+      await subscribeWithAsaas(user, user.plan || 'mensal');
+    } catch (err: any) {
+      setError(err.message || 'Erro ao processar checkout');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <div className="p-6 space-y-6 animate-fade min-h-full">
@@ -18,6 +31,12 @@ const Settings: React.FC<SettingsProps> = ({ user, onLogout }) => {
         <h2 className="text-[10px] font-black text-[var(--text-muted)] uppercase tracking-[0.4em] mb-1">Preferências de Sistema</h2>
         <h1 className="text-3xl font-black text-[var(--text-primary)] uppercase italic tracking-tighter">Configurações</h1>
       </header>
+
+      {error && (
+        <div className="bg-rose-500/10 border border-rose-500/20 p-4 rounded-2xl mb-4">
+          <p className="text-rose-500 text-[10px] font-black uppercase">{error}</p>
+        </div>
+      )}
 
       <div className="bg-[var(--surface)] rounded-3xl border border-[var(--border)] overflow-hidden shadow-sm">
         <div className="p-5 border-b border-[var(--border)]">
@@ -31,10 +50,11 @@ const Settings: React.FC<SettingsProps> = ({ user, onLogout }) => {
             </div>
             {user.subscriptionStatus !== 'active' && (
               <button 
-                onClick={() => handleKiwifyRedirect(user.uid, checkoutId)}
-                className="bg-[var(--green-whatsapp)] text-white text-[10px] font-black uppercase tracking-widest px-4 py-2 rounded-xl shadow-lg shadow-[var(--green-whatsapp)]/20 active:scale-95 transition-all"
+                onClick={handleSubscribe}
+                disabled={loading}
+                className="bg-[var(--green-whatsapp)] text-white text-[10px] font-black uppercase tracking-widest px-4 py-2 rounded-xl shadow-lg shadow-[var(--green-whatsapp)]/20 active:scale-95 transition-all disabled:opacity-50"
               >
-                Assinar Agora
+                {loading ? '...' : 'Assinar Agora'}
               </button>
             )}
           </div>

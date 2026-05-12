@@ -7,7 +7,7 @@ import {
   writeBatch, limit, runTransaction, DocumentReference
 } from "firebase/firestore";
 import { FinanceEvent, TransactionType } from "../types";
-import { normalizeCategoryName } from "./normalizationService";
+import { normalizeCategoryName, standardizeTransaction } from "./normalizationService";
 import { getCategoryId, suggestCategory } from "./categoryService";
 
 async function getWalletInfo(uid: string, walletId: string) {
@@ -46,7 +46,7 @@ async function getCategoryInfo(uid: string, categoryName: string, description?: 
   const catSnap = await getDoc(catRef);
   
   if (catSnap.exists()) {
-    return { id: catSnap.id, name: catSnap.data().name };
+    return { id: catSnap.id, name: catSnap.data().name, exists: true };
   }
 
   // Fallback: busca por nome (caso o ID seja diferente por algum motivo legado)
@@ -54,11 +54,11 @@ async function getCategoryInfo(uid: string, categoryName: string, description?: 
   const snap = await getDocs(q);
   if (!snap.empty) {
     const d = snap.docs[0];
-    return { id: d.id, name: d.data().name };
+    return { id: d.id, name: d.data().name, exists: true };
   }
 
   // Se não existe, retorna o ID determinístico e o nome normalizado
-  return { id, name: normalized };
+  return { id, name: normalized, exists: false };
 }
 
 async function resolveWallet(uid: string, walletId?: string, walletName?: string) {
@@ -104,6 +104,29 @@ async function resolveWallet(uid: string, walletId?: string, walletName?: string
   }
   
   return null;
+}
+
+function calculateNextDueDate(currentDateStr: string, frequency: string = 'MONTHLY', dueDay: number): Date {
+  const currentDueDate = parseSafeDate(currentDateStr);
+  const nextDate = new Date(currentDueDate);
+
+  switch (frequency) {
+    case 'WEEKLY':
+      nextDate.setDate(nextDate.getDate() + 7);
+      break;
+    case 'BIWEEKLY':
+    case 'QUINZENAL':
+      nextDate.setDate(nextDate.getDate() + 14);
+      break;
+    case 'MONTHLY':
+    case 'MENSAL':
+    default:
+      nextDate.setMonth(nextDate.getMonth() + 1);
+      nextDate.setDate(dueDay);
+      if (nextDate.getDate() !== dueDay) nextDate.setDate(0);
+      break;
+  }
+  return nextDate;
 }
 
 export const migrateTransactions = async (uid: string) => {
@@ -323,8 +346,7 @@ const executeDispatch = async (uid: string, event: FinanceEvent) => {
           }
 
           // 2. WRITES START HERE
-          console.log("[TRANSACTION] criando:", description);
-          transaction.set(transRef, {
+          const finalTransactionData = standardizeTransaction({
             amount, 
             category: catInfo.name,
             categoryId: catInfo.id,
@@ -338,12 +360,26 @@ const executeDispatch = async (uid: string, event: FinanceEvent) => {
             sourceWalletId: sourceWalletId || null,
             isQA,
             source,
-            cycleKey,
             confirmedBy,
-            status: 'CONFIRMED',
-            resolved: true,
             createdAt: serverTimestamp()
           });
+
+          // Auto-criar categoria se não existir
+          if (!(catInfo as any).exists) {
+            console.log("[CATEGORY] auto-criando:", catInfo.name);
+            const catRef = doc(userRef, "categories", catInfo.id);
+            transaction.set(catRef, {
+              name: catInfo.name,
+              icon: 'Tag',
+              color: '#9E9E9E',
+              type: 'EXPENSE',
+              createdAt: serverTimestamp(),
+              updatedAt: serverTimestamp()
+            });
+          }
+
+          console.log("[TRANSACTION] criando:", description);
+          transaction.set(transRef, finalTransactionData);
           console.log("[EXTRATO] atualizando...");
 
           if (walletInfo?.id) {
@@ -356,9 +392,19 @@ const executeDispatch = async (uid: string, event: FinanceEvent) => {
           }
 
           if (limitSnap.exists()) {
-            console.log("[DASHBOARD] atualizando:", catInfo.name);
+            console.log("[DASHBOARD] atualizando limite existente:", catInfo.name);
             transaction.update(limitRef, {
               spent: increment(amount),
+              updatedAt: serverTimestamp()
+            });
+          } else {
+            console.log("[DASHBOARD] inicializando novo limite:", catInfo.name);
+            transaction.set(limitRef, {
+              category: catInfo.name,
+              limit: 0,
+              spent: amount,
+              isActive: true,
+              createdAt: serverTimestamp(),
               updatedAt: serverTimestamp()
             });
           }
@@ -405,8 +451,7 @@ const executeDispatch = async (uid: string, event: FinanceEvent) => {
           const transRef = doc(collection(userRef, "transactions"));
           
           // 2. WRITES START HERE
-          console.log("[TRANSACTION] criando:", finalDescription);
-          transaction.set(transRef, {
+          const standardized = standardizeTransaction({
             amount: Number(finalAmount),
             description: finalDescription || "Recebimento confirmado via Chat",
             type: 'INCOME',
@@ -419,12 +464,26 @@ const executeDispatch = async (uid: string, event: FinanceEvent) => {
             date: parseSafeDate(date).toISOString(),
             isQA,
             source,
-            cycleKey,
             confirmedBy,
-            status: 'CONFIRMED',
-            resolved: true,
             createdAt: serverTimestamp()
           });
+
+          // Auto-criar categoria se não existir
+          if (!(catInfo as any).exists) {
+            console.log("[CATEGORY] auto-criando:", catInfo.name);
+            const catRef = doc(userRef, "categories", catInfo.id);
+            transaction.set(catRef, {
+              name: catInfo.name,
+              icon: 'ArrowDownCircle',
+              color: '#8BC34A',
+              type: 'INCOME',
+              createdAt: serverTimestamp(),
+              updatedAt: serverTimestamp()
+            });
+          }
+
+          console.log("[TRANSACTION] criando:", finalDescription);
+          transaction.set(transRef, standardized);
           console.log("[EXTRATO] atualizando...");
 
           if (finalWalletInfo?.id) {
@@ -439,15 +498,53 @@ const executeDispatch = async (uid: string, event: FinanceEvent) => {
           // Atualizar lembrete se fornecido (Surgical fix for Step 3)
           if (reminderId) {
             const reminderRef = doc(userRef, "reminders", reminderId);
-            transaction.update(reminderRef, {
-              isPaid: true,
-              status: 'received',
-              resolved: true,
-              paidAt: serverTimestamp(),
-              updatedAt: serverTimestamp(),
-              confirmationProcessed: true,
-              confirmationProcessedAt: serverTimestamp()
-            });
+            const reminderSnap = await transaction.get(reminderRef);
+            
+            if (reminderSnap.exists()) {
+              const reminderData = reminderSnap.data();
+              transaction.update(reminderRef, {
+                isPaid: true,
+                status: 'received',
+                resolved: true,
+                paidAt: serverTimestamp(),
+                updatedAt: serverTimestamp(),
+                confirmationProcessed: true,
+                confirmationProcessedAt: serverTimestamp()
+              });
+
+              // Se for recorrente, cria o do próximo período
+              if (reminderData.recurring) {
+                const nextDate = calculateNextDueDate(
+                  reminderData.dueDate, 
+                  reminderData.frequency || 'MONTHLY', 
+                  reminderData.dueDay
+                );
+                
+                const nextBillRef = doc(collection(userRef, "reminders"));
+                transaction.set(nextBillRef, {
+                  description: reminderData.description,
+                  amount: reminderData.amount,
+                  dueDay: reminderData.dueDay,
+                  category: reminderData.category,
+                  categoryId: reminderData.categoryId || null,
+                  categoryName: reminderData.categoryName || reminderData.category || null,
+                  type: reminderData.type || 'RECEIVE',
+                  dueDate: nextDate.toISOString(),
+                  isPaid: false,
+                  recurring: true,
+                  frequency: reminderData.frequency || 'MONTHLY',
+                  targetWalletName: reminderData.targetWalletName || null,
+                  isQA,
+                  source,
+                  cycleKey: getCycleKey(nextDate.toISOString()),
+                  createdAt: serverTimestamp(),
+                  updatedAt: serverTimestamp(),
+                  isActive: true,
+                  status: 'pending',
+                  resolved: false
+                });
+              }
+            }
           }
 
           // Idempotência Onboarding: Marcar como processado no perfil do usuário
@@ -495,6 +592,20 @@ const executeDispatch = async (uid: string, event: FinanceEvent) => {
           const now = new Date();
           const currentCycleKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 
+          // Auto-criar categoria se não existir
+          if (!(catInfo as any).exists) {
+            console.log("[CATEGORY] auto-criando:", catInfo.name);
+            const catRef = doc(userRef, "categories", catInfo.id);
+            batch.set(catRef, {
+              name: catInfo.name,
+              icon: 'Tag',
+              color: '#9E9E9E',
+              type: 'EXPENSE',
+              createdAt: serverTimestamp(),
+              updatedAt: serverTimestamp()
+            });
+          }
+
           for (let i = 0; i < numInstallments; i++) {
             const currentInstallmentDate = new Date(chargeDate);
             currentInstallmentDate.setDate(1);
@@ -518,7 +629,8 @@ const executeDispatch = async (uid: string, event: FinanceEvent) => {
 
             const transRef = doc(collection(userRef, "transactions"));
             console.log("[TRANSACTION] criando (parcela):", installmentDesc);
-            batch.set(transRef, {
+            
+            const standardizedInstallment = standardizeTransaction({
               amount: installmentAmount, 
               category: catInfo.name,
               categoryId: catInfo.id,
@@ -535,15 +647,14 @@ const executeDispatch = async (uid: string, event: FinanceEvent) => {
               isPaid: false,
               isQA,
               source,
-              cycleKey: invoiceCycle,
               confirmedBy,
-              status: 'CONFIRMED',
-              resolved: true,
               createdAt: serverTimestamp(),
               installmentNumber: i + 1,
               totalInstallments: numInstallments,
               originalAmount: amount
             });
+
+            batch.set(transRef, standardizedInstallment);
             console.log("[EXTRATO] atualizando...");
           }
 
@@ -564,9 +675,19 @@ const executeDispatch = async (uid: string, event: FinanceEvent) => {
           const limitSnap = await getDoc(limitRef);
           
           if (limitSnap.exists()) {
-            console.log("[DASHBOARD] atualizando:", catInfo.name);
+            console.log("[DASHBOARD] atualizando limite existente:", catInfo.name);
             batch.update(limitRef, {
               spent: increment(amount),
+              updatedAt: serverTimestamp()
+            });
+          } else {
+            console.log("[DASHBOARD] inicializando novo limite:", catInfo.name);
+            batch.set(limitRef, {
+              category: catInfo.name,
+              limit: 0,
+              spent: amount,
+              isActive: true,
+              createdAt: serverTimestamp(),
               updatedAt: serverTimestamp()
             });
           }
@@ -583,7 +704,7 @@ const executeDispatch = async (uid: string, event: FinanceEvent) => {
         
         // 1. Registra a saída real de dinheiro do Dashboard
         const transRef = doc(collection(userRef, "transactions"));
-        payBatch.set(transRef, {
+        const standardizedPayment = standardizeTransaction({
           description: `Pagamento Fatura ${cycle || ''}`,
           amount,
           category: 'Cartão de Crédito',
@@ -594,10 +715,9 @@ const executeDispatch = async (uid: string, event: FinanceEvent) => {
           isQA,
           source,
           confirmedBy,
-          status: 'CONFIRMED',
-          resolved: true,
           createdAt: serverTimestamp()
         });
+        payBatch.set(transRef, standardizedPayment);
 
         // 2. Atualização de Limite de Categoria (Rastreamento de orçamento da fatura)
         const limitId = getCategoryId('Cartão de Crédito');
@@ -871,11 +991,13 @@ const executeDispatch = async (uid: string, event: FinanceEvent) => {
             // Nota: O resumo financeiro é calculado on-the-fly a partir das transações no GBFinancer v4.
             // Ao criar a transação com data de HOJE, o resumo no dashboard será atualizado automaticamente pelo Re-render.
 
-            // Se for recorrente, cria o do próximo mês
+            // Se for recorrente, cria o do próximo período
             if (billData.recurring) {
-              const currentDueDate = billData.dueDate ? parseSafeDate(billData.dueDate) : new Date();
-              const nextMonth = new Date(currentDueDate.getFullYear(), currentDueDate.getMonth() + 1, billData.dueDay);
-              if (nextMonth.getDate() !== billData.dueDay) nextMonth.setDate(0);
+              const nextDate = calculateNextDueDate(
+                billData.dueDate, 
+                billData.frequency || 'MONTHLY', 
+                billData.dueDay
+              );
               
               const nextBillRef = doc(collection(userRef, "reminders"));
               batch.set(nextBillRef, {
@@ -883,15 +1005,22 @@ const executeDispatch = async (uid: string, event: FinanceEvent) => {
                 amount: billData.amount,
                 dueDay: billData.dueDay,
                 category: billData.category,
+                categoryId: billData.categoryId || null,
+                categoryName: billData.categoryName || billData.category || null,
                 type: billData.type || 'PAY',
-                dueDate: nextMonth.toISOString(),
+                dueDate: nextDate.toISOString(),
                 isPaid: false,
                 recurring: true,
+                frequency: billData.frequency || 'MONTHLY',
+                targetWalletName: billData.targetWalletName || null,
                 isQA,
+                source,
                 createdAt: serverTimestamp(),
+                updatedAt: serverTimestamp(),
                 isActive: true,
                 status: 'pending',
-                resolved: false
+                resolved: false,
+                cycleKey: getCycleKey(nextDate.toISOString())
               });
             }
 
@@ -1791,7 +1920,7 @@ const executeDispatch = async (uid: string, event: FinanceEvent) => {
 
           // 4. Registra no extrato como uma transação especial
           const transRef = doc(collection(userRef, "transactions"));
-          transaction.set(transRef, {
+          const standardizedTransfer = standardizeTransaction({
             description: `Transferência: ${fromSnap.data().name} ➔ ${toSnap.data().name}`,
             amount,
             type: 'TRANSFER',
@@ -1803,6 +1932,7 @@ const executeDispatch = async (uid: string, event: FinanceEvent) => {
             source,
             createdAt: serverTimestamp()
           });
+          transaction.set(transRef, standardizedTransfer);
         });
         break;
       }

@@ -175,6 +175,7 @@ export interface Bill {
   paidAt?: string;
   monthKey: string;
   recurring: boolean;
+  frequency?: IncomeFrequency;
   category?: string;
   cardId?: string;   
   isActive?: boolean; 
@@ -266,6 +267,7 @@ export interface UserSession {
   role: 'user' | 'admin';
   subscriptionStatus: SubscriptionStatus;
   plan?: SubscriptionPlan;
+  cpfCnpj?: string;
   trialEndsAt?: any;
   subscriptionEndsAt?: any;
   paymentProvider?: 'kiwify';
@@ -311,6 +313,7 @@ export interface CustomerData {
   status?: 'active' | 'blocked' | 'deleted';
   role?: 'user' | 'admin';
   plan: SubscriptionPlan;
+  cpfCnpj?: string;
   trialEndsAt?: any;
   subscriptionEndsAt?: any;
   paymentProvider?: 'kiwify';

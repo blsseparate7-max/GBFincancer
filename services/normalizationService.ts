@@ -1,6 +1,7 @@
 import { CreditCardInfo, SavingGoal, Bill, CategoryLimit, Wallet, UserCategory } from '../types';
 import { doc, updateDoc } from 'firebase/firestore';
 import { db } from './firebaseConfig';
+import { getCategoryId } from './categoryService';
 
 /**
  * Migra silenciosamente um cartão se faltarem campos essenciais.
@@ -280,6 +281,97 @@ export const normalizeDebt = (docSnap: any): any => {
 };
 
 /**
+ * Validação e Padronização robusta de Transações antes de salvar no Firestore.
+ */
+export const standardizeTransaction = (data: any): any => {
+  if (!data) throw new Error("Transaction data is required");
+
+  // 1. Identificação/ID
+  const id = data.id || null;
+
+  // 2. Type (Obrigatório: EXPENSE | INCOME | TRANSFER)
+  let type = String(data.type || '').toUpperCase();
+  if (type === 'GASTO' || type === 'EXPENSE' || type === 'SAÍDA' || type === 'SAIDA') type = 'EXPENSE';
+  if (type === 'RECEBIMENTO' || type === 'INCOME' || type === 'ENTRADA' || type === 'SALÁRIO' || type === 'SALARIO') type = 'INCOME';
+  if (type === 'TRANSFER' || type === 'TRANSFERÊNCIA' || type === 'TRANSFERENCIA') type = 'TRANSFER';
+  
+  if (type !== 'EXPENSE' && type !== 'INCOME' && type !== 'TRANSFER') {
+     // Default fallback se estiver totalmente perdido
+     type = (Number(data.amount) < 0) ? 'EXPENSE' : 'EXPENSE'; 
+  }
+
+  // 3. Amount (Obrigatório: number > 0)
+  const safeParseAmount = (val: any): number => {
+    if (typeof val === 'number') return val;
+    if (!val) return 0;
+    const str = String(val)
+      .replace(/[R$\s]/g, '')     // Remove R$ e espaços
+      .replace(/\./g, '')         // Remove pontos (milhar)
+      .replace(',', '.');         // Troca vírgula por ponto (decimal)
+    return parseFloat(str) || 0;
+  };
+  
+  const amountValue = Math.abs(safeParseAmount(data.amount));
+  if (amountValue <= 0) {
+    console.warn("[VALIDATOR] Transação com valor zero ou inválido:", data.description);
+  }
+
+  // 4. Categoria e Sanitização de ID
+  const categoryName = normalizeCategoryName(data.categoryName || data.category || 'Outros');
+  const categoryId = data.categoryId || getCategoryId(categoryName);
+
+  // 5. Data e Timestamp
+  const rawDate = data.date || data.timestamp || new Date().toISOString();
+  let finalDate = new Date().toISOString();
+  try {
+    const d = new Date(rawDate);
+    if (!isNaN(d.getTime())) {
+      finalDate = d.toISOString();
+    }
+  } catch (e) {}
+
+  // 6. Payment Method e Wallets
+  const paymentMethod = data.paymentMethod === 'CREDIT' || data.paymentMethod === 'CARTÃO' ? 'CARD' : (data.paymentMethod || 'CASH');
+  
+  // Garantir que walletIds nunca sejam undefined (quebra o Firestore)
+  const walletId = data.walletId || data.sourceWalletId || null;
+
+  const standardized = {
+    amount: amountValue,
+    type,
+    description: data.description || (type === 'INCOME' ? 'Recebimento' : 'Gasto'),
+    categoryId,
+    categoryName,
+    category: categoryName, // Compatibilidade legada
+    paymentMethod,
+    walletId,
+    walletName: data.walletName || null,
+    date: finalDate,
+    cycleKey: data.cycleKey || `${new Date(finalDate).getFullYear()}-${String(new Date(finalDate).getMonth() + 1).padStart(2, '0')}`,
+    source: data.source || 'CHAT',
+    status: data.status || 'CONFIRMED',
+    resolved: data.resolved !== undefined ? data.resolved : true,
+    isPaid: data.isPaid !== undefined ? data.isPaid : true,
+    createdAt: data.createdAt || new Date(),
+    updatedAt: new Date(),
+    isQA: !!data.isQA,
+    // Campos opcionais
+    cardId: data.cardId || null,
+    invoiceCycle: data.invoiceCycle || null,
+    confirmedBy: data.confirmedBy || null,
+    installmentNumber: data.installmentNumber || null,
+    totalInstallments: data.totalInstallments || null,
+    originalAmount: data.originalAmount || null,
+    dedupeKey: data.dedupeKey || null
+  };
+
+  // Log de validação para debug
+  console.log(`[VALIDATOR] Transação padronizada: ${standardized.description} (${standardized.type})`);
+
+  return standardized;
+};
+
+/**
  * Normaliza dados de Transações.
  */
 export const normalizeTransaction = (docSnap: any): any => {
@@ -301,12 +393,18 @@ export const normalizeTransaction = (docSnap: any): any => {
     }
   } catch (e) {}
 
+  const category = normalizeCategoryName(data.category || data.tag || 'Outros');
+  const categoryId = data.categoryId || getCategoryId(category);
+  const type = data.type || (amount < 0 ? 'EXPENSE' : 'INCOME');
+
   return {
     id,
     description: data.description || data.desc || data.name || 'Sem descrição',
     amount: amount,
-    category: normalizeCategoryName(data.category || data.tag || 'Outros'),
-    type: data.type || (amount < 0 ? 'EXPENSE' : 'INCOME'),
+    category: category,
+    categoryId: categoryId,
+    categoryName: data.categoryName || category,
+    type: type,
     paymentMethod: data.paymentMethod === 'CREDIT' ? 'CARD' : (data.paymentMethod || data.method || 'PIX'),
     date: finalDate,
     createdAt: data.createdAt || null,

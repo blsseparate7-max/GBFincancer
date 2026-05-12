@@ -40,12 +40,17 @@ export const checkAndSendReminderNotifications = async (user: UserSession, remin
     // No dia do vencimento
     if (diffDays === 0 && !bill.notifiedOnDay) {
       const dedupeKey = `reminder-0d-${bill.id}-${today.getTime()}`;
+      const isIncome = bill.type === 'RECEIVE';
+      const text = isIncome 
+        ? `Seu salário de **${formatCurrency(bill.amount)}** vence hoje. Você já recebeu? 💰`
+        : `Hoje vence:\n**${bill.description}** - ${formatCurrency(bill.amount)}\n\nVocê já pagou essa conta?`;
+      
       await sendReminderMessage(
         user.uid, 
         bill, 
-        `Hoje vence:\n**${bill.description}** - ${formatCurrency(bill.amount)}\n\nVocê já pagou essa conta?`, 
+        text, 
         dedupeKey, 
-        'BILL_REMINDER', 
+        isIncome ? 'SALARY_REMINDER' : 'BILL_REMINDER', 
         { billId: bill.id, description: bill.description, amount: bill.amount }
       );
       await updateDoc(doc(db, "users", user.uid, "reminders", bill.id), { notifiedOnDay: true, updatedAt: serverTimestamp() });

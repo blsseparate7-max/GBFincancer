@@ -56,20 +56,23 @@ export const saveWizardPhase1 = async (uid: string, data: { incomeProfile: Incom
       });
     }
 
-    // Criar Lembrete de Recebimento
-    await dispatchEvent(uid, {
-      type: 'CREATE_REMINDER',
-      payload: {
-        description: source.description || 'Recebimento',
-        amount: source.amountExpected || 0,
-        dueDay: source.dates[0] || 1,
-        type: 'RECEIVE',
-        recurring: true,
-        targetWalletName: source.targetWalletName || 'Carteira Principal'
-      },
-      source: 'onboarding',
-      createdAt: new Date()
-    });
+    // Criar Lembrete de Recebimento para cada data (suporta Quinzena/Semana)
+    for (const day of source.dates) {
+      await dispatchEvent(uid, {
+        type: 'CREATE_REMINDER',
+        payload: {
+          description: source.description || 'Recebimento',
+          amount: source.amountExpected || 0,
+          dueDay: day,
+          type: 'RECEIVE',
+          recurring: true,
+          frequency: source.frequency,
+          targetWalletName: source.targetWalletName || 'Carteira Principal'
+        },
+        source: 'onboarding',
+        createdAt: new Date()
+      });
+    }
   }
 
   // 3. Salvar Gastos Fixos

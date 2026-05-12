@@ -5,7 +5,7 @@
  */
 
 export interface ParsedFinancialMessage {
-  type: 'expense' | 'income' | 'transfer' | 'pay_card' | 'unknown';
+  type: 'EXPENSE' | 'INCOME' | 'TRANSFER' | 'PAY_CARD' | 'UNKNOWN';
   amount: number | null;
   description: string;
   categoryHint: string;
@@ -94,30 +94,30 @@ const extractAmount = (text: string): number | null => {
 /**
  * Identifica a intenção da mensagem
  */
-const detectIntent = (text: string): 'expense' | 'income' | 'transfer' | 'pay_card' | 'unknown' => {
+const detectIntent = (text: string): 'EXPENSE' | 'INCOME' | 'TRANSFER' | 'PAY_CARD' | 'UNKNOWN' => {
   const expenseKeywords = ['gastei', 'paguei', 'saiu', 'saíram', 'comprei', 'compra', 'pagamento', 'despesa', 'gasto', 'débito', 'saida'];
   const incomeKeywords = ['recebi', 'ganhei', 'entrou', 'caiu', 'recebimento', 'salário', 'renda', 'pix recebido', 'crédito', 'entrada'];
   const transferKeywords = ['transferi', 'transferência', 'passei', 'mandei para', 'transferir', 'pix para'];
 
   const lower = text.toLowerCase();
   
-  if (transferKeywords.some(k => lower.includes(k))) return 'transfer';
-  if (incomeKeywords.some(k => lower.includes(k))) return 'income';
+  if (transferKeywords.some(k => lower.includes(k))) return 'TRANSFER';
+  if (incomeKeywords.some(k => lower.includes(k))) return 'INCOME';
   
   // Detecção específica de pagamento de fatura
   if ((lower.includes('fatura') || lower.includes('pagamento do cartão')) && (lower.includes('paguei') || lower.includes('pagamento') || lower.includes('quitei'))) {
-    return 'expense'; 
+    return 'EXPENSE'; 
   }
 
-  if (expenseKeywords.some(k => lower.includes(k))) return 'expense';
+  if (expenseKeywords.some(k => lower.includes(k))) return 'EXPENSE';
 
   // REGRA DE OURO: Se tem valor mas não tem intenção clara, assumimos GASTO se tiver algum texto (descrição)
   const amount = extractAmount(lower);
   if (amount && amount > 0) {
-    return 'expense';
+    return 'EXPENSE';
   }
 
-  return 'unknown';
+  return 'UNKNOWN';
 };
 
 /**
@@ -182,23 +182,23 @@ export const parseFinancialMessage = (message: string): ParsedFinancialMessage =
   const missingFields: string[] = [];
 
   if (!amount) missingFields.push('valor');
-  if (intent === 'unknown') missingFields.push('tipo de transação');
+  if (intent === 'UNKNOWN') missingFields.push('tipo de transação');
   
   let finalMethod = paymentMethod || (installments ? 'CARD' : undefined);
   let finalType: any = intent;
 
   const isInvoicePayment = normalized.includes('fatura') || normalized.includes('pagamento do cartão') || normalized.includes('paguei o cartão');
-  if (intent === 'expense' && isInvoicePayment) {
-     finalType = 'pay_card';
+  if (intent === 'EXPENSE' && isInvoicePayment) {
+     finalType = 'PAY_CARD';
      finalMethod = 'PIX'; 
   }
 
   if (!description || description.length < 2) {
-    if (intent !== 'income') missingFields.push('descrição');
+    if (intent !== 'INCOME') missingFields.push('descrição');
   }
 
   let fromWallet, toWallet;
-  if (intent === 'transfer') {
+  if (intent === 'TRANSFER') {
     const transferParts = normalized.split(/\b(?:para|pro|pra|para a|para o)\b/i);
     if (transferParts.length > 1) {
       const fromPart = transferParts[0].split(/\b(?:da|do|de|da carteira|do banco)\b/i);
@@ -209,15 +209,18 @@ export const parseFinancialMessage = (message: string): ParsedFinancialMessage =
 
   let confidence = 0;
   if (amount !== null) confidence += 0.4;
-  if (intent !== 'unknown') confidence += 0.3;
+  if (intent !== 'UNKNOWN') confidence += 0.3;
   if (description && description.length > 1) confidence += 0.2;
   if (finalMethod === 'CARD') confidence += 0.1;
   if (missingFields.length > 0) confidence -= (missingFields.length * 0.1);
 
+  // Já estamos retornando os tipos em Uppercase no parser agora
+  const normalizedType = finalType === 'INCOME' ? 'INCOME' : 'EXPENSE';
+
   return {
-    type: finalType === 'unknown' && amount ? 'expense' : finalType,
+    type: normalizedType,
     amount,
-    description: description || (intent === 'income' ? 'Recebimento' : 'Gasto'),
+    description: description || (normalizedType === 'INCOME' ? 'Recebimento' : 'Gasto'),
     categoryHint: description,
     confidence: Math.max(0, Math.min(1, confidence)),
     fromWallet,

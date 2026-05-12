@@ -4,7 +4,7 @@ import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { doc, updateDoc, deleteDoc } from 'firebase/firestore';
 import { deleteUser } from 'firebase/auth';
 import { Notification } from './UI';
-import { handleKiwifyRedirect } from '../services/checkoutService';
+import { subscribeWithAsaas } from '../services/checkoutService';
 import { OAUTH_CONFIG, TRIAL_DAYS } from '../constants';
 import { Camera, Trash2, LogOut, Shield, CreditCard, CheckCircle, AlertCircle, Clock, Zap, ExternalLink, ChevronRight } from 'lucide-react';
 
@@ -23,7 +23,6 @@ const ProfileEdit: React.FC<ProfileEditProps> = ({ user, onUpdate, onLogout, set
   const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const checkoutId = OAUTH_CONFIG.KIWIFY_CHECKOUT_ID || 'j0VhQzs';
 
   const formatDate = (date: any) => {
     if (!date) return 'N/A';
@@ -105,6 +104,21 @@ const ProfileEdit: React.FC<ProfileEditProps> = ({ user, onUpdate, onLogout, set
     } finally {
       setLoading(false);
       setShowDeleteModal(false);
+    }
+  };
+
+  const handleSubscriptionClick = async () => {
+    setLoading(true);
+    try {
+      await subscribeWithAsaas(
+        user, 
+        user.plan || 'mensal'
+      );
+    } catch (e: any) {
+      console.error("Subscription error:", e);
+      setNotification({ message: e.message || "Erro ao iniciar processo de pagamento.", type: 'error' });
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -296,16 +310,17 @@ const ProfileEdit: React.FC<ProfileEditProps> = ({ user, onUpdate, onLogout, set
             <div className="flex justify-between items-center py-2">
                <span className="text-[10px] font-black text-[var(--text-muted)] uppercase tracking-widest">Provedor</span>
                <span className="text-xs font-black text-[var(--text-primary)] italic flex items-center gap-1">
-                 {user.paymentProvider || 'Kiwify'} <Shield className="w-3 h-3 text-[var(--green-whatsapp)]" />
+                 {user.paymentProvider || 'Asaas'} <Shield className="w-3 h-3 text-[var(--green-whatsapp)]" />
                </span>
             </div>
          </div>
 
          <button 
-           onClick={() => handleKiwifyRedirect(user.uid, checkoutId)}
-           className="w-full bg-[var(--green-whatsapp)] text-white font-black py-4 rounded-2xl text-[10px] uppercase tracking-[0.2em] hover:bg-[var(--green-whatsapp)]/80 transition-all flex items-center justify-center gap-2 shadow-lg shadow-[var(--green-whatsapp)]/20"
+           onClick={handleSubscriptionClick}
+           disabled={loading}
+           className="w-full bg-[var(--green-whatsapp)] text-white font-black py-4 rounded-2xl text-[10px] uppercase tracking-[0.2em] hover:bg-[var(--green-whatsapp)]/80 transition-all flex items-center justify-center gap-2 shadow-lg shadow-[var(--green-whatsapp)]/20 disabled:opacity-50"
          >
-           <Zap className="w-4 h-4" />
+           {loading ? <div className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin"></div> : <Zap className="w-4 h-4" />}
            {user.subscriptionStatus === 'trial' ? 'Assinar Premium Agora' : 
             user.subscriptionStatus === 'active' ? 'Renovar / Gerenciar Plano' : 
             'Assinar Agora'}
@@ -360,19 +375,13 @@ const ProfileEdit: React.FC<ProfileEditProps> = ({ user, onUpdate, onLogout, set
                 <div className="space-y-4">
                   <p className="text-sm font-medium text-[var(--text-muted)] leading-relaxed italic">
                     Você possui uma <span className="text-rose-500 font-black uppercase">assinatura ativa</span>. 
-                    Para evitar cobranças futuras, você <span className="underline">deve cancelar</span> sua assinatura na Kiwify antes de excluir sua conta.
+                    Para evitar cobranças futuras, você <span className="underline">deve cancelar</span> sua assinatura no Asaas antes de excluir sua conta.
                   </p>
                   <div className="p-4 rounded-2xl bg-rose-500/5 border border-rose-500/10 space-y-3">
                     <p className="text-[9px] font-black text-rose-500 uppercase tracking-widest">Aviso Importante</p>
                     <p className="text-[10px] text-[var(--text-muted)] italic">
-                      A exclusão aqui libera seu e-mail para novo cadastro, mas <span className="font-bold">não cancela</span> o pagamento na Kiwify.
+                      A exclusão aqui libera seu e-mail para novo cadastro, mas <span className="font-bold">não cancela</span> o seu plano no Asaas.
                     </p>
-                    <button 
-                      onClick={() => window.open('https://dashboard.kiwify.com.br/subscriptions', '_blank')}
-                      className="w-full bg-[var(--green-whatsapp)]/10 text-[var(--green-whatsapp)] font-black py-3 rounded-xl text-[9px] uppercase tracking-widest flex items-center justify-center gap-2"
-                    >
-                      <ExternalLink className="w-3 h-3" /> Abrir Painel Kiwify
-                    </button>
                   </div>
                 </div>
               ) : user.subscriptionStatus === 'trial' ? (
