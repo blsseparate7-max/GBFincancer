@@ -81,6 +81,11 @@ async function startServer() {
     return response.json();
   }
 
+  // Health check and diagnostic
+  app.get("/api/health", (req, res) => {
+    res.json({ status: "ok", environment: isProd ? 'production' : 'sandbox', time: new Date().toISOString() });
+  });
+
   // Endpoint to create Asaas Checkout
   app.post("/api/checkout/asaas", async (req, res) => {
     let { uid, email, plan, name, cpfCnpj } = req.body;

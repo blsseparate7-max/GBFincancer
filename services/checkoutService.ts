@@ -68,12 +68,22 @@ export const handleAsaasRedirect = async (uid: string, email: string, plan: stri
     });
 
     if (!response.ok) {
-      const errorData = await response.json();
+      if (response.status === 404) {
+        throw new Error("A rota de checkout não foi encontrada no servidor (404). Se você estiver no Vercel, certifique-se de que o backend foi atualizado e está rodando corretamente.");
+      }
+      const errorData = await response.json().catch(() => ({}));
       console.error("[ASAAS] Erro na resposta do servidor:", errorData);
       throw new Error(errorData.error || 'Erro ao gerar checkout Asaas');
     }
 
-    const data = await response.json();
+    let data;
+    try {
+      data = await response.json();
+    } catch (e) {
+      console.error("[ASAAS] Resposta do servidor não é um JSON válido:", e);
+      throw new Error("O servidor retornou uma resposta inválida. Verifique os logs do backend.");
+    }
+    
     const { checkoutUrl } = data;
     console.log(`[ASAAS] Checkout URL recebida: ${checkoutUrl}`);
 
