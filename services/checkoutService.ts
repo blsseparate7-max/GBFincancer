@@ -87,20 +87,24 @@ export const handleAsaasRedirect = async (uid: string, email: string, plan: stri
     const { checkoutUrl } = data;
     console.log(`[ASAAS] Checkout URL recebida: ${checkoutUrl}`);
 
-    if (!checkoutUrl) {
-      throw new Error("Link de checkout não recebido do servidor.");
-    }
-
-    if (checkoutWindow && !checkoutWindow.closed) {
-      console.log("[ASAAS] Redirecionando janela popup...");
-      checkoutWindow.location.href = checkoutUrl;
+    if (checkoutUrl) {
+      if (checkoutWindow && !checkoutWindow.closed) {
+        console.log("[ASAAS] Redirecionando janela popup...");
+        checkoutWindow.location.href = checkoutUrl;
+      } else {
+        console.log("[ASAAS] Redirecionando janela principal (fallback)...");
+        window.location.href = checkoutUrl;
+      }
     } else {
-      console.log("[ASAAS] Redirecionando janela principal...");
-      window.location.href = checkoutUrl;
+      throw new Error("Link de checkout não recebido do servidor.");
     }
   } catch (error: any) {
     console.error("[ASAAS] Erro durante o redirecionamento:", error);
     if (checkoutWindow) checkoutWindow.close();
+    
+    // Alerta detalhado para o usuário
+    const errorMsg = error.message || "Erro desconhecido ao processar pagamento.";
+    alert(`Erro no Pagamento: ${errorMsg}\n\nPor favor, tente novamente ou entre em contato com o suporte.`);
     throw error;
   }
 };

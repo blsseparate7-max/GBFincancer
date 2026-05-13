@@ -16,35 +16,58 @@ import {
 // Load Firebase Config
 let firebaseConfig: any;
 try {
-  const configPath = path.resolve(process.cwd(), "firebase-applet-config.json");
-  const parentPath = path.resolve(process.cwd(), "..", "firebase-applet-config.json");
-  const apiPath = path.resolve(__dirname, "..", "firebase-applet-config.json");
-  
-  if (fs.existsSync(configPath)) {
-    firebaseConfig = JSON.parse(fs.readFileSync(configPath, "utf8"));
-  } else if (fs.existsSync(parentPath)) {
-    firebaseConfig = JSON.parse(fs.readFileSync(parentPath, "utf8"));
-  } else if (fs.existsSync(apiPath)) {
-    firebaseConfig = JSON.parse(fs.readFileSync(apiPath, "utf8"));
+  const possiblePaths = [
+    path.resolve(process.cwd(), "firebase-applet-config.json"),
+    path.resolve(process.cwd(), "api", "firebase-applet-config.json"),
+    path.resolve(process.cwd(), "..", "firebase-applet-config.json"),
+    path.resolve(__dirname, "firebase-applet-config.json"),
+    path.resolve(__dirname, "..", "firebase-applet-config.json"),
+    "/var/task/firebase-applet-config.json", // Common Vercel path
+    "/var/task/api/firebase-applet-config.json"
+  ];
+
+  console.log("[DEBUG] Current working directory:", process.cwd());
+  console.log("[DEBUG] __dirname:", __dirname);
+
+  let foundPath = "";
+  for (const p of possiblePaths) {
+    if (fs.existsSync(p)) {
+      foundPath = p;
+      break;
+    }
+  }
+
+  if (foundPath) {
+    console.log(`[DEBUG] Found firebase config at: ${foundPath}`);
+    firebaseConfig = JSON.parse(fs.readFileSync(foundPath, "utf8"));
   } else {
-    console.warn("Firebase config not found at multiple locations. Backend might fail.");
+    console.warn("[DEBUG] Firebase config NOT FOUND in any common locations.");
+    // Log checked paths for remote debugging
+    console.log("[DEBUG] Checked paths:", JSON.stringify(possiblePaths));
     firebaseConfig = {};
   }
-} catch (e) {
-  console.error("CRITICAL: Failed to load firebase-applet-config.json", e);
+} catch (e: any) {
+  console.error("CRITICAL: Failed to load firebase-applet-config.json", e.message);
   firebaseConfig = {};
 }
-
-// Initialize Client SDK
-const clientApp = initializeClientApp(firebaseConfig);
-const db = getClientFirestore(clientApp, firebaseConfig.firestoreDatabaseId);
 
 // Bypass Key for Security Rules
 const AUTH_BYPASS = { auth_bypass_key: 'gbfinancer-server-2026' };
 
 // Initialize Admin SDK 
-if (!admin.apps.length) {
+if (!admin.apps.length && firebaseConfig?.projectId) {
   admin.initializeApp({ projectId: firebaseConfig.projectId }); 
+}
+
+let _db: any = null;
+function getDb() {
+  if (_db) return _db;
+  if (!firebaseConfig || !firebaseConfig.apiKey) {
+    throw new Error("Configuração do Firebase não encontrada no servidor (API).");
+  }
+  const clientApp = initializeClientApp(firebaseConfig);
+  _db = getClientFirestore(clientApp, firebaseConfig.firestoreDatabaseId);
+  return _db;
 }
 
 const app = express();
@@ -83,6 +106,9 @@ const healthHandler = (req: any, res: any) => {
     environment: isProd ? 'production' : 'sandbox', 
     time: new Date().toISOString(),
     node_version: process.version,
+    firebase_config_loaded: !!(firebaseConfig && firebaseConfig.apiKey),
+    firebase_project_id: firebaseConfig?.projectId || "not_found",
+    cwd: process.cwd(),
     env_keys_found: {
       asaas: !!ASAAS_API_KEY,
       webhook: !!ASAAS_WEBHOOK_TOKEN,
@@ -105,6 +131,7 @@ const checkoutAsaasHandler = async (req: any, res: any) => {
   }
 
   try {
+    const db = getDb();
     if (cpfCnpj) cpfCnpj = cpfCnpj.replace(/\D/g, '');
 
     if (!cpfCnpj) {
@@ -119,11 +146,12 @@ const checkoutAsaasHandler = async (req: any, res: any) => {
 
     if (!cpfCnpj) {
       console.error(`[ASAAS] Error: CPF/CNPJ missing for user ${uid}`);
-      throw new Error("CPF ou CNPJ é obrigatório para realizar o pagamento.");
+      return res.status(400).json({ error: "O CPF ou CNPJ é obrigatório para cadastrar o cliente no Asaas. Por favor, atualize seu perfil ou informe o CPF." });
     }
 
     console.log(`[ASAAS] Identifying customer for ${email}`);
-    const customers = await asaasFetch(`/customers?email=${email}`);
+    const encodedEmail = encodeURIComponent(email);
+    const customers = await asaasFetch(`/customers?email=${encodedEmail}`);
     let customerId = customers.data?.[0]?.id;
 
     if (!customerId) {
@@ -142,12 +170,18 @@ const checkoutAsaasHandler = async (req: any, res: any) => {
     });
 
     console.log(`[ASAAS] Creating subscription for customer ${customerId}`);
+    const nextDate = new Date();
+    nextDate.setDate(nextDate.getDate() + 1);
+    
     const subscription = await asaasFetch('/subscriptions', {
       method: 'POST',
       body: JSON.stringify({
-        customer: customerId, billingType: 'UNDEFINED', value: 8.70,
-        nextDueDate: new Date(Date.now() + 86400000).toISOString().split('T')[0],
-        cycle: 'MONTHLY', description: `Plano Mensal - GB Financer`,
+        customer: customerId, 
+        billingType: 'UNDEFINED', 
+        value: 8.70,
+        nextDueDate: nextDate.toISOString().split('T')[0],
+        cycle: 'MONTHLY', 
+        description: `Plano Mensal - GB Financer`,
         externalReference: sessionRef.id
       })
     });
@@ -157,7 +191,7 @@ const checkoutAsaasHandler = async (req: any, res: any) => {
     const firstPayment = payments.data?.[0];
 
     if (!firstPayment) {
-      throw new Error("Assinatura criada, mas não foi possível gerar o link de pagamento inicial.");
+      throw new Error("Assinatura criada com sucesso, mas não conseguimos localizar o pagamento imediato. Verifique seu e-mail.");
     }
 
     const checkoutUrl = firstPayment.invoiceUrl || firstPayment.bankSlipUrl || firstPayment.checkoutUrl;
@@ -185,6 +219,7 @@ app.post("/api/webhooks/asaas", async (req, res) => {
   if (!externalReference) return res.status(200).json({ message: "Ignored" });
 
   try {
+    const db = getDb();
     const sessionDoc = await getDoc(doc(db, "checkoutSessions", externalReference));
     if (!sessionDoc.exists()) return res.status(404).json({ error: "Session not found" });
 
@@ -209,7 +244,7 @@ app.post("/api/webhooks/asaas", async (req, res) => {
         ...AUTH_BYPASS
       });
       
-      await updateDoc(doc(db, "checkoutSessions", externalReference), {
+      await updateDoc(doc(getDb(), "checkoutSessions", externalReference), {
         status: 'completed', updatedAt: serverTimestamp(), ...AUTH_BYPASS
       });
     } else if (isFailed) {
@@ -231,6 +266,7 @@ app.post("/api/webhooks/kiwify", async (req: any, res: any) => {
   if (!sessionId) return res.status(400).json({ error: "session_id missing" });
 
   try {
+    const db = getDb();
     const sessionRef = doc(db, "checkoutSessions", sessionId);
     const sessionDoc = await getDoc(sessionRef);
     if (!sessionDoc.exists()) return res.status(404).json({ error: "Session not found" });
