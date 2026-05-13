@@ -13,6 +13,18 @@ import {
   updateDoc 
 } from "firebase/firestore";
 
+import { fileURLToPath } from "url";
+import { dirname } from "path";
+
+// Support both ESM and CJS environments for path resolution
+let _dirname = "";
+try {
+  _dirname = dirname(fileURLToPath(import.meta.url));
+} catch (e) {
+  // Fallback for non-ESM environments if any
+  _dirname = __dirname;
+}
+
 // Load Firebase Config
 let firebaseConfig: any;
 try {
@@ -20,14 +32,14 @@ try {
     path.resolve(process.cwd(), "firebase-applet-config.json"),
     path.resolve(process.cwd(), "api", "firebase-applet-config.json"),
     path.resolve(process.cwd(), "..", "firebase-applet-config.json"),
-    path.resolve(__dirname, "firebase-applet-config.json"),
-    path.resolve(__dirname, "..", "firebase-applet-config.json"),
+    path.resolve(_dirname, "firebase-applet-config.json"),
+    path.resolve(_dirname, "..", "firebase-applet-config.json"),
     "/var/task/firebase-applet-config.json", // Common Vercel path
     "/var/task/api/firebase-applet-config.json"
   ];
 
   console.log("[DEBUG] Current working directory:", process.cwd());
-  console.log("[DEBUG] __dirname:", __dirname);
+  console.log("[DEBUG] _dirname identified as:", _dirname);
 
   let foundPath = "";
   for (const p of possiblePaths) {
