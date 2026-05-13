@@ -16,19 +16,19 @@ import {
 // Load Firebase Config
 let firebaseConfig: any;
 try {
-  // Use relative path for Vercel function environment
   const configPath = path.resolve(process.cwd(), "firebase-applet-config.json");
+  const parentPath = path.resolve(process.cwd(), "..", "firebase-applet-config.json");
+  const apiPath = path.resolve(__dirname, "..", "firebase-applet-config.json");
+  
   if (fs.existsSync(configPath)) {
     firebaseConfig = JSON.parse(fs.readFileSync(configPath, "utf8"));
+  } else if (fs.existsSync(parentPath)) {
+    firebaseConfig = JSON.parse(fs.readFileSync(parentPath, "utf8"));
+  } else if (fs.existsSync(apiPath)) {
+    firebaseConfig = JSON.parse(fs.readFileSync(apiPath, "utf8"));
   } else {
-    // Attempt to load from parent if inside /api
-    const parentConfigPath = path.resolve(process.cwd(), "..", "firebase-applet-config.json");
-    if (fs.existsSync(parentConfigPath)) {
-      firebaseConfig = JSON.parse(fs.readFileSync(parentConfigPath, "utf8"));
-    } else {
-      console.warn("Firebase config not found at", configPath, "or", parentConfigPath);
-      firebaseConfig = {};
-    }
+    console.warn("Firebase config not found at multiple locations. Backend might fail.");
+    firebaseConfig = {};
   }
 } catch (e) {
   console.error("CRITICAL: Failed to load firebase-applet-config.json", e);
@@ -49,12 +49,6 @@ if (!admin.apps.length) {
 
 const app = express();
 app.use(express.json());
-
-// Log incoming requests for debugging on Vercel
-app.use((req, res, next) => {
-  console.log(`[Vercel Server] ${req.method} ${req.url}`);
-  next();
-});
 
 // Asaas Config
 const ASAAS_API_KEY = process.env.ASAAS_API_KEY || '';
@@ -268,12 +262,6 @@ app.post("/api/webhooks/kiwify", async (req: any, res: any) => {
   } catch (error) {
     res.status(500).json({ error: "Internal error" });
   }
-});
-
-// Handle unknown routes within the API function
-app.use((req, res) => {
-  console.warn(`[Vercel Server] Route not found: ${req.method} ${req.url}`);
-  res.status(404).json({ error: "Route not found or unhandled", path: req.url });
 });
 
 export default app;
