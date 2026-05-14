@@ -220,6 +220,9 @@ app.post("/checkout/asaas", checkoutAsaasHandler);
 
 // Asaas Webhook
 const asaasWebhookHandler = async (req: any, res: any) => {
+  // Respond immediately to prevent Asaas from timing out and marking the webhook as interrupted
+  res.status(200).json({ received: true });
+
   try {
     const token = req.headers['asaas-access-token'] || req.headers['Asaas-Access-Token'];
     console.log(`[ASAAS WEBHOOK] Request received at ${new Date().toISOString()}`);
@@ -228,14 +231,14 @@ const asaasWebhookHandler = async (req: any, res: any) => {
 
     if (ASAAS_WEBHOOK_TOKEN && token !== ASAAS_WEBHOOK_TOKEN) {
       console.error(`[ASAAS WEBHOOK] Unauthorized - Token mismatch. Received: ${token}, Expected: ${ASAAS_WEBHOOK_TOKEN}`);
-      return res.status(401).json({ error: "Unauthorized" });
+      return;
     }
 
     const { event, payment, subscription, billing } = req.body;
     
     if (!event) {
       console.log("[ASAAS WEBHOOK] No event found in body. Ignored.");
-      return res.status(200).json({ message: "No event" });
+      return;
     }
 
     console.log(`[ASAAS WEBHOOK] Event: ${event}`);
@@ -250,7 +253,7 @@ const asaasWebhookHandler = async (req: any, res: any) => {
 
     if (!externalReference) {
       console.log("[ASAAS WEBHOOK] Ignored - No externalReference found in payload");
-      return res.status(200).json({ message: "Ignored - No reference found" });
+      return;
     }
 
     const db = getDb();
@@ -258,7 +261,7 @@ const asaasWebhookHandler = async (req: any, res: any) => {
     
     if (!sessionDoc.exists()) {
       console.warn(`[ASAAS WEBHOOK] Session ${externalReference} not found in Firestore. Payment might be from an old session or different system.`);
-      return res.status(200).json({ message: "Session not found" });
+      return;
     }
 
     const { uid, plan } = sessionDoc.data()!;
@@ -313,11 +316,11 @@ const asaasWebhookHandler = async (req: any, res: any) => {
       });
     }
 
-    return res.status(200).json({ success: true, processedEvent: event });
+    return;
   } catch (error: any) {
     console.error(`[ASAAS WEBHOOK CRITICAL ERROR]: ${error.message}`);
     console.error(error.stack);
-    return res.status(500).json({ error: "Internal server error during webhook processing" });
+    return;
   }
 };
 
