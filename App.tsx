@@ -139,6 +139,10 @@ const App: React.FC = () => {
               setOnboardingStep('welcome');
             } else if (!userData.lgpdAccepted) {
               setOnboardingStep('lgpd');
+            } else if (!userData.onboardingStatus?.completed) {
+              setOnboardingStep('guided');
+            } else {
+              setOnboardingStep('none');
             }
           } else {
             // Caso o usuário exista no Auth mas não no Firestore (ex: após exclusão parcial ou durante o signup)
@@ -325,7 +329,8 @@ const App: React.FC = () => {
   const [loadingCategories, setLoadingCategories] = useState(true);
   const [loadingDebts, setLoadingDebts] = useState(true);
 
-  const handleOnboardingFinish = () => {
+  const handleOnboardingFinish = async () => {
+    if (!session?.uid) return;
     setOnboardingStep('lgpd');
   };
 
@@ -335,9 +340,10 @@ const App: React.FC = () => {
     await syncUserData(session.uid, { 
       lgpdAccepted: true,
       lgpdAcceptedAt: new Date(),
-      lgpdVersion: "1.0"
+      lgpdVersion: "1.0",
+      onboardingSeen: true // Mark as seen only after LGPD
     });
-    setSession(prev => prev ? { ...prev, lgpdAccepted: true } : null);
+    setSession(prev => prev ? { ...prev, lgpdAccepted: true, onboardingSeen: true } : null);
     setOnboardingStep('guided');
   };
 

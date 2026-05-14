@@ -219,29 +219,70 @@ app.post("/api/checkout/asaas", checkoutAsaasHandler);
 app.post("/checkout/asaas", checkoutAsaasHandler);
 
 // Asaas Webhook
-app.post("/api/webhooks/asaas", async (req, res) => {
-  const token = req.headers['asaas-access-token'];
-  if (ASAAS_WEBHOOK_TOKEN && token !== ASAAS_WEBHOOK_TOKEN) {
-    return res.status(401).json({ error: "Unauthorized" });
-  }
-
-  const { event, payment, subscription } = req.body;
-  const externalReference = payment?.externalReference || subscription?.externalReference;
-
-  if (!externalReference) return res.status(200).json({ message: "Ignored" });
-
+const asaasWebhookHandler = async (req: any, res: any) => {
   try {
+    const token = req.headers['asaas-access-token'] || req.headers['Asaas-Access-Token'];
+    console.log(`[ASAAS WEBHOOK] Request received at ${new Date().toISOString()}`);
+    console.log(`[ASAAS WEBHOOK] Headers: ${JSON.stringify(req.headers)}`);
+    console.log(`[ASAAS WEBHOOK] Body: ${JSON.stringify(req.body)}`);
+
+    if (ASAAS_WEBHOOK_TOKEN && token !== ASAAS_WEBHOOK_TOKEN) {
+      console.error(`[ASAAS WEBHOOK] Unauthorized - Token mismatch. Received: ${token}, Expected: ${ASAAS_WEBHOOK_TOKEN}`);
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const { event, payment, subscription, billing } = req.body;
+    
+    if (!event) {
+      console.log("[ASAAS WEBHOOK] No event found in body. Ignored.");
+      return res.status(200).json({ message: "No event" });
+    }
+
+    console.log(`[ASAAS WEBHOOK] Event: ${event}`);
+
+    // External reference can be on payment, subscription or billing level
+    const externalReference = payment?.externalReference || 
+                              subscription?.externalReference || 
+                              billing?.externalReference || 
+                              req.body.externalReference;
+    
+    console.log(`[ASAAS WEBHOOK] External Reference identified: ${externalReference}`);
+
+    if (!externalReference) {
+      console.log("[ASAAS WEBHOOK] Ignored - No externalReference found in payload");
+      return res.status(200).json({ message: "Ignored - No reference found" });
+    }
+
     const db = getDb();
     const sessionDoc = await getDoc(doc(db, "checkoutSessions", externalReference));
-    if (!sessionDoc.exists()) return res.status(404).json({ error: "Session not found" });
+    
+    if (!sessionDoc.exists()) {
+      console.warn(`[ASAAS WEBHOOK] Session ${externalReference} not found in Firestore. Payment might be from an old session or different system.`);
+      return res.status(200).json({ message: "Session not found" });
+    }
 
     const { uid, plan } = sessionDoc.data()!;
     const userRef = doc(db, "users", uid);
+    
+    console.log(`[ASAAS WEBHOOK] Processing for user ${uid}, plan ${plan}`);
 
-    const isApproved = event === 'PAYMENT_CONFIRMED' || event === 'PAYMENT_RECEIVED' || event === 'SUBSCRIPTION_CREATED' || event.includes('PAYMENT_CONFIRMED');
-    const isFailed = event === 'PAYMENT_OVERDUE' || event === 'PAYMENT_REFUNDED' || event === 'PAYMENT_DELETED';
+    const isApproved = [
+      'PAYMENT_CONFIRMED', 
+      'PAYMENT_RECEIVED', 
+      'SUBSCRIPTION_CREATED', 
+      'PAYMENT_RECEIVED_IN_CASH',
+      'PAYMENT_CONFIRMED_BY_BANK_SLIP'
+    ].includes(event);
+    
+    const isFailed = [
+      'PAYMENT_OVERDUE', 
+      'PAYMENT_REFUNDED', 
+      'PAYMENT_DELETED',
+      'PAYMENT_CHARGEBACK_REQUESTED'
+    ].includes(event);
 
     if (isApproved) {
+      console.log(`[ASAAS WEBHOOK] PAYMENT APPROVED! Updating user ${uid} to active.`);
       const days = plan === 'anual' ? 365 : 30;
       const endsAt = new Date();
       endsAt.setDate(endsAt.getDate() + days);
@@ -251,25 +292,58 @@ app.post("/api/webhooks/asaas", async (req, res) => {
         subscriptionEndsAt: endsAt.toISOString(),
         plan: plan || 'mensal',
         paymentProvider: 'asaas',
-        lastOrderId: payment?.id || subscription?.id,
+        lastOrderId: payment?.id || subscription?.id || billing?.id,
         updatedAt: serverTimestamp(),
         ...AUTH_BYPASS
       });
       
-      await updateDoc(doc(getDb(), "checkoutSessions", externalReference), {
-        status: 'completed', updatedAt: serverTimestamp(), ...AUTH_BYPASS
+      await updateDoc(doc(db, "checkoutSessions", externalReference), {
+        status: 'completed', 
+        updatedAt: serverTimestamp(), 
+        webhookEvent: event,
+        ...AUTH_BYPASS
       });
+      console.log(`[ASAAS WEBHOOK] User ${uid} updated successfully. Subscription ends at: ${endsAt.toISOString()}`);
     } else if (isFailed) {
+      console.log(`[ASAAS WEBHOOK] Payment failed/refunded for user ${uid}. Marking inactive.`);
       await updateDoc(userRef, {
-        subscriptionStatus: 'inactive', updatedAt: serverTimestamp(), ...AUTH_BYPASS
+        subscriptionStatus: 'inactive', 
+        updatedAt: serverTimestamp(),
+        ...AUTH_BYPASS
       });
     }
 
-    res.json({ success: true });
-  } catch (error) {
-    res.status(500).json({ error: "Internal error" });
+    return res.status(200).json({ success: true, processedEvent: event });
+  } catch (error: any) {
+    console.error(`[ASAAS WEBHOOK CRITICAL ERROR]: ${error.message}`);
+    console.error(error.stack);
+    return res.status(500).json({ error: "Internal server error during webhook processing" });
   }
+};
+
+app.get("/api/webhooks/asaas", (req, res) => {
+  const tokenReceived = req.headers['asaas-access-token'] || req.headers['Asaas-Access-Token'];
+  const hasConfiguredToken = !!ASAAS_WEBHOOK_TOKEN;
+  
+  res.json({ 
+    status: "active",
+    message: "Asaas Webhook endpoint is ready.",
+    diagnostics: {
+      firebase_active: !!(firebaseConfig && firebaseConfig.apiKey),
+      firebase_project: firebaseConfig?.projectId || "not_found",
+      asaas_token_configured: hasConfiguredToken,
+      asaas_token_match_test: hasConfiguredToken ? (tokenReceived === ASAAS_WEBHOOK_TOKEN ? "MATCH" : "MISMATCH or NOT_PROVIDED") : "NOT_REQUIRED",
+      node_env: process.env.NODE_ENV || 'production',
+      cwd: process.cwd()
+    },
+    setup_guide: {
+      webhook_url: "Use this URL in Asaas panel ending in /api/webhooks/asaas",
+      events_required: ["PAYMENT_CONFIRMED", "PAYMENT_RECEIVED", "SUBSCRIPTION_CREATED"]
+    }
+  });
 });
+app.post("/api/webhooks/asaas", asaasWebhookHandler);
+app.post("/webhooks/asaas", asaasWebhookHandler);
 
 // Kiwify Webhook
 app.post("/api/webhooks/kiwify", async (req: any, res: any) => {

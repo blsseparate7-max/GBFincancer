@@ -77,7 +77,7 @@ const GuidedOnboarding: React.FC<GuidedOnboardingProps> = ({
   // Step 5: Goals
   const [goals, setGoals] = useState<any[]>(user.suggestedGoals || []);
 
-  const totalSteps = 6;
+  const totalSteps = 4;
   const progress = (currentStep / totalSteps) * 100;
 
   useEffect(() => {
@@ -87,13 +87,12 @@ const GuidedOnboarding: React.FC<GuidedOnboardingProps> = ({
   }, [currentStep]);
 
   const handleNext = async () => {
-    // Sincroniza dados parciais no Firestore para que o Chat (passo 3) tenha contexto real
+    // Stage 1: Income
     if (currentStep === 1) {
-      // Validação Obrigatória Passo 1: Salário e Carteira
       const mainSource = incomeSources[0];
       if (!mainSource || !mainSource.amountExpected || mainSource.amountExpected <= 0 || !mainSource.targetWalletName) {
         setNotification({ 
-          message: "⚠️ Antes de continuar, adicione sua renda e selecione a carteira onde você recebe.", 
+          message: "⚠️ Adicione sua renda e selecione onde você recebe antes de continuar.", 
           type: 'error' 
         });
         return;
@@ -110,18 +109,13 @@ const GuidedOnboarding: React.FC<GuidedOnboardingProps> = ({
         incomeCaptured: true
       } as any);
 
-      // Criar lembretes de recebimento e carteiras imediatamente para o passo 3
+      // Create assets immediately
       const { dispatchEvent } = await import('../services/eventDispatcher');
       for (const source of incomeSources) {
-        // Criar carteira se informada
         if (source.targetWalletName) {
           await dispatchEvent(user.uid, {
             type: 'CREATE_WALLET',
-            payload: { 
-              name: source.targetWalletName, 
-              balance: 0, 
-              type: 'CHECKING' 
-            },
+            payload: { name: source.targetWalletName, balance: 0, type: 'CHECKING' },
             source: 'onboarding',
             createdAt: new Date()
           });
@@ -148,13 +142,13 @@ const GuidedOnboarding: React.FC<GuidedOnboardingProps> = ({
       }
     }
     
+    // Stage 2: Bills
     if (currentStep === 2) {
       await onUpdateStatus({ 
         billsProfile: { bills: bills },
         billsCaptured: true
       } as any);
 
-      // Criar lembretes de contas fixas imediatamente
       const { dispatchEvent } = await import('../services/eventDispatcher');
       for (const bill of bills) {
         await dispatchEvent(user.uid, {
@@ -174,22 +168,10 @@ const GuidedOnboarding: React.FC<GuidedOnboardingProps> = ({
       }
     }
 
+    // Stage 3: Goals & Limits (Saved on completion)
+
     if (currentStep < totalSteps) {
-      // Special check for Step 3 (Chat)
-      if (currentStep === 3 && !user.onboardingStatus?.chatContextResponded) {
-        setNotification({ message: "Responda ao chat antes de continuar!", type: 'error' });
-        return;
-      }
-
-      // Save progress
-      await onUpdateStatus({ step: (currentStep + 1) as any });
-
       setCurrentStep(currentStep + 1);
-      
-      // Special navigation for Step 3 (Chat)
-      if (currentStep + 1 === 3) {
-        onNavigateToTab('chat');
-      }
     } else {
       // Final completion
       await onUpdateStatus({ completed: true });
@@ -618,176 +600,85 @@ const GuidedOnboarding: React.FC<GuidedOnboardingProps> = ({
 
       case 3:
         return (
-          <div className="space-y-6 text-center">
-            <div className="w-20 h-20 bg-[#00A884]/10 text-[#00A884] rounded-full flex items-center justify-center mx-auto mb-6 border-2 border-[#00A884]/20 animate-pulse">
-              <MessageSquare size={40} />
+          <div className="space-y-6">
+            <div className="text-center space-y-2">
+              <div className="w-16 h-16 bg-amber-500/10 text-amber-500 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                <Target size={32} />
+              </div>
+              <h3 className="text-xl font-black text-[#E9EDEF] uppercase tracking-tighter italic">Metas e Limites</h3>
+              <p className="text-[10px] text-[#8696A0] leading-relaxed uppercase font-black">
+                Quanto você quer economizar e qual seu teto de gastos?
+              </p>
             </div>
+
             <div className="space-y-4">
-              <h3 className="text-2xl font-black text-[#E9EDEF] uppercase tracking-tighter italic">Inteligência Conversacional</h3>
-              <p className="text-sm text-[#8696A0] leading-relaxed">
-                O <span className="text-[#00A884] font-black">GBFinancer</span> não é apenas uma planilha. É um assistente que conversa com você.
-              </p>
-              
-              {!user.onboardingStatus?.chatContextResponded ? (
-                <div className="bg-[#202C33] p-6 rounded-3xl border-2 border-dashed border-[#00A884]/40 text-center space-y-4 animate-pulse">
-                  <p className="text-xs text-[#E9EDEF] font-black uppercase italic">Vá para o chat e responda à pergunta do Assistente GB!</p>
-                  <button 
+              <div className="bg-[#202C33] p-4 rounded-2xl border border-[#2A3942]/40">
+                <label className="text-[9px] font-black text-[#8696A0] uppercase block mb-2">Seu Teto de Gastos Variáveis</label>
+                <div className="flex items-center gap-4">
+                   <div className="text-xl font-black text-[#00A884]">R$ {spendingLimit.toLocaleString()}</div>
+                   <input 
+                    type="range" 
+                    min="0" 
+                    max={incomeSources.reduce((acc, s) => acc + (s.amountExpected || 0), 0) || 5000} 
+                    step="100"
+                    value={spendingLimit}
+                    onChange={(e) => setSpendingLimit(parseInt(e.target.value))}
+                    className="flex-1 h-1.5 bg-[#111B21] rounded-lg appearance-none cursor-pointer accent-[#00A884]"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                {[
+                  { id: 'reserva', label: 'Reserva', icon: '🛡️' },
+                  { id: 'viagem', label: 'Viagem', icon: '✈️' },
+                  { id: 'divida', label: 'Dívidas', icon: '💸' },
+                  { id: 'casa', label: 'Casa', icon: '🏠' }
+                ].map(goal => (
+                  <button
+                    key={goal.id}
                     onClick={() => {
-                      console.log("GB Onboarding: Navegando para o chat e minimizando onboarding.");
-                      onNavigateToTab('chat');
-                      setIsMinimized(true);
+                      if (goals.find(g => g.id === goal.id)) {
+                        setGoals(goals.filter(g => g.id !== goal.id));
+                      } else {
+                        setGoals([...goals, { ...goal, targetAmount: 1000, currentAmount: 0 }]);
+                      }
                     }}
-                    className="bg-[#00A884] text-white px-6 py-3 rounded-xl text-[10px] font-black uppercase shadow-lg hover:scale-105 transition-all active:scale-95"
+                    className={`p-3 rounded-2xl border-2 transition-all flex items-center gap-2 ${
+                      goals.find(g => g.id === goal.id)
+                        ? 'bg-[#00A884]/10 border-[#00A884]'
+                        : 'bg-[#202C33] border-transparent'
+                    }`}
                   >
-                    Ir para o Chat
+                    <span className="text-lg">{goal.icon}</span>
+                    <span className="text-[8px] font-black text-[#E9EDEF] uppercase truncate">{goal.label}</span>
                   </button>
-                </div>
-              ) : (
-                <div className="bg-[#00A884]/10 p-6 rounded-3xl border-2 border-[#00A884] text-center space-y-4">
-                  <div className="w-10 h-10 bg-[#00A884] rounded-full flex items-center justify-center mx-auto text-white">
-                    <CheckCircle2 size={20} />
-                  </div>
-                  <p className="text-xs text-[#E9EDEF] font-black uppercase italic">Excelente! Você interagiu com o sistema. Clique em continuar.</p>
-                </div>
-              )}
-              
-              <p className="text-[10px] text-[#8696A0] font-medium italic">
-                * O tour continuará assim que você responder no chat.
-              </p>
+                ))}
+              </div>
             </div>
           </div>
         );
 
       case 4:
         return (
-          <div className="space-y-6">
-            <div className="text-center space-y-2">
-              <div className="w-16 h-16 bg-amber-500/10 text-amber-500 rounded-2xl flex items-center justify-center mx-auto mb-4">
-                <PieChart size={32} />
-              </div>
-              <h3 className="text-2xl font-black text-[#E9EDEF] uppercase tracking-tighter italic">Limites de Gastos</h3>
-              <p className="text-sm text-[#8696A0] leading-relaxed">
-                Definir um limite ajuda a manter o controle. O sistema te avisará quando você estiver chegando perto do teto.
-              </p>
-            </div>
-
-            <div className="bg-[#202C33] p-8 rounded-[2.5rem] border border-[#2A3942]/40 space-y-6 text-center">
-              <div className="space-y-2">
-                <label className="text-[10px] font-black text-[#8696A0] uppercase tracking-widest">Limite Mensal Sugerido</label>
-                <div className="text-4xl font-black text-[#00A884] italic tracking-tighter">
-                  R$ {spendingLimit.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                </div>
-              </div>
-              
-              <input 
-                type="range" 
-                min="0" 
-                max={incomeSources.reduce((acc, s) => acc + (s.amountExpected || 0), 0) || 5000} 
-                step="100"
-                value={spendingLimit}
-                onChange={(e) => setSpendingLimit(parseInt(e.target.value))}
-                className="w-full h-2 bg-[#111B21] rounded-lg appearance-none cursor-pointer accent-[#00A884]"
-              />
-              
-              <div className="flex justify-between text-[10px] font-black text-[#8696A0] uppercase">
-                <span>R$ 0</span>
-                <span>R$ {(incomeSources.reduce((acc, s) => acc + (s.amountExpected || 0), 0) || 5000).toLocaleString()}</span>
-              </div>
-
-              <div className="bg-[#111B21] p-4 rounded-2xl flex items-center gap-3 text-left border border-[#00A884]/10">
-                <Info className="text-[#00A884] shrink-0" size={18} />
-                <p className="text-[10px] text-[#8696A0] font-medium leading-tight">
-                  Recomendamos não comprometer mais de 70% da sua renda com gastos variáveis.
-                </p>
-              </div>
-            </div>
-          </div>
-        );
-
-      case 5:
-        return (
-          <div className="space-y-6">
-            <div className="text-center space-y-2">
-              <div className="w-16 h-16 bg-blue-500/10 text-blue-500 rounded-2xl flex items-center justify-center mx-auto mb-4">
-                <Target size={32} />
-              </div>
-              <h3 className="text-2xl font-black text-[#E9EDEF] uppercase tracking-tighter italic">Suas Metas</h3>
-              <p className="text-sm text-[#8696A0] leading-relaxed">
-                Para onde vai o que sobra? Definir metas dá propósito ao seu esforço de economizar.
-              </p>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              {[
-                { id: 'reserva', label: 'Reserva de Emergência', icon: '🛡️', color: 'bg-blue-500' },
-                { id: 'viagem', label: 'Viagem dos Sonhos', icon: '✈️', color: 'bg-purple-500' },
-                { id: 'carro', label: 'Trocar de Carro', icon: '🚗', color: 'bg-amber-500' },
-                { id: 'casa', label: 'Casa Própria', icon: '🏠', color: 'bg-emerald-500' }
-              ].map(goal => (
-                <button
-                  key={goal.id}
-                  onClick={() => {
-                    if (goals.find(g => g.id === goal.id)) {
-                      setGoals(goals.filter(g => g.id !== goal.id));
-                    } else {
-                      setGoals([...goals, { ...goal, targetAmount: 1000, currentAmount: 0 }]);
-                    }
-                  }}
-                  className={`p-4 rounded-3xl border-2 transition-all flex flex-col items-center gap-2 text-center ${
-                    goals.find(g => g.id === goal.id)
-                      ? 'bg-[#00A884]/10 border-[#00A884] shadow-lg'
-                      : 'bg-[#202C33] border-transparent hover:border-[#2A3942]'
-                  }`}
-                >
-                  <span className="text-2xl">{goal.icon}</span>
-                  <span className="text-[10px] font-black text-[#E9EDEF] uppercase leading-tight">{goal.label}</span>
-                </button>
-              ))}
-            </div>
-
-            <div className="bg-[#111B21] p-4 rounded-2xl flex items-center gap-3 border border-blue-500/10">
-              <CheckCircle2 className="text-blue-500 shrink-0" size={18} />
-              <p className="text-[10px] text-[#8696A0] font-medium leading-tight">
-                Você selecionou {goals.length} metas. Vamos te ajudar a alcançá-las!
-              </p>
-            </div>
-          </div>
-        );
-
-      case 6:
-        return (
           <div className="space-y-6 text-center">
             <div className="w-20 h-20 bg-[#00A884] rounded-[2.5rem] flex items-center justify-center mx-auto shadow-2xl text-white text-4xl font-black italic transform -rotate-6 mb-6">GB</div>
             <div className="space-y-4">
-              <h3 className="text-2xl font-black text-[#E9EDEF] uppercase tracking-tighter italic">Pronto para Decolar!</h3>
+              <h3 className="text-2xl font-black text-[#E9EDEF] uppercase tracking-tighter italic">Pronto para o Sucesso!</h3>
               <p className="text-sm text-[#8696A0] leading-relaxed">
-                Você concluiu a configuração básica. Agora o <span className="text-[#00A884] font-black">GBFinancer</span> está pronto para ser seu braço direito financeiro.
+                Você concluiu a configuração de base. Agora vamos cuidar do seu dinheiro juntos!
               </p>
               
-              <div className="grid grid-cols-3 gap-2 py-4">
-                <div className="space-y-1">
-                  <div className="w-10 h-10 bg-[#202C33] rounded-xl flex items-center justify-center mx-auto text-[#8696A0]">
-                    <LayoutDashboard size={20} />
-                  </div>
-                  <span className="text-[8px] font-black text-[#8696A0] uppercase">Dashboard</span>
+              <div className="grid grid-cols-2 gap-2 py-4">
+                <div className="p-4 bg-[#202C33] rounded-2xl border border-[#2A3942]/40">
+                  <LayoutDashboard className="mx-auto mb-2 text-[#00A884]" size={24} />
+                  <span className="text-[8px] font-black text-[#8696A0] uppercase">Dashboard Ativo</span>
                 </div>
-                <div className="space-y-1">
-                  <div className="w-10 h-10 bg-[#202C33] rounded-xl flex items-center justify-center mx-auto text-[#8696A0]">
-                    <Wallet size={20} />
-                  </div>
-                  <span className="text-[8px] font-black text-[#8696A0] uppercase">Carteiras</span>
-                </div>
-                <div className="space-y-1">
-                  <div className="w-10 h-10 bg-[#202C33] rounded-xl flex items-center justify-center mx-auto text-[#8696A0]">
-                    <PieChart size={20} />
-                  </div>
-                  <span className="text-[8px] font-black text-[#8696A0] uppercase">Análises</span>
+                <div className="p-4 bg-[#202C33] rounded-2xl border border-[#2A3942]/40">
+                  <MessageSquare className="mx-auto mb-2 text-[#00A884]" size={24} />
+                  <span className="text-[8px] font-black text-[#8696A0] uppercase">Chat Inteligente</span>
                 </div>
               </div>
-
-              <p className="text-xs text-[#8696A0] italic">
-                "O sucesso financeiro não é sobre quanto você ganha, mas sobre como você gerencia."
-              </p>
             </div>
           </div>
         );

@@ -305,7 +305,7 @@ const Auth: React.FC<AuthProps> = ({ onLogin, onOpenSupport, initialView = 'logi
           trialEndsAt: trialEndsAt.toISOString(),
           createdAt: new Date().toISOString(),
           status: 'active' as const,
-          onboardingSeen: true
+          onboardingSeen: false
         };
         
         try {
