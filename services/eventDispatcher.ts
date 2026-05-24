@@ -153,7 +153,7 @@ export const migrateTransactions = async (uid: string) => {
       const walletId = data.walletId || data.sourceWalletId || data.targetWalletId;
       if (walletId && !data.walletName) {
         updates.walletId = walletId;
-        updates.walletName = walletsMap.get(walletId) || null;
+        updates.walletName = walletsMap.get(walletId) || "Carteira Principal";
       }
 
       // 2. Category Info
@@ -922,7 +922,12 @@ const executeDispatch = async (uid: string, event: FinanceEvent) => {
             let finalWalletId = sourceWalletId;
             let finalWalletName = null;
 
-            if (!finalWalletId && billData.targetWalletName) {
+            if (finalWalletId) {
+              const info = await getWalletInfo(uid, finalWalletId);
+              if (info) {
+                finalWalletName = info.name;
+              }
+            } else if (billData.targetWalletName) {
               const resolved = await resolveWallet(uid, undefined, billData.targetWalletName);
               if (resolved) {
                 finalWalletId = resolved.id;

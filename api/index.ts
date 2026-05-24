@@ -198,6 +198,14 @@ const checkoutAsaasHandler = async (req: any, res: any) => {
       })
     });
 
+    // Save subscription and customer ID directly to checkout sessions in Firestore
+    await updateDoc(sessionRef, {
+      subscriptionId: subscription.id,
+      customerId: customerId,
+      updatedAt: serverTimestamp(),
+      ...AUTH_BYPASS
+    });
+
     console.log(`[ASAAS] Fetching payment for subscription ${subscription.id}`);
     const payments = await asaasFetch(`/payments?subscription=${subscription.id}&limit=1`);
     const firstPayment = payments.data?.[0];
@@ -220,9 +228,6 @@ app.post("/checkout/asaas", checkoutAsaasHandler);
 
 // Asaas Webhook
 const asaasWebhookHandler = async (req: any, res: any) => {
-  // Respond immediately to prevent Asaas from timing out and marking the webhook as interrupted
-  res.status(200).json({ received: true });
-
   try {
     const token = req.headers['asaas-access-token'] || req.headers['Asaas-Access-Token'];
     console.log(`[ASAAS WEBHOOK] Request received at ${new Date().toISOString()}`);
@@ -231,29 +236,43 @@ const asaasWebhookHandler = async (req: any, res: any) => {
 
     if (ASAAS_WEBHOOK_TOKEN && token !== ASAAS_WEBHOOK_TOKEN) {
       console.error(`[ASAAS WEBHOOK] Unauthorized - Token mismatch. Received: ${token}, Expected: ${ASAAS_WEBHOOK_TOKEN}`);
-      return;
+      return res.status(401).json({ error: "Unauthorized" });
     }
 
     const { event, payment, subscription, billing } = req.body;
     
     if (!event) {
       console.log("[ASAAS WEBHOOK] No event found in body. Ignored.");
-      return;
+      return res.status(200).json({ received: true, message: "No event found" });
     }
 
     console.log(`[ASAAS WEBHOOK] Event: ${event}`);
 
     // External reference can be on payment, subscription or billing level
-    const externalReference = payment?.externalReference || 
-                              subscription?.externalReference || 
-                              billing?.externalReference || 
-                              req.body.externalReference;
+    let externalReference = payment?.externalReference || 
+                            subscription?.externalReference || 
+                            billing?.externalReference || 
+                            req.body.externalReference;
     
+    // Webhook payload sometimes lacks externalReference directly (common for recurring sub payments).
+    // In that case, fetch the subscription details from Asaas API to find its externalReference.
+    const subscriptionId = payment?.subscription || subscription?.id || billing?.subscription;
+    if (!externalReference && subscriptionId) {
+      console.log(`[ASAAS WEBHOOK] No externalReference found directly. Querying Asaas API for subscription ${subscriptionId}...`);
+      try {
+        const subDetails = await asaasFetch(`/subscriptions/${subscriptionId}`);
+        externalReference = subDetails.externalReference;
+        console.log(`[ASAAS WEBHOOK] Successfully fetched externalReference from Asaas subscription: ${externalReference}`);
+      } catch (subErr: any) {
+        console.error(`[ASAAS WEBHOOK] Failed to fetch subscription details from Asaas: ${subErr.message}`);
+      }
+    }
+
     console.log(`[ASAAS WEBHOOK] External Reference identified: ${externalReference}`);
 
     if (!externalReference) {
       console.log("[ASAAS WEBHOOK] Ignored - No externalReference found in payload");
-      return;
+      return res.status(200).json({ received: true, message: "Ignored - No reference found" });
     }
 
     const db = getDb();
@@ -261,7 +280,7 @@ const asaasWebhookHandler = async (req: any, res: any) => {
     
     if (!sessionDoc.exists()) {
       console.warn(`[ASAAS WEBHOOK] Session ${externalReference} not found in Firestore. Payment might be from an old session or different system.`);
-      return;
+      return res.status(200).json({ received: true, message: "Session not found in DB" });
     }
 
     const { uid, plan } = sessionDoc.data()!;
@@ -291,6 +310,8 @@ const asaasWebhookHandler = async (req: any, res: any) => {
       endsAt.setDate(endsAt.getDate() + days);
 
       await updateDoc(userRef, {
+        status: 'active',
+        isActive: true,
         subscriptionStatus: 'active',
         subscriptionEndsAt: endsAt.toISOString(),
         plan: plan || 'mensal',
@@ -316,11 +337,11 @@ const asaasWebhookHandler = async (req: any, res: any) => {
       });
     }
 
-    return;
+    return res.status(200).json({ success: true, processedEvent: event });
   } catch (error: any) {
     console.error(`[ASAAS WEBHOOK CRITICAL ERROR]: ${error.message}`);
     console.error(error.stack);
-    return;
+    return res.status(500).json({ error: "Internal server error during webhook processing" });
   }
 };
 
@@ -369,6 +390,8 @@ app.post("/api/webhooks/kiwify", async (req: any, res: any) => {
       endsAt.setDate(endsAt.getDate() + days);
 
       await updateDoc(userRef, {
+        status: "active",
+        isActive: true,
         subscriptionStatus: "active",
         subscriptionEndsAt: endsAt.toISOString(),
         plan: plan?.name?.toLowerCase().includes("anual") ? "anual" : "mensal",

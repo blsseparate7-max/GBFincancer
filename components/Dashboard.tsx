@@ -87,7 +87,13 @@ const Dashboard: React.FC<DashProps> = ({
   const isMigratingRef = useRef(false);
   useEffect(() => {
     if (uid && transactions.length > 0 && !isMigratingRef.current) {
-      const hasOldData = transactions.some(t => !t.walletName || !t.categoryName);
+      const hasOldData = transactions.some(t => {
+        // Se for cartão de crédito ou transferência, não precisa de walletName comum
+        if (t.paymentMethod === 'CARD' || t.cardId || t.type === 'TRANSFER') {
+          return !t.categoryName;
+        }
+        return !t.walletName || !t.categoryName;
+      });
       if (hasOldData) {
         isMigratingRef.current = true;
         migrateTransactions(uid).finally(() => {
@@ -810,13 +816,22 @@ const Dashboard: React.FC<DashProps> = ({
               <div className="space-y-5">
                 <div className="space-y-1.5">
                   <label className="text-[9px] font-black text-[var(--text-muted)] uppercase ml-4 tracking-widest">Categoria</label>
-                  <input 
-                    className="w-full bg-[var(--bg-body)] rounded-2xl p-5 text-sm font-black text-[var(--text-primary)] outline-none border border-transparent focus:border-[var(--green-whatsapp)] transition-all shadow-inner" 
-                    placeholder="Ex: Alimentação, Lazer..." 
+                  <select 
+                    className="w-full bg-[var(--bg-body)] rounded-2xl p-5 text-sm font-black text-[var(--text-primary)] outline-none border border-transparent focus:border-[var(--green-whatsapp)] transition-all shadow-inner appearance-none"
                     value={limitCat} 
                     onChange={e => setLimitCat(e.target.value)} 
                     disabled={!!editingLimit}
-                  />
+                  >
+                    <option value="">Selecionar Categoria</option>
+                    {categories.filter(c => c.type === 'EXPENSE').map(c => (
+                      <option key={c.id} value={c.name}>{c.name}</option>
+                    ))}
+                    {!categories.some(c => c.name === 'Alimentação') && <option value="Alimentação">Alimentação</option>}
+                    {!categories.some(c => c.name === 'Transporte') && <option value="Transporte">Transporte</option>}
+                    {!categories.some(c => c.name === 'Lazer') && <option value="Lazer">Lazer</option>}
+                    {!categories.some(c => c.name === 'Saúde') && <option value="Saúde">Saúde</option>}
+                    <option value="Outros">Outros</option>
+                  </select>
                 </div>
                 
                 <div className="space-y-1.5">

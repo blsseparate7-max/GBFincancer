@@ -324,9 +324,18 @@ export const standardizeTransaction = (data: any): any => {
   const rawDate = data.date || data.timestamp || new Date().toISOString();
   let finalDate = new Date().toISOString();
   try {
-    const d = new Date(rawDate);
-    if (!isNaN(d.getTime())) {
-      finalDate = d.toISOString();
+    if (rawDate) {
+      let d: Date | null = null;
+      if (typeof rawDate.toDate === 'function') {
+        d = rawDate.toDate();
+      } else if (rawDate.seconds !== undefined) {
+        d = new Date(rawDate.seconds * 1000);
+      } else {
+        d = new Date(rawDate);
+      }
+      if (d && !isNaN(d.getTime())) {
+        finalDate = d.toISOString();
+      }
     }
   } catch (e) {}
 
@@ -334,7 +343,9 @@ export const standardizeTransaction = (data: any): any => {
   const paymentMethod = data.paymentMethod === 'CREDIT' || data.paymentMethod === 'CARTÃO' ? 'CARD' : (data.paymentMethod || 'CASH');
   
   // Garantir que walletIds nunca sejam undefined (quebra o Firestore)
-  const walletId = data.walletId || data.sourceWalletId || null;
+  const walletId = data.walletId || data.sourceWalletId || data.fromWalletId || null;
+  const sourceWalletId = data.sourceWalletId || data.fromWalletId || (type === 'EXPENSE' ? walletId : null);
+  const targetWalletId = data.targetWalletId || data.toWalletId || (type === 'INCOME' ? walletId : null);
 
   const standardized = {
     amount: amountValue,
@@ -346,6 +357,8 @@ export const standardizeTransaction = (data: any): any => {
     paymentMethod,
     walletId,
     walletName: data.walletName || null,
+    sourceWalletId,
+    targetWalletId,
     date: finalDate,
     cycleKey: data.cycleKey || `${new Date(finalDate).getFullYear()}-${String(new Date(finalDate).getMonth() + 1).padStart(2, '0')}`,
     source: data.source || 'CHAT',
@@ -386,8 +399,15 @@ export const normalizeTransaction = (docSnap: any): any => {
   let finalDate = new Date().toISOString().split('T')[0];
   try {
     if (rawDate) {
-      const d = new Date(rawDate);
-      if (!isNaN(d.getTime())) {
+      let d: Date | null = null;
+      if (typeof rawDate.toDate === 'function') {
+        d = rawDate.toDate();
+      } else if (rawDate.seconds !== undefined) {
+        d = new Date(rawDate.seconds * 1000);
+      } else {
+        d = new Date(rawDate);
+      }
+      if (d && !isNaN(d.getTime())) {
         finalDate = d.toISOString().split('T')[0];
       }
     }
