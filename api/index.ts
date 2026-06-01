@@ -10,7 +10,8 @@ import {
   serverTimestamp, 
   doc, 
   getDoc, 
-  updateDoc 
+  updateDoc,
+  deleteDoc
 } from "firebase/firestore";
 
 import { fileURLToPath } from "url";
@@ -411,5 +412,77 @@ app.post("/api/webhooks/kiwify", async (req: any, res: any) => {
     res.status(500).json({ error: "Internal error" });
   }
 });
+
+// Endpoint to permanently delete a user from Firebase Auth & Firestore
+const adminDeleteUserHandler = async (req: any, res: any) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    return res.status(401).json({ error: "Não autorizado: Token JWT ausente." });
+  }
+
+  const idToken = authHeader.split("Bearer ")[1];
+  const { targetUid } = req.body;
+
+  if (!targetUid) {
+    return res.status(400).json({ error: "ID do usuário (targetUid) é obrigatório." });
+  }
+
+  try {
+    // 1. Verificar o ID token do admin usando admin SDK
+    const decodedToken = await admin.auth().verifyIdToken(idToken);
+    const adminEmail = decodedToken.email?.toLowerCase();
+    const adminUid = decodedToken.uid;
+
+    // 2. Validar permissão (CEO / Administrativa)
+    const isAllowedEmail = adminEmail === "blsseparate7@gmail.com" || adminEmail === "gbfinancer@gmail.com";
+    let isAllowed = isAllowedEmail;
+
+    if (!isAllowed) {
+      const db = getDb();
+      const adminDoc = await getDoc(doc(db, "users", adminUid));
+      if (adminDoc.exists()) {
+        const adminData = adminDoc.data();
+        if (adminData && adminData.role === 'admin') {
+          isAllowed = true;
+        }
+      }
+    }
+
+    if (!isAllowed) {
+      return res.status(403).json({ error: "Acesso negado: apenas administradores autorizados." });
+    }
+
+    console.log(`[CEO DELETE] Admin ${adminEmail} (${adminUid}) deleting target user ${targetUid}`);
+
+    // 3. Excluir do Firebase Authentication (Auth)
+    try {
+      await admin.auth().deleteUser(targetUid);
+      console.log(`[CEO DELETE] Usuário ${targetUid} removido com sucesso do Firebase Auth.`);
+    } catch (authErr: any) {
+      if (authErr.code === 'auth/user-not-found') {
+        console.warn(`[CEO DELETE] Usuário ${targetUid} não existia no Firebase Auth (já removido ou inexistente).`);
+      } else {
+        throw authErr;
+      }
+    }
+
+    // 4. Garantir exclusão física do documento Firestore
+    const db = getDb();
+    const userRef = doc(db, "users", targetUid);
+    const userSnap = await getDoc(userRef);
+    if (userSnap.exists()) {
+      await deleteDoc(userRef);
+      console.log(`[CEO DELETE] Documento firestore do usuário ${targetUid} excluído.`);
+    }
+
+    res.json({ success: true, message: `Usuário ${targetUid} excluído permanentemente.` });
+  } catch (err: any) {
+    console.error("[CEO DELETE ERROR]:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+};
+
+app.post("/api/admin/delete-user", adminDeleteUserHandler);
+app.post("/admin/delete-user", adminDeleteUserHandler);
 
 export default app;

@@ -1760,6 +1760,31 @@ const executeDispatch = async (uid: string, event: FinanceEvent) => {
 
       case 'ADMIN_DELETE_USER': {
         const { targetUid, adminId } = event.payload;
+        
+        // 1. Chamar o backend seguro para remover da Auth do Firebase (via Admin SDK)
+        try {
+          const idToken = await auth.currentUser?.getIdToken();
+          if (idToken) {
+            const resp = await fetch("/api/admin/delete-user", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${idToken}`
+              },
+              body: JSON.stringify({ targetUid })
+            });
+            if (!resp.ok) {
+              const errData = await resp.json().catch(() => ({}));
+              console.error("[ADMIN_DELETE_USER API Error]:", errData);
+            } else {
+              console.log("[ADMIN_DELETE_USER API Success]: Usuário removido do Firebase Auth.");
+            }
+          }
+        } catch (apiErr) {
+          console.error("Erro ao solicitar exclusão da Auth via API:", apiErr);
+        }
+
+        // 2. Chamar a deleção do documento Firestore local
         await deleteDoc(doc(db, "users", targetUid));
         
         // Log de Auditoria
