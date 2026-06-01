@@ -295,9 +295,21 @@ const Reminders: React.FC<RemindersProps> = ({ bills, wallets, uid, loading, isE
                       {isReceive ? 'Recebi' : 'Paguei'}
                     </button>
                   )}
-                  <div className="flex gap-1">
-                    <button onClick={() => handleEdit(bill)} className="opacity-0 group-hover:opacity-100 p-1.5 text-[var(--text-muted)] hover:text-blue-500 transition-all">✏️</button>
-                    <button onClick={() => handleDelete(bill.id)} className="opacity-0 group-hover:opacity-100 p-1.5 text-red-300 hover:text-red-500 transition-all">🗑️</button>
+                  <div className="flex gap-1.5 items-center">
+                    <button 
+                      onClick={() => handleEdit(bill)} 
+                      className="opacity-100 md:opacity-0 md:group-hover:opacity-100 w-9 h-9 flex items-center justify-center bg-[var(--bg-body)] border border-[var(--border)] rounded-xl text-sm hover:text-blue-500 hover:border-blue-500/20 transition-all active:scale-90 cursor-pointer"
+                      title="Editar"
+                    >
+                      ✏️
+                    </button>
+                    <button 
+                      onClick={() => handleDelete(bill.id)} 
+                      className="opacity-100 md:opacity-0 md:group-hover:opacity-100 w-9 h-9 flex items-center justify-center bg-[var(--bg-body)] border border-[var(--border)] rounded-xl text-sm hover:text-red-500 hover:border-red-500/20 transition-all active:scale-90 cursor-pointer"
+                      title="Excluir"
+                    >
+                      🗑️
+                    </button>
                   </div>
                 </div>
               </div>

@@ -510,6 +510,13 @@ const AdminPanel: React.FC<{ currentAdminId: string }> = ({ currentAdminId }) =>
                                     >
                                       ✖️
                                     </button>
+                                    <button 
+                                      onClick={() => handleDeleteUser(user.uid)}
+                                      className="p-1.5 bg-rose-500/20 text-rose-550 hover:bg-rose-600 hover:text-white rounded-lg transition-all text-[10px] font-black"
+                                      title="Excluir Usuário do Banco"
+                                    >
+                                      🗑️
+                                    </button>
                                   </div>
                                 </div>
                               </td>
