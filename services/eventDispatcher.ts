@@ -416,13 +416,26 @@ const executeDispatch = async (uid: string, event: FinanceEvent) => {
         let { amount, targetWalletId, targetWalletName, walletId, walletName, description, category, date, paymentMethod, reminderId } = payload;
         
         // Resolve wallet and category OUTSIDE transaction
-        const walletInfo = await resolveWallet(uid, targetWalletId || walletId, targetWalletName || walletName);
+        let walletInfo = await resolveWallet(uid, targetWalletId || walletId, targetWalletName || walletName);
+        if (!walletInfo) {
+          const walletsSnap = await getDocs(collection(userRef, "wallets"));
+          if (!walletsSnap.empty) {
+            const d = walletsSnap.docs[0];
+            walletInfo = { id: d.id, name: d.data().name };
+          }
+        }
         const catInfo = await getCategoryInfo(uid, category || 'Recebimento', description);
 
         await runTransaction(db, async (transaction) => {
           // 1. READS AT THE TOP
           const userSnap = await transaction.get(userRef);
           const userData = userSnap.data();
+
+          let reminderSnap = null;
+          if (reminderId) {
+            const reminderRef = doc(userRef, "reminders", reminderId);
+            reminderSnap = await transaction.get(reminderRef);
+          }
 
           let finalAmount = Number(amount);
           let finalDescription = description;
@@ -438,15 +451,7 @@ const executeDispatch = async (uid: string, event: FinanceEvent) => {
             }
           }
           
-          // Se ainda não tem walletInfo, tenta pegar a primeira disponível (fallback)
           let finalWalletInfo = walletInfo;
-          if (!finalWalletInfo) {
-            const walletsSnap = await getDocs(collection(userRef, "wallets"));
-            if (!walletsSnap.empty) {
-              const d = walletsSnap.docs[0];
-              finalWalletInfo = { id: d.id, name: d.data().name };
-            }
-          }
           
           const transRef = doc(collection(userRef, "transactions"));
           
@@ -496,54 +501,50 @@ const executeDispatch = async (uid: string, event: FinanceEvent) => {
           }
 
           // Atualizar lembrete se fornecido (Surgical fix for Step 3)
-          if (reminderId) {
+          if (reminderSnap && reminderSnap.exists()) {
             const reminderRef = doc(userRef, "reminders", reminderId);
-            const reminderSnap = await transaction.get(reminderRef);
-            
-            if (reminderSnap.exists()) {
-              const reminderData = reminderSnap.data();
-              transaction.update(reminderRef, {
-                isPaid: true,
-                status: 'received',
-                resolved: true,
-                paidAt: serverTimestamp(),
-                updatedAt: serverTimestamp(),
-                confirmationProcessed: true,
-                confirmationProcessedAt: serverTimestamp()
-              });
+            const reminderData = reminderSnap.data();
+            transaction.update(reminderRef, {
+              isPaid: true,
+              status: 'received',
+              resolved: true,
+              paidAt: new Date().toISOString(),
+              updatedAt: serverTimestamp(),
+              confirmationProcessed: true,
+              confirmationProcessedAt: serverTimestamp()
+            });
 
-              // Se for recorrente, cria o do próximo período
-              if (reminderData.recurring) {
-                const nextDate = calculateNextDueDate(
-                  reminderData.dueDate, 
-                  reminderData.frequency || 'MONTHLY', 
-                  reminderData.dueDay
-                );
-                
-                const nextBillRef = doc(collection(userRef, "reminders"));
-                transaction.set(nextBillRef, {
-                  description: reminderData.description,
-                  amount: reminderData.amount,
-                  dueDay: reminderData.dueDay,
-                  category: reminderData.category,
-                  categoryId: reminderData.categoryId || null,
-                  categoryName: reminderData.categoryName || reminderData.category || null,
-                  type: reminderData.type || 'RECEIVE',
-                  dueDate: nextDate.toISOString(),
-                  isPaid: false,
-                  recurring: true,
-                  frequency: reminderData.frequency || 'MONTHLY',
-                  targetWalletName: reminderData.targetWalletName || null,
-                  isQA,
-                  source,
-                  cycleKey: getCycleKey(nextDate.toISOString()),
-                  createdAt: serverTimestamp(),
-                  updatedAt: serverTimestamp(),
-                  isActive: true,
-                  status: 'pending',
-                  resolved: false
-                });
-              }
+            // Se for recorrente, cria o do próximo período
+            if (reminderData.recurring) {
+              const nextDate = calculateNextDueDate(
+                reminderData.dueDate, 
+                reminderData.frequency || 'MONTHLY', 
+                reminderData.dueDay
+              );
+              
+              const nextBillRef = doc(collection(userRef, "reminders"));
+              transaction.set(nextBillRef, {
+                description: reminderData.description,
+                amount: reminderData.amount,
+                dueDay: reminderData.dueDay,
+                category: reminderData.category,
+                categoryId: reminderData.categoryId || null,
+                categoryName: reminderData.categoryName || reminderData.category || null,
+                type: reminderData.type || 'RECEIVE',
+                dueDate: nextDate.toISOString(),
+                isPaid: false,
+                recurring: true,
+                frequency: reminderData.frequency || 'MONTHLY',
+                targetWalletName: reminderData.targetWalletName || null,
+                isQA,
+                source,
+                cycleKey: getCycleKey(nextDate.toISOString()),
+                createdAt: serverTimestamp(),
+                updatedAt: serverTimestamp(),
+                isActive: true,
+                status: 'pending',
+                resolved: false
+              });
             }
           }
 
@@ -780,15 +781,41 @@ const executeDispatch = async (uid: string, event: FinanceEvent) => {
       case 'UPDATE_LIMIT': {
         const { category, amount, id } = event.payload;
         // Sempre sanitiza o ID para evitar slashes que quebram o Firestore
-        const limitId = id ? getCategoryId(id) : getCategoryId(normalizeCategoryName(category));
+        const normalizedBase = normalizeCategoryName(category);
+        const limitId = id ? getCategoryId(id) : getCategoryId(normalizedBase);
+        
+        let spent = 0;
+        const now = new Date();
+        const currentMonth = now.getMonth();
+        const currentYear = now.getFullYear();
+        const monthKey = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}`;
+
+        try {
+          // Buscamos todas as transações de despesa da categoria selecionada para computar o gasto no mês atual
+          const transQ = query(
+            collection(userRef, "transactions"),
+            where("category", "==", normalizedBase),
+            where("type", "==", "EXPENSE")
+          );
+          const transSnap = await getDocs(transQ);
+          transSnap.docs.forEach(docSnap => {
+            const data = docSnap.data();
+            if (data.date && data.date.startsWith(monthKey)) {
+              spent += Math.abs(Number(data.amount) || 0);
+            }
+          });
+        } catch (err) {
+          console.error("Erro ao calcular o progresso real para a categoria limite:", err);
+        }
+
         const limitData: any = {
           limit: amount,
           isActive: true,
+          spent: spent,
           updatedAt: serverTimestamp()
         };
         if (!id) {
-          limitData.category = normalizeCategoryName(category);
-          limitData.spent = 0;
+          limitData.category = normalizedBase;
         }
         await setDoc(doc(userRef, "limits", limitId), limitData, { merge: true });
         break;

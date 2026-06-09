@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo } from 'react';
-import { Bill, PaymentMethod, Wallet } from '../types';
+import { Bill, PaymentMethod, Wallet, UserCategory } from '../types';
 import { dispatchEvent } from '../services/eventDispatcher';
 import { parseSafeDate } from '../services/dateUtils';
 import MoneyInput from './MoneyInput';
@@ -12,9 +12,10 @@ interface RemindersProps {
   uid: string;
   loading?: boolean;
   isExpired?: boolean;
+  userCategories?: UserCategory[];
 }
 
-const Reminders: React.FC<RemindersProps> = ({ bills, wallets, uid, loading, isExpired = false }) => {
+const Reminders: React.FC<RemindersProps> = ({ bills, wallets, uid, loading, isExpired = false, userCategories = [] }) => {
   const [activeTab, setActiveTab] = useState<'pending' | 'paid' | 'next'>('pending');
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingBill, setEditingBill] = useState<Bill | null>(null);
@@ -30,6 +31,36 @@ const Reminders: React.FC<RemindersProps> = ({ bills, wallets, uid, loading, isE
   const [cat, setCat] = useState('Contas Fixas');
   const [type, setType] = useState<'PAY' | 'RECEIVE'>('PAY');
   const [walletName, setWalletName] = useState('');
+  const [isCustomCategory, setIsCustomCategory] = useState(false);
+
+  // Categorias dinâmicas vindas do dashboard/categories
+  const expenseCategories = useMemo(() => {
+    if (userCategories && userCategories.length > 0) {
+      const filtered = userCategories.filter(c => c.type === 'EXPENSE').map(c => c.name);
+      if (filtered.length > 0) {
+        return filtered;
+      }
+    }
+    return ['Alimentação', 'Transporte', 'Lazer', 'Saúde', 'Moradia', 'Contas Fixas', 'Outros'];
+  }, [userCategories]);
+
+  const incomeCategories = useMemo(() => {
+    if (userCategories && userCategories.length > 0) {
+      const filtered = userCategories.filter(c => c.type === 'INCOME').map(c => c.name);
+      if (filtered.length > 0) {
+        return filtered;
+      }
+    }
+    return ['Salário', 'Investimentos', 'Freelance', 'Outros'];
+  }, [userCategories]);
+
+  const activeCategories = useMemo(() => {
+    const list = type === 'RECEIVE' ? incomeCategories : expenseCategories;
+    if (cat && !isCustomCategory && !list.includes(cat)) {
+      return [...list, cat];
+    }
+    return list;
+  }, [type, incomeCategories, expenseCategories, cat, isCustomCategory]);
 
   const format = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v);
 
@@ -38,10 +69,25 @@ const Reminders: React.FC<RemindersProps> = ({ bills, wallets, uid, loading, isE
     setDesc(bill.description);
     setVal(bill.amount.toString());
     setDay(bill.dueDay.toString());
-    setCat(bill.category || (bill.type === 'RECEIVE' ? 'Recebimento' : 'Contas Fixas'));
-    setType(bill.type || 'PAY');
+    const currentCat = bill.category || (bill.type === 'RECEIVE' ? 'Recebimento' : 'Contas Fixas');
+    setCat(currentCat);
+    const billType = bill.type || 'PAY';
+    setType(billType);
     setWalletName((bill as any).targetWalletName || '');
+
+    // Determina se a categoria é personalizada
+    const list = billType === 'RECEIVE' ? incomeCategories : expenseCategories;
+    const isCustom = !list.includes(currentCat);
+    setIsCustomCategory(isCustom);
+
     setShowAddForm(true);
+  };
+
+  const handleTypeChange = (newType: 'PAY' | 'RECEIVE') => {
+    setType(newType);
+    setIsCustomCategory(false);
+    const list = newType === 'RECEIVE' ? incomeCategories : expenseCategories;
+    setCat(list[0] || (newType === 'RECEIVE' ? 'Recebimento' : 'Contas Fixas'));
   };
 
   const filteredBills = useMemo(() => {
@@ -138,7 +184,7 @@ const Reminders: React.FC<RemindersProps> = ({ bills, wallets, uid, loading, isE
       source: 'ui',
       createdAt: new Date()
     });
-    setDesc(''); setVal(''); setWalletName(''); setType('PAY'); setShowAddForm(false); setEditingBill(null);
+    setDesc(''); setVal(''); setWalletName(''); setType('PAY'); setCat('Contas Fixas'); setIsCustomCategory(false); setShowAddForm(false); setEditingBill(null);
     setIsLoading(false);
   };
 
@@ -211,7 +257,17 @@ const Reminders: React.FC<RemindersProps> = ({ bills, wallets, uid, loading, isE
           <h1 className="text-3xl font-black text-[var(--text-primary)] uppercase italic tracking-tighter">Lembretes</h1>
         </div>
         <button 
-          onClick={() => setShowAddForm(true)}
+          onClick={() => {
+            setEditingBill(null);
+            setDesc('');
+            setVal('');
+            setDay('10');
+            setType('PAY');
+            setCat(expenseCategories[0] || 'Contas Fixas');
+            setWalletName('');
+            setIsCustomCategory(false);
+            setShowAddForm(true);
+          }}
           className="bg-[var(--green-whatsapp)] text-white px-4 py-2 rounded-xl text-[10px] font-black uppercase shadow-lg active:scale-95 transition-all"
         >
           + Nova Conta
@@ -369,20 +425,32 @@ const Reminders: React.FC<RemindersProps> = ({ bills, wallets, uid, loading, isE
       {showAddForm && (
         <div className="fixed inset-0 z-[1000] bg-black/40 backdrop-blur-sm flex items-center justify-center p-6">
           <div className="bg-[var(--surface)] w-full max-w-sm rounded-[3rem] p-10 shadow-2xl relative animate-fade">
-            <button onClick={() => { setShowAddForm(false); setEditingBill(null); setDesc(''); setVal(''); }} className="absolute top-8 right-8 text-[var(--text-muted)] font-black text-xl">✕</button>
+            <button 
+              onClick={() => { 
+                setShowAddForm(false); 
+                setEditingBill(null); 
+                setDesc(''); 
+                setVal(''); 
+                setCat('Contas Fixas'); 
+                setIsCustomCategory(false); 
+              }} 
+              className="absolute top-8 right-8 text-[var(--text-muted)] font-black text-xl"
+            >
+              ✕
+            </button>
             <h3 className="text-xl font-black text-[var(--text-primary)] uppercase italic mb-8 text-center">{editingBill ? 'Editar Lembrete' : 'Novo Lembrete'}</h3>
             
             <div className="space-y-4">
               {!editingBill && (
                 <div className="flex bg-[var(--bg-body)] p-1 rounded-2xl border border-[var(--border)] mb-4">
                   <button 
-                    onClick={() => { setType('PAY'); setCat('Contas Fixas'); }}
+                    onClick={() => handleTypeChange('PAY')}
                     className={`flex-1 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${type === 'PAY' ? 'bg-[var(--surface)] text-[var(--green-whatsapp)] shadow-sm' : 'text-[var(--text-muted)]'}`}
                   >
                     A Pagar
                   </button>
                   <button 
-                    onClick={() => { setType('RECEIVE'); setCat('Recebimento'); }}
+                    onClick={() => handleTypeChange('RECEIVE')}
                     className={`flex-1 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${type === 'RECEIVE' ? 'bg-[var(--surface)] text-blue-500 shadow-sm' : 'text-[var(--text-muted)]'}`}
                   >
                     A Receber
@@ -415,7 +483,46 @@ const Reminders: React.FC<RemindersProps> = ({ bills, wallets, uid, loading, isE
               </div>
               <div className="space-y-1">
                 <label className="text-[9px] font-black text-[var(--text-muted)] uppercase ml-2 tracking-widest">Categoria</label>
-                <input className="w-full bg-[var(--bg-body)] rounded-2xl p-4 text-sm font-bold outline-none text-[var(--text-primary)]" value={cat} onChange={e => setCat(e.target.value)} />
+                {!isCustomCategory ? (
+                  <select 
+                    className="w-full bg-[var(--bg-body)] rounded-2xl p-4 text-sm font-bold outline-none text-[var(--text-primary)] cursor-pointer" 
+                    value={cat} 
+                    onChange={e => {
+                      if (e.target.value === '__CUSTOM__') {
+                        setIsCustomCategory(true);
+                        setCat('');
+                      } else {
+                        setCat(e.target.value);
+                      }
+                    }}
+                  >
+                    {activeCategories.map(c => (
+                      <option key={c} value={c}>{c}</option>
+                    ))}
+                    <option value="__CUSTOM__">✍️ Outra (Personalizada)...</option>
+                  </select>
+                ) : (
+                  <div className="flex gap-2">
+                    <input 
+                      className="flex-1 bg-[var(--bg-body)] rounded-2xl p-4 text-sm font-bold outline-none text-[var(--text-primary)]" 
+                      placeholder="Nome da categoria..." 
+                      value={cat} 
+                      onChange={e => setCat(e.target.value)} 
+                    />
+                    <button 
+                      type="button"
+                      onClick={() => {
+                        setIsCustomCategory(false);
+                        const list = type === 'RECEIVE' ? incomeCategories : expenseCategories;
+                        setCat(list[0] || (type === 'RECEIVE' ? 'Recebimento' : 'Contas Fixas'));
+                      }}
+                      className="bg-[var(--bg-body)] border border-[var(--border)] text-sm px-4 rounded-2xl hover:text-red-500 transition-all cursor-pointer flex items-center justify-center animate-fade"
+                      title="Voltar para lista"
+                    >
+                      ↩️
+                    </button>
+                  </div>
+                )}
               </div>
               <div className="space-y-1">
                 <label className="text-[9px] font-black text-[var(--text-muted)] uppercase ml-2 tracking-widest">Carteira Padrão (Opcional)</label>

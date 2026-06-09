@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { SavingGoal, Transaction, Contribution, UserSession, Wallet } from '../types';
+import { SavingGoal, Transaction, Contribution, UserSession, Wallet, UserCategory } from '../types';
 import { dispatchEvent } from '../services/eventDispatcher';
 import { parseSafeDate } from '../services/dateUtils';
 import MoneyInput from './MoneyInput';
@@ -15,9 +15,10 @@ interface GoalsProps {
   user: UserSession;
   loading?: boolean;
   isExpired?: boolean;
+  userCategories?: UserCategory[];
 }
 
-const Goals: React.FC<GoalsProps> = ({ goals, transactions, wallets, uid, user, loading, isExpired = false }) => {
+const Goals: React.FC<GoalsProps> = ({ goals, transactions, wallets, uid, user, loading, isExpired = false, userCategories = [] }) => {
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingGoalId, setEditingGoalId] = useState<string | null>(null);
   const [newGoalName, setNewGoalName] = useState('');
@@ -46,6 +47,26 @@ const Goals: React.FC<GoalsProps> = ({ goals, transactions, wallets, uid, user, 
   const categories = ['Viagem', 'Carro', 'Casa', 'Reserva', 'Educação', 'Lazer', 'Outros'];
   const priorities = ['Baixa', 'Média', 'Alta'];
   const icons = ['💰', '🚗', '🏠', '✈️', '🎓', '🏥', '🎮', '💍', '👶', '🏖️', '💻', '📈'];
+
+  // Categorias dinâmicas para despesas vindas do dashboard
+  const expenseCategories = useMemo(() => {
+    if (userCategories && userCategories.length > 0) {
+      const filtered = userCategories.filter(c => c.type === 'EXPENSE').map(c => c.name);
+      if (filtered.length > 0) {
+        return filtered;
+      }
+    }
+    return ['Alimentação', 'Transporte', 'Lazer', 'Saúde', 'Moradia', 'Outros'];
+  }, [userCategories]);
+
+  // Sincroniza a categoria padrão quando abrir o modal de gasto
+  useEffect(() => {
+    if (showGastoModal && expenseCategories.length > 0) {
+      if (!expenseCategories.includes(gastoCat)) {
+        setGastoCat(expenseCategories[0]);
+      }
+    }
+  }, [showGastoModal, expenseCategories, gastoCat]);
 
   // Cálculo da Sobra Mensal e Capacidade de Guardar
   const { sobraMensal, capacidadeGuardar } = useMemo(() => {
@@ -716,7 +737,7 @@ const Goals: React.FC<GoalsProps> = ({ goals, transactions, wallets, uid, user, 
                 value={gastoCat}
                 onChange={e => setGastoCat(e.target.value)}
               >
-                {categories.map(c => <option key={c} value={c}>{c}</option>)}
+                {expenseCategories.map(c => <option key={c} value={c}>{c}</option>)}
               </select>
               <button onClick={handleSpendFromGoal} className="w-full bg-rose-500 text-white py-6 rounded-[2rem] font-black text-[11px] uppercase shadow-xl shadow-rose-500/20 mt-4 active:scale-95 transition-all">
                 💸 Confirmar Gasto

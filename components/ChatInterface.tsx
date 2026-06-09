@@ -55,6 +55,25 @@ const ChatInterface: React.FC<ChatProps> = ({
   const summarySentRef = useRef(false);
   const onboardingPromptSentRef = useRef(false);
 
+  // Sincronia: Se o lembrete de salário/conta pendente for pago/recebido em outra aba, limpa o state pendente no chat
+  useEffect(() => {
+    if (pendingSalaryReminder && reminders.length > 0) {
+      const updated = reminders.find(r => r.id === pendingSalaryReminder.id);
+      if (updated && (updated.isPaid || updated.resolved)) {
+        setPendingSalaryReminder(null);
+      }
+    }
+  }, [reminders, pendingSalaryReminder]);
+
+  useEffect(() => {
+    if (pendingBillReminder && reminders.length > 0) {
+      const updated = reminders.find(r => r.id === pendingBillReminder.id);
+      if (updated && (updated.isPaid || updated.resolved)) {
+        setPendingBillReminder(null);
+      }
+    }
+  }, [reminders, pendingBillReminder]);
+
   const [isCreatingNewCategory, setIsCreatingNewCategory] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState('');
 

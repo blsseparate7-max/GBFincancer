@@ -4,7 +4,8 @@ import {
   TrendingUp, TrendingDown, Wallet as WalletIcon, PiggyBank, 
   AlertCircle, Calendar, Lightbulb, ArrowRight, Target,
   ChevronLeft, ChevronRight, Info, DollarSign, ArrowUpRight, ArrowDownLeft,
-  CheckCircle2, Sparkles, Loader2, Plus, Trophy, ShieldCheck, Activity
+  CheckCircle2, Sparkles, Loader2, Plus, Trophy, ShieldCheck, Activity,
+  Pencil, Trash2
 } from 'lucide-react';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
@@ -408,18 +409,24 @@ export const SpendingLimitsCard: React.FC<{
                   <span className="text-[8px] font-black text-amber-500 uppercase italic">Atenção</span>
                 </div>
               )}
-              <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all">
+              <div className="flex items-center gap-1.5 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-all">
                 <button 
                   onClick={() => onEdit?.(lim)}
-                  className="p-1 px-2 text-[var(--text-muted)] hover:text-[var(--text-primary)] bg-[var(--bg-body)] rounded-lg transition-all"
+                  className="p-1 px-2 text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-body)] rounded-lg transition-all flex items-center justify-center cursor-pointer"
+                  title="Editar limite"
                 >
-                  <Info size={12} />
+                  <Pencil size={12} />
                 </button>
                 <button 
-                  onClick={() => onDelete?.(lim)}
-                  className="p-1 px-2 text-rose-500 hover:bg-rose-500/10 bg-[var(--bg-body)] rounded-lg transition-all"
+                  onClick={() => {
+                    if (window.confirm(`Deseja realmente excluir o teto de gastos da categoria "${lim.category}"?`)) {
+                      onDelete?.(lim);
+                    }
+                  }}
+                  className="p-1 px-2 text-rose-500 hover:bg-rose-500/10 rounded-lg transition-all flex items-center justify-center cursor-pointer"
+                  title="Excluir limite"
                 >
-                  <TrendingDown size={12} />
+                  <Trash2 size={12} />
                 </button>
               </div>
             </div>

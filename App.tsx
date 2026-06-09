@@ -545,9 +545,9 @@ const App: React.FC = () => {
         />
       ) : null;
       case 'calendar': return session ? <CalendarTab transactions={yearlyTransactions} reminders={reminders} loading={loadingReminders || loadingTransactions} /> : null;
-      case 'goals': return session ? <Goals goals={goals} transactions={yearlyTransactions} wallets={wallets} uid={session.uid} user={session} loading={loadingGoals || loadingTransactions} isExpired={!hasAccess()} /> : null;
+      case 'goals': return session ? <Goals goals={goals} transactions={yearlyTransactions} wallets={wallets} uid={session.uid} user={session} loading={loadingGoals || loadingTransactions} isExpired={!hasAccess()} userCategories={categories} /> : null;
       case 'cc': return session ? <CreditCard transactions={yearlyTransactions} uid={session.uid} cards={cards} wallets={wallets} loading={loadingCards} isExpired={!hasAccess()} /> : null;
-      case 'reminders': return session ? <Reminders bills={reminders} wallets={wallets} uid={session.uid} loading={loadingReminders} isExpired={!hasAccess()} /> : null;
+      case 'reminders': return session ? <Reminders bills={reminders} wallets={wallets} uid={session.uid} loading={loadingReminders} isExpired={!hasAccess()} userCategories={categories} /> : null;
       case 'messages': return session ? <Messages notifications={notifications} /> : null;
       case 'resumo': return session ? <YearlySummary transactions={yearlyTransactions} goals={goals} wallets={wallets} /> : null;
       case 'insights': return session ? <Insights transactions={yearlyTransactions} limits={limits} /> : null;

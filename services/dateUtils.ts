@@ -1,6 +1,20 @@
 
-export const parseSafeDate = (dateStr?: string | null): Date => {
+export const parseSafeDate = (dateStr?: any): Date => {
   if (!dateStr || dateStr === 'null' || dateStr === 'undefined') return new Date();
+  
+  // Handle Firestore Timestamp object (has .toDate or .seconds)
+  if (typeof dateStr === 'object') {
+    if (typeof dateStr.toDate === 'function') {
+      return dateStr.toDate();
+    }
+    if (typeof dateStr.seconds === 'number') {
+      return new Date(dateStr.seconds * 1000 + Math.floor((dateStr.nanoseconds || 0) / 1000000));
+    }
+    // Check if it's already a JS Date object
+    if (dateStr instanceof Date) {
+      return dateStr;
+    }
+  }
   
   let formattedDate = dateStr;
   
