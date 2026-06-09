@@ -11,7 +11,10 @@ import {
   doc, 
   getDoc, 
   updateDoc,
-  deleteDoc
+  deleteDoc,
+  query,
+  where,
+  getDocs
 } from "firebase/firestore";
 
 import { fileURLToPath } from "url";
@@ -207,6 +210,15 @@ const checkoutAsaasHandler = async (req: any, res: any) => {
       ...AUTH_BYPASS
     });
 
+    // Update user profile immediately to link Asaas identifiers for flawless webhook fallbacks
+    const userRef = doc(db, "users", uid);
+    await updateDoc(userRef, {
+      asaasCustomerId: customerId,
+      asaasSubscriptionId: subscription.id,
+      updatedAt: serverTimestamp(),
+      ...AUTH_BYPASS
+    });
+
     console.log(`[ASAAS] Fetching payment for subscription ${subscription.id}`);
     const payments = await asaasFetch(`/payments?subscription=${subscription.id}&limit=1`);
     const firstPayment = payments.data?.[0];
@@ -271,28 +283,69 @@ const asaasWebhookHandler = async (req: any, res: any) => {
 
     console.log(`[ASAAS WEBHOOK] External Reference identified: ${externalReference}`);
 
-    if (!externalReference) {
-      console.log("[ASAAS WEBHOOK] Ignored - No externalReference found in payload");
-      return res.status(200).json({ received: true, message: "Ignored - No reference found" });
-    }
-
     const db = getDb();
-    const sessionDoc = await getDoc(doc(db, "checkoutSessions", externalReference));
-    
-    if (!sessionDoc.exists()) {
-      console.warn(`[ASAAS WEBHOOK] Session ${externalReference} not found in Firestore. Payment might be from an old session or different system.`);
-      return res.status(200).json({ received: true, message: "Session not found in DB" });
+    let uid = '';
+    let plan = 'mensal';
+    let sessionFound = false;
+
+    // 1. Try finding by checkout session reference
+    if (externalReference) {
+      const sessionDoc = await getDoc(doc(db, "checkoutSessions", externalReference));
+      if (sessionDoc.exists()) {
+        const sessionData = sessionDoc.data()!;
+        uid = sessionData.uid;
+        plan = sessionData.plan || 'mensal';
+        sessionFound = true;
+        console.log(`[ASAAS WEBHOOK] Found user ${uid} and plan ${plan} via checkoutSession: ${externalReference}`);
+      }
     }
 
-    const { uid, plan } = sessionDoc.data()!;
-    const userRef = doc(db, "users", uid);
-    
-    console.log(`[ASAAS WEBHOOK] Processing for user ${uid}, plan ${plan}`);
+    // 2. Proactive Fallback Lookup: Search by Asaas Customer ID or Subscription ID
+    if (!uid) {
+      console.log(`[ASAAS WEBHOOK] Session matching ${externalReference} was not found or is empty. Proceeding with robust fallback query in user base...`);
+      const targetCustomerId = payment?.customer || subscription?.customer || billing?.customer;
+      const targetSubscriptionId = subscriptionId;
 
+      if (targetCustomerId || targetSubscriptionId) {
+        const usersRef = collection(db, "users");
+
+        if (targetCustomerId) {
+          const q = query(usersRef, where("asaasCustomerId", "==", targetCustomerId));
+          const snap = await getDocs(q);
+          if (!snap.empty) {
+            uid = snap.docs[0].id;
+            const userData = snap.docs[0].data();
+            plan = userData.plan || 'mensal';
+            console.log(`[ASAAS WEBHOOK] Fallback Success! Located user ${uid} through asaasCustomerId: ${targetCustomerId}`);
+          }
+        }
+
+        if (!uid && targetSubscriptionId) {
+          const q = query(usersRef, where("asaasSubscriptionId", "==", targetSubscriptionId));
+          const snap = await getDocs(q);
+          if (!snap.empty) {
+            uid = snap.docs[0].id;
+            const userData = snap.docs[0].data();
+            plan = userData.plan || 'mensal';
+            console.log(`[ASAAS WEBHOOK] Fallback Success! Located user ${uid} through asaasSubscriptionId: ${targetSubscriptionId}`);
+          }
+        }
+      }
+    }
+
+    if (!uid) {
+      console.warn(`[ASAAS WEBHOOK] Ignored - Could not identify any user mapping for this Asaas event payload (${event}).`);
+      return res.status(200).json({ received: true, message: "Ignored - User not identified" });
+    }
+
+    const userRef = doc(db, "users", uid);
+    console.log(`[ASAAS WEBHOOK] Processing verified update for user: ${uid} (Plan: ${plan})`);
+
+    // Strictly approve only real payment settlement events.
+    // Explicitly excluding 'SUBSCRIPTION_CREATED' prevents checkout abandoned activation bypass.
     const isApproved = [
       'PAYMENT_CONFIRMED', 
       'PAYMENT_RECEIVED', 
-      'SUBSCRIPTION_CREATED', 
       'PAYMENT_RECEIVED_IN_CASH',
       'PAYMENT_CONFIRMED_BY_BANK_SLIP'
     ].includes(event);
@@ -305,9 +358,27 @@ const asaasWebhookHandler = async (req: any, res: any) => {
     ].includes(event);
 
     if (isApproved) {
-      console.log(`[ASAAS WEBHOOK] PAYMENT APPROVED! Updating user ${uid} to active.`);
+      console.log(`[ASAAS WEBHOOK] PAYMENT APPROVED! Activating or expanding subscription access for user ${uid}.`);
       const days = plan === 'anual' ? 365 : 30;
-      const endsAt = new Date();
+      let endsAt = new Date();
+
+      // Retrieve existing subscription state to calculate early-renewal day accumulation
+      try {
+        const userSnap = await getDoc(userRef);
+        if (userSnap.exists()) {
+          const userData = userSnap.data();
+          if (userData && userData.subscriptionEndsAt) {
+            const currentEnd = new Date(userData.subscriptionEndsAt);
+            if (currentEnd > endsAt) {
+              endsAt = currentEnd;
+              console.log(`[ASAAS WEBHOOK] early-renewal detected. Day compilation begins from active future end date: ${endsAt.toISOString()}`);
+            }
+          }
+        }
+      } catch (err) {
+        console.error("[ASAAS WEBHOOK] Failed to read active expiration profile forEarlyRenewal calculation:", err);
+      }
+
       endsAt.setDate(endsAt.getDate() + days);
 
       await updateDoc(userRef, {
@@ -317,20 +388,24 @@ const asaasWebhookHandler = async (req: any, res: any) => {
         subscriptionEndsAt: endsAt.toISOString(),
         plan: plan || 'mensal',
         paymentProvider: 'asaas',
+        asaasCustomerId: payment?.customer || subscription?.customer || billing?.customer || '',
+        asaasSubscriptionId: subscriptionId || '',
         lastOrderId: payment?.id || subscription?.id || billing?.id,
         updatedAt: serverTimestamp(),
         ...AUTH_BYPASS
       });
       
-      await updateDoc(doc(db, "checkoutSessions", externalReference), {
-        status: 'completed', 
-        updatedAt: serverTimestamp(), 
-        webhookEvent: event,
-        ...AUTH_BYPASS
-      });
-      console.log(`[ASAAS WEBHOOK] User ${uid} updated successfully. Subscription ends at: ${endsAt.toISOString()}`);
+      if (sessionFound && externalReference) {
+        await updateDoc(doc(db, "checkoutSessions", externalReference), {
+          status: 'completed', 
+          updatedAt: serverTimestamp(), 
+          webhookEvent: event,
+          ...AUTH_BYPASS
+        });
+      }
+      console.log(`[ASAAS WEBHOOK] User ${uid} successfully processed. New subscription ends at: ${endsAt.toISOString()}`);
     } else if (isFailed) {
-      console.log(`[ASAAS WEBHOOK] Payment failed/refunded for user ${uid}. Marking inactive.`);
+      console.log(`[ASAAS WEBHOOK] Payment failed or reversed for user ${uid}. Marking inactive.`);
       await updateDoc(userRef, {
         subscriptionStatus: 'inactive', 
         updatedAt: serverTimestamp(),
